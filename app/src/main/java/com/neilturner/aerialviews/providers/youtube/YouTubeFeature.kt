@@ -12,12 +12,26 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.neilturner.aerialviews.models.prefs.AmazonVideoPrefs
+import com.neilturner.aerialviews.models.prefs.AppleVideoPrefs
+import com.neilturner.aerialviews.models.prefs.Comm1VideoPrefs
+import com.neilturner.aerialviews.models.prefs.Comm2VideoPrefs
+import com.neilturner.aerialviews.models.prefs.CustomFeedPrefs
+import com.neilturner.aerialviews.models.prefs.ImmichMediaPrefs
+import com.neilturner.aerialviews.models.prefs.LocalMediaPrefs
+import com.neilturner.aerialviews.models.prefs.SambaMediaPrefs
+import com.neilturner.aerialviews.models.prefs.SambaMediaPrefs2
+import com.neilturner.aerialviews.models.prefs.WebDavMediaPrefs
+import com.neilturner.aerialviews.models.prefs.WebDavMediaPrefs2
+import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import java.time.Duration
 import java.time.LocalTime
 import java.time.ZonedDateTime
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -29,13 +43,26 @@ object YouTubeFeature {
 
     @Volatile
     private var repository: YouTubeSourceRepository? = null
+    private val featureScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
-        NewPipeHelper.init()
-        repository(appContext)
-        initializePreferences(appContext)
-        scheduleAutomaticRefresh(appContext)
+        featureScope.launch(Dispatchers.IO) {
+            try {
+                repository(appContext)
+                initializePreferences(appContext)
+                scheduleAutomaticRefresh(appContext)
+                NewPipeHelper.init()
+                Timber.tag(TAG).d("NewPipe initialized")
+            } catch (exception: Exception) {
+                Timber.tag(TAG).e(exception, "YouTube feature initialization failed")
+            }
+        }
+
+        featureScope.launch(Dispatchers.IO) {
+            delay(INITIAL_PREWARM_DELAY_MS)
+            preWarmIfNeeded(this)
+        }
     }
 
     fun preWarmIfNeeded(scope: CoroutineScope) {
@@ -101,6 +128,20 @@ object YouTubeFeature {
             putBoolean(KEY_QUALITY_USER_SELECTED, true)
         }
     }
+
+    fun isOnlyYouTubeSourceEnabled(): Boolean =
+        YouTubeVideoPrefs.enabled &&
+            !AppleVideoPrefs.enabled &&
+            !AmazonVideoPrefs.enabled &&
+            !Comm1VideoPrefs.enabled &&
+            !Comm2VideoPrefs.enabled &&
+            !LocalMediaPrefs.enabled &&
+            !SambaMediaPrefs.enabled &&
+            !SambaMediaPrefs2.enabled &&
+            !WebDavMediaPrefs.enabled &&
+            !WebDavMediaPrefs2.enabled &&
+            !ImmichMediaPrefs.enabled &&
+            !CustomFeedPrefs.enabled
 
     private fun scheduleAutomaticRefresh(context: Context) {
         val workManager = WorkManager.getInstance(context)
@@ -218,6 +259,7 @@ object YouTubeFeature {
     private const val STREAM_REFRESH_INTERVAL_MINUTES = 330L
     private const val STREAM_REFRESH_INITIAL_DELAY_MINUTES = 15L
     private const val MIN_PREWARM_CACHE_SIZE = 10
+    private const val INITIAL_PREWARM_DELAY_MS = 10_000L
     private const val KEY_QUALITY_INITIALIZED = "yt_quality_initialized"
     private const val KEY_QUALITY_USER_SELECTED = "yt_quality_user_selected"
     private const val TAG = "YouTubeFeature"

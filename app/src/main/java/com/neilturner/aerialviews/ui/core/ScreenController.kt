@@ -578,7 +578,22 @@ class ScreenController(
     }
 
     private fun showLoadingError() {
-        loadingText.text = resources.getString(R.string.loading_error)
+        val messageResId =
+            if (shouldShowYouTubeLoadingMessage()) {
+                R.string.youtube_loading_error
+            } else {
+                R.string.loading_error
+            }
+        loadingText.text = resources.getString(messageResId)
+    }
+
+    private fun shouldShowYouTubeLoadingMessage(): Boolean {
+        if (!YouTubeFeature.isOnlyYouTubeSourceEnabled()) {
+            return false
+        }
+
+        val cachedCount = YouTubeVideoPrefs.count.toIntOrNull()
+        return cachedCount == null || cachedCount <= 0
     }
 
     private fun hideOverlays(delay: Long = 0L) {

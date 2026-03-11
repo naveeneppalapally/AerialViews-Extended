@@ -65,6 +65,20 @@ class YouTubeSourceRepository(
             cachedEntries
         }
 
+    suspend fun getLocalCachedVideos(): List<YouTubeCacheEntity> =
+        withContext(Dispatchers.IO) {
+            val cachedEntries = cacheDao.getAll()
+            if (cachedEntries.isEmpty()) {
+                updateCachedCount(0)
+                return@withContext emptyList()
+            }
+
+            prunePlayHistory(cachedEntries)
+            buildPlaylistEntries(cachedEntries).also { entries ->
+                updateCachedCount(entries.size)
+            }
+        }
+
     suspend fun getCacheSize(): Int =
         withContext(Dispatchers.IO) {
             cacheDao.getAll().size

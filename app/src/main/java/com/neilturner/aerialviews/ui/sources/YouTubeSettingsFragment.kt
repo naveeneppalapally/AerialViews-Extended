@@ -31,6 +31,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == YouTubeSourceRepository.KEY_COUNT || key == YouTubeSourceRepository.KEY_ENABLED) {
                 updateVideoCount()
+                viewModel.refreshCacheSize()
             }
         }
 
@@ -41,6 +42,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         setPreferencesFromResource(R.xml.sources_youtube_settings, rootKey)
         setupPreferences()
         updateVideoCount()
+        viewModel.refreshCacheSize()
         if (YouTubeVideoPrefs.enabled && isCountPending()) {
             viewModel.refreshIfCachePending()
         }
@@ -57,11 +59,16 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                 renderRefreshState(state)
             }
         }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.cacheSize.collect(::renderCacheWarning)
+        }
     }
 
     override fun onResume() {
         super.onResume()
         updateVideoCount()
+        viewModel.refreshCacheSize()
         if (YouTubeVideoPrefs.enabled && isCountPending()) {
             viewModel.refreshIfCachePending()
         }
@@ -106,12 +113,19 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             if (newValue == true) {
                 YouTubeVideoPrefs.count = "-1"
                 updateVideoCount()
+                viewModel.refreshCacheSize()
                 viewModel.refreshInBackground()
             } else {
                 progressDialog?.dismiss()
                 progressDialog = null
                 updateVideoCount()
+                viewModel.refreshCacheSize()
             }
+            true
+        }
+
+        findPreference<Preference>("yt_refresh_now")?.setOnPreferenceClickListener {
+            viewModel.forceRefresh()
             true
         }
     }
@@ -164,6 +178,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                 progressDialog = null
                 YouTubeVideoPrefs.count = state.count.toString()
                 updateVideoCount()
+                viewModel.refreshCacheSize()
                 viewLifecycleOwner.lifecycleScope.launch {
                     ToastHelper.show(
                         requireContext(),
@@ -184,9 +199,15 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                         Toast.LENGTH_SHORT,
                     )
                 }
+                viewModel.refreshCacheSize()
                 viewModel.clearRefreshState()
             }
         }
+    }
+
+    private fun renderCacheWarning(cacheSize: Int) {
+        val warningPreference = findPreference<Preference>("yt_cache_warning") ?: return
+        warningPreference.isVisible = YouTubeVideoPrefs.enabled && cacheSize == 0
     }
 
     private fun updateVideoCount() {

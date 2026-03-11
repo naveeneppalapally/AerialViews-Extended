@@ -5,6 +5,7 @@
     <string name="plugin_uuid" translatable="false">163adf9b-34bb-43df-915c-e8fe4a020bc2</string>
     <string name="loading_title">Loading…</string>
     <string name="loading_error">No videos or photos found, please check your settings</string>
+    <string name="youtube_loading_error">YouTube is loading your video library. This takes 1-2 minutes on first use. Other sources will play in the meantime.</string>
 
     <!-- Projectivy Integration -->
     <string name="projectivy_local_videos_options_title">Local or USB storage options</string>
@@ -208,6 +209,8 @@
     <string name="youtube_mix_weight_title">YouTube Playlist Weight</string>
     <string name="youtube_mix_weight_disabled_summary">Enable YouTube videos first to change playlist balance</string>
     <string name="youtube_count_pending_summary">Searching in background…</string>
+    <string name="youtube_cache_empty_title">YouTube cache is empty</string>
+    <string name="youtube_cache_empty_summary">YouTube is building its first video cache. Tap Refresh Now before starting the screensaver, or it may show No videos.</string>
     <string name="youtube_shuffle_title">Shuffle Playback</string>
     <string name="youtube_refresh_now_title">Refresh Now</string>
     <string name="youtube_refresh_now_summary">Rebuild the rotating YouTube search pool immediately and update the local cache</string>

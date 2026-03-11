@@ -15,11 +15,14 @@ class YouTubeSettingsViewModel(
 ) : AndroidViewModel(application) {
     private val repository = YouTubeFeature.repository(application)
     private val _refreshState = MutableStateFlow<RefreshState>(RefreshState.Idle)
+    private val _cacheSize = MutableStateFlow(-1)
 
     val refreshState: StateFlow<RefreshState> = _refreshState.asStateFlow()
+    val cacheSize: StateFlow<Int> = _cacheSize.asStateFlow()
 
     init {
         YouTubeFeature.preWarmIfNeeded(viewModelScope)
+        refreshCacheSize()
     }
 
     fun refreshIfCachePending() {
@@ -44,7 +47,9 @@ class YouTubeSettingsViewModel(
             _refreshState.value = RefreshState.Loading
             _refreshState.value =
                 try {
-                    RefreshState.Success(repository.forceRefresh())
+                    repository.forceRefresh().also { refreshedCount ->
+                        _cacheSize.value = refreshedCount
+                    }.let(RefreshState::Success)
                 } catch (exception: Exception) {
                     Timber.e(exception, "YouTube refresh failed")
                     RefreshState.Error
@@ -54,6 +59,12 @@ class YouTubeSettingsViewModel(
 
     fun refreshInBackground() {
         YouTubeFeature.requestImmediateRefresh(getApplication(), forceSearchRefresh = true)
+    }
+
+    fun refreshCacheSize() {
+        viewModelScope.launch {
+            _cacheSize.value = repository.getCacheSize()
+        }
     }
 
     fun clearRefreshState() {

@@ -12,14 +12,9 @@ import com.neilturner.aerialviews.models.prefs.Comm2VideoPrefs
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.utils.DeviceHelper
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import timber.log.Timber
 
 class AerialApp : Application() {
-    val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
     override fun onCreate() {
         super.onCreate()
         configureLogging()
@@ -45,7 +40,6 @@ class AerialApp : Application() {
         }
 
         YouTubeFeature.initialize(this)
-        YouTubeFeature.preWarmIfNeeded(applicationScope)
     }
 
     private fun configureLogging() {

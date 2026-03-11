@@ -41,20 +41,31 @@ Sideloading is required — this fork is not on the Play Store.
 adb install -r app-github-nonMinifiedRelease.apk
 ```
 
-## How to Set It as Default Screensaver
+## How to set AerialViews Extended as the default screensaver
 
-Like the original AerialViews project, this can be set as the system screensaver on Android/Google TV and many Fire TV devices.
+> These setup instructions are taken directly from the original 
+> [AerialViews](https://github.com/theothernt/AerialViews) by 
+> [Neil McAlister](https://github.com/theothernt) and are reproduced 
+> here with credit and thanks. The steps are identical for this fork.
 
-On newer Google TV devices there is often no menu option to choose a 3rd party screensaver, so it has to be done over ADB.
+Since 2023, nearly all devices that ship with Google TV, running Android TV 12 or later, have no user-interface to change the screensaver to a 3rd party one...
 
-The basic idea is:
+* __Chromecast with Google TV, Google TV Streamer__
+* __Recent MECOOL devices__
+* __Recent TCL, Philips, and Sony TVs__
+* __onn. Google TV devices (excluding the 2021 model)__
+* __Fire TV (won't work with Fire OS 8.1 and above)__
 
-1. Enable Developer mode and USB debugging on the TV
-2. Connect to the device from a phone or computer
-3. Run the screensaver command
-4. Optionally change the timeout
+But it can be done manually. Here is an overview of the steps...
 
-The sections below are the same device-specific instructions from the original AerialViews README.
+1. Enable Developer mode, enable USB debugging, then find the IP address of your device
+2. Use a Mac, iPhone, PC or Android phone with the required software or app
+3. Connect to your Android/Google/Fire TV device
+4. Run two ADB commands, one to set Aerial Views as the default screensaver, the other to set how long it takes the screensaver to start
+
+The full instructions are below, please click or tap to expand each step.
+
+Another option is to use the *TDUK Screensaver Manager* app. Details on the app are below.
 
 <details>
 <summary>Enable Developer Mode on your Android/Google TV</summary>
@@ -90,6 +101,47 @@ Next, find the IP address of your device and make a note of it. Navigate to the 
 </details>
 
 <details>
+<summary>Allow Auto Launch on TCL TVs</summary>
+&nbsp;
+
+If you have a TCL TV with Google TV, you need to allow the Auto Launch permission so that Aerial Views can be launched from the background when the screensaver starts.
+
+Otherwise, the screensaver cannot be started, either automatically, or manually via the Screensaver menu shortcut, unless the Aerial Views app has been recently opened (see [#191](https://github.com/theothernt/AerialViews/issues/191) for details).
+
+1. Open the __Safety Guard__ app on your TV
+2. Navigate to `Permission Shield > Auto Launch Permission`
+3. Change the `Auto manager` at the top to `Closed` - this allows you to manually select which apps can auto-launch instead of the system deciding automatically
+4. Scroll to __Aerial Views__ and change it to `Opened`
+
+Not all TCL TVs have the same software and features. If the above __Safety Guard__ app does not exist on your TV, the following ADB command might help…
+
+Android <v14:
+
+```sh
+appops set com.neilturner.aerialviews APP_AUTO_START allow
+```
+
+Androind >=v14
+
+```sh
+appops set com.neilturner.aerialviews AUTO_START allow
+```
+
+You can confirm the available options:
+
+```sh
+appops get com.neilturner.aerialviews
+
+# Returns
+WAKE_LOCK: allow; time=+5m55s466ms ago; duration=+2s889ms
+READ_MEDIA_IMAGES: allow; time=+1m43s406ms ago
+READ_MEDIA_VISUAL_USER_SELECTED: allow; time=+1m43s408ms ago
+AUTO_START: ignore; rejectTime=+7m6s72ms ago
+```
+
+</details>
+
+<details>
 <summary>Connect using an iPhone</summary>
 &nbsp;
 
@@ -105,7 +157,7 @@ apk add android-tools
 To check if the ADB command is working, try typing…
 
 ```sh
-adb version
+adb version 
 ```
 
 After pressing return, you should see something like this
@@ -134,7 +186,7 @@ pkg install android-tools
 To check if the ADB command is working, try typing…
 
 ```sh
-adb version
+adb version 
 ```
 
 After pressing return, you should see something like this
@@ -198,6 +250,31 @@ Version  35.0.0-11411520
 </details>
 
 <details>
+<summary>Extra steps for Chromecast with Google TV HD &amp; 4K</summary>
+
+Since the update to Android TV 14, the Chromecast with Google TV (CCwGTV) has a bug which affects ADB. Normally, ADB uses port 5555 but on the CCwGTV the port is randomised.
+
+This means the `adb connect <ip_address>` command will likely fail with a 'connection refused' message.
+
+As a work-around, we can use the wireless debugging connection...
+
+1. In `Settings > System > Developer options > Wireless debugging`, select Pair device with pairing code
+
+2. Run the command: `adb pair <ip_address>:<port>`
+
+3. The IP and port are displayed on the TV upon selecting Pair device with pairing code
+
+4. ADB then asks for the pairing code displayed on the screen.
+
+5. Once entered, you should see a message confirming that wireless debugging is connected.
+
+You should be connected to your CCwGTV device with ADB. Now you can run `adb shell` and the other commands in the instructions that follow.
+
+:information_source: *There are other ways to fix this issue, like using a feature in tvQuickActions Pro. [See TDUK's video for more details.](https://www.youtube.com/watch?v=WVRBXktSw0c)*
+
+</details>
+
+<details>
 <summary>ADB command - set Aerial Views as the default screensaver</summary>
 &nbsp;
 
@@ -227,7 +304,7 @@ Optional: Confirm that the command was run successfully, as there is no confirma
 settings get secure screensaver_components
 ```
 
-If set correctly, you should see...
+If set correctly, you should see... 
 
 ```sh
 com.neilturner.aerialviews/.ui.screensaver.DreamActivity
@@ -245,7 +322,7 @@ Like with previous ADB commands, connect to your Android TV device and start a c
 
 ```sh
 settings put secure screensaver_default_component com.neilturner.aerialviews/.ui.screensaver.DreamActivity
-settings put secure contextual_screen_off_timeout 300000
+settings put secure contextual_screen_off_timeout 300000 
 settings put secure screensaver_enabled 1
 ```
 
@@ -281,6 +358,7 @@ settings put system screen_off_timeout 600000
 
 :information_source: *If you are using Projectivy launcher, make sure to disable: Projectivy Launcher settings > Power > Enable internal idle detection*
 
+
 </details>
 
 <details>
@@ -312,6 +390,18 @@ settings put secure screensaver_components com.amazon.bueller.photos/.daydream.S
 ```sh
 settings put secure screensaver_components com.google.android.backdrop/.Backdrop
 ```
+
+</details>
+
+<details>
+<summary>Use the TDUK Screensaver Manager app</summary>
+&nbsp;
+
+The [TDUK Screensaver Manager](https://play.google.com/store/apps/details?id=com.tduk.scrmgr) is a paid app (approx. $2/£2/€2) which allows you to easily change the active screensaver on your Android/Google TV device using a simple interface.
+
+Please make sure to enable **Developer Mode** and **USB/Networking Debugging**. Instructions are above.
+
+:information_source: This app will not work on recent Fire TV devices due to changes by Amazon.
 
 </details>
 

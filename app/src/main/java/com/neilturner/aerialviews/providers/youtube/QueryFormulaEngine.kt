@@ -5,12 +5,18 @@ import kotlin.random.Random
 import timber.log.Timber
 
 object QueryFormulaEngine {
+    private const val TAG = "YouTubeQueries"
+    private const val NATURE_QUERY_RATIO = 0.45f
+    private const val SCENIC_QUERY_RATIO = 0.20f
+    private const val MIN_NATURE_QUERY_COUNT = 12
+    private const val MIN_SCENIC_QUERY_COUNT = 6
+
     enum class QueryCategory {
         AERIAL,
         NATURE,
     }
 
-    val qualifiers =
+    private val qualifiers =
         listOf(
             "4K",
             "8K",
@@ -19,7 +25,7 @@ object QueryFormulaEngine {
             "ultra HD",
         )
 
-    val shotTypes =
+    private val shotTypes =
         listOf(
             "aerial drone",
             "drone footage",
@@ -31,7 +37,7 @@ object QueryFormulaEngine {
             "hyperlapse aerial",
         )
 
-    val subjects =
+    private val subjects =
         listOf(
             "waterfall",
             "ocean waves",
@@ -77,7 +83,7 @@ object QueryFormulaEngine {
             "rooftop garden",
         )
 
-    val locations =
+    private val locations =
         listOf(
             "Iceland",
             "Norway",
@@ -137,7 +143,7 @@ object QueryFormulaEngine {
             "Arctic Ocean",
         )
 
-    val conditions =
+    private val conditions =
         listOf(
             "sunrise",
             "golden hour sunset",
@@ -155,7 +161,7 @@ object QueryFormulaEngine {
             "ambient sounds only",
         )
 
-    val channels =
+    private val channels =
         listOf(
             "Jakob Owens aerial",
             "Drone Footage 4K",
@@ -169,7 +175,7 @@ object QueryFormulaEngine {
             "Beautiful Destinations aerial",
         )
 
-    val seasonalQueries =
+    private val seasonalQueries =
         mapOf(
             1 to listOf("4K aerial snow winter mountains", "4K arctic frozen landscape"),
             2 to listOf("4K aerial snow melt river", "4K winter aerial Nordic"),
@@ -303,8 +309,12 @@ object QueryFormulaEngine {
 
     fun generateQueryPool(count: Int = 25): List<String> {
         val resolvedCount = count.coerceAtLeast(1)
-        val natureCount = (resolvedCount * 0.45f).toInt().coerceAtLeast(12).coerceAtMost(resolvedCount)
-        val scenicCount = (resolvedCount * 0.20f).toInt().coerceAtLeast(6).coerceAtMost((resolvedCount - natureCount).coerceAtLeast(0))
+        val natureCount = (resolvedCount * NATURE_QUERY_RATIO).toInt().coerceAtLeast(MIN_NATURE_QUERY_COUNT).coerceAtMost(resolvedCount)
+        val scenicCount =
+            (resolvedCount * SCENIC_QUERY_RATIO)
+                .toInt()
+                .coerceAtLeast(MIN_SCENIC_QUERY_COUNT)
+                .coerceAtMost((resolvedCount - natureCount).coerceAtLeast(0))
         val aerialCount = (resolvedCount - natureCount - scenicCount).coerceAtLeast(1)
 
         val natureQueries = buildNatureQueries(dailyRng(), natureCount)
@@ -315,7 +325,7 @@ object QueryFormulaEngine {
                 .distinct()
                 .shuffled(Random(dailySeed() xor refreshSeed() xor weeklySeed()))
                 .take(resolvedCount)
-        Timber.d("QueryEngine pool: %s queries", finalPool.size)
+        Timber.tag(TAG).d("Generated %s YouTube search variants", finalPool.size)
         return finalPool
     }
 

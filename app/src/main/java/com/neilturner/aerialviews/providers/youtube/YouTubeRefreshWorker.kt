@@ -12,8 +12,8 @@ class YouTubeRefreshWorker(
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(applicationContext)
-        if (!sharedPreferences.getBoolean("yt_enabled", true)) {
-            Timber.i("Skipping YouTube refresh because the source is disabled")
+        if (!sharedPreferences.getBoolean(YouTubeSourceRepository.KEY_ENABLED, true)) {
+            Timber.tag(TAG).i("Skipping YouTube refresh because the source is disabled")
             return Result.success()
         }
 
@@ -23,12 +23,13 @@ class YouTubeRefreshWorker(
             YouTubeFeature.repository(applicationContext).warmCache(forceSearchRefresh)
             Result.success()
         } catch (exception: Exception) {
-            Timber.e(exception, "YouTube refresh failed")
+            Timber.tag(TAG).e(exception, "YouTube refresh failed")
             if (exception.isNetworkError()) Result.retry() else Result.failure()
         }
     }
 
     companion object {
+        private const val TAG = "YouTubeWorker"
         const val KEY_FORCE_SEARCH_REFRESH = "force_search_refresh"
     }
 }

@@ -23,19 +23,9 @@ class YouTubeMediaProvider(
 
     override suspend fun fetchMedia(): List<AerialMedia> {
         return try {
-            repository.getCachedVideos().map { entry ->
-                AerialMedia(
-                    uri = entry.videoPageUrl.toUri(),
-                    type = AerialMediaType.VIDEO,
-                    source = AerialMediaSource.YOUTUBE,
-                    metadata =
-                        AerialMediaMetadata(
-                            shortDescription = entry.title,
-                        ),
-                )
-            }
+            repository.getCachedVideos().map(::toAerialMedia)
         } catch (exception: Exception) {
-            Timber.e(exception, "Failed to fetch YouTube media")
+            Timber.tag(TAG).e(exception, "Failed to fetch YouTube media")
             emptyList()
         }
     }
@@ -45,10 +35,25 @@ class YouTubeMediaProvider(
             val refreshedCount = repository.forceRefresh()
             "Refreshed $refreshedCount videos"
         }.getOrElse { exception ->
-            Timber.e(exception, "Failed to refresh YouTube media")
+            Timber.tag(TAG).e(exception, "Failed to refresh YouTube media")
             "Refresh failed: ${exception.localizedMessage ?: "Unknown error"}"
         }
     }
 
     override suspend fun fetchMetadata(): MutableMap<String, Pair<String, Map<Int, String>>> = mutableMapOf()
+
+    private fun toAerialMedia(entry: YouTubeCacheEntity): AerialMedia =
+        AerialMedia(
+            uri = entry.videoPageUrl.toUri(),
+            type = AerialMediaType.VIDEO,
+            source = AerialMediaSource.YOUTUBE,
+            metadata =
+                AerialMediaMetadata(
+                    shortDescription = entry.title,
+                ),
+        )
+
+    companion object {
+        private const val TAG = "YouTubeMedia"
+    }
 }

@@ -147,9 +147,9 @@ object YouTubeFeature {
             }
         }
 
-        if (!prefs.contains("yt_enabled")) {
+        if (!prefs.contains(YouTubeSourceRepository.KEY_ENABLED)) {
             prefs.edit {
-                putBoolean("yt_enabled", true)
+                putBoolean(YouTubeSourceRepository.KEY_ENABLED, true)
             }
         }
 

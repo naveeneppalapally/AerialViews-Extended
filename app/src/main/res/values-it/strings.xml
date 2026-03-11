@@ -353,7 +353,7 @@
   <string name="nowplaying_permission_title">Abilita l\'accesso alle notifiche di sistema</string>
   <string name="nowplaying_shorten_track_name_summary">Elimina i suffissi comuni come \"- Original Mix\" o \"(Remastered)\".</string>
   <string name="nowplaying_shorten_track_name_title">Abbrevia i nomi delle tracce</string>
-  <string name="nowplaying_toast_text">Attiva Aerial Views in: Accesso speciale all\'app &gt; Accesso alle notifiche</string>
+  <string name="nowplaying_toast_text">Attiva AerialViews+ in: Accesso speciale all\'app &gt; Accesso alle notifiche</string>
   <string name="playlist_ignore_unmatched_videos_summary">Salta i video non riconosciuti come di Apple o della community</string>
   <string name="playlist_ignore_unmatched_videos_title">Ignora i video che non sono di Apple o della community</string>
   <string name="playlist_limit_longer_videos_title">Video più lunghi</string>
@@ -448,7 +448,7 @@
   <string name="settings_import_settings">Importare le impostazioni dal backup?</string>
   <string name="settings_import_successful">Impostazioni importate con successo</string>
   <string name="settings_import_summary1">Per importare le impostazioni, utilizzare il File Manager per aprire il file di backup</string>
-  <string name="settings_import_summary2">Questo invocherà Aerial Views o darà un\'opzione per farlo</string>
+  <string name="settings_import_summary2">Questo invocherà AerialViews+ o darà un\'opzione per farlo</string>
   <string name="settings_import_summary3">Se l\'operazione è andata a buon fine, verrà chiesto di confermare l\'importazione delle impostazioni</string>
   <string name="settings_media_sources_summary">Riproduci video e immagini da Internet, memoria USB e sorgenti di rete.</string>
   <string name="settings_media_sources_title">Sorgenti Video</string>
@@ -464,7 +464,7 @@
   <string name="settings_system_options">Apri le opzioni dello screensaver del sistema</string>
   <string name="settings_system_options_error">Impossibile aprire le opzioni dello screensaver del dispositivo</string>
   <string name="settings_system_options_removed">Questa funzione è stata rimossa dal produttore.
-Per ulteriori informazioni, visitare il sito Web di Aerial Views.</string>
+Per ulteriori informazioni, visitare il sito Web di AerialViews+.</string>
   <string name="show_media_error_toasts_summary">Visualizza popup quando si verificano errori di riproduzione dei media</string>
   <string name="show_media_error_toasts_title">Mostra i popup per gli errori dei media</string>
   <string name="sources_amazon_summary">Trasmetti in streaming i video ambientali di Amazon utilizzando la tua connessione Internet</string>

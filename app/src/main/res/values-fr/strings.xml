@@ -353,7 +353,7 @@
   <string name="nowplaying_permission_title">Activer l\'accès à la notification du système</string>
   <string name="nowplaying_shorten_track_name_summary">Supprimer les suffixes courants tels que \"- Original Mix\" ou \"(Remastered)\"</string>
   <string name="nowplaying_shorten_track_name_title">Raccourcir les noms des pistes</string>
-  <string name="nowplaying_toast_text">Veuillez activer les Vues aériennes dans : Accès aux applications spéciales &gt; Accès aux notifications</string>
+  <string name="nowplaying_toast_text">Veuillez activer AerialViews+ dans : Accès aux applications spéciales &gt; Accès aux notifications</string>
   <string name="playlist_ignore_unmatched_videos_summary">Ignorer les vidéos qui ne sont pas listées dans les manifestes vidéo Apple</string>
   <string name="playlist_ignore_unmatched_videos_title">Ignorer les vidéos non Apple sur le stockage local et le réseau</string>
   <string name="playlist_limit_longer_videos_title">Vidéos plus longues</string>
@@ -447,7 +447,7 @@
   <string name="settings_import_settings">Importer des paramètres à partir d\'une sauvegarde ?</string>
   <string name="settings_import_successful">Paramètres importés avec succès</string>
   <string name="settings_import_summary1">Pour importer les paramètres, utilisez un gestionnaire de fichiers pour ouvrir le fichier de sauvegarde des paramètres</string>
-  <string name="settings_import_summary2">Cela permet d\'invoquer les vues aériennes ou de donner une option pour le faire</string>
+  <string name="settings_import_summary2">Cela permet d\'invoquer AerialViews+ ou de donner une option pour le faire</string>
   <string name="settings_import_summary3">En cas de succès, il vous sera demandé de confirmer l\'importation des paramètres</string>
   <string name="settings_media_sources_summary">Lecture de vidéos et d\'images provenant d\'Internet, d\'une clé USB et de sources réseau</string>
   <string name="settings_media_sources_title">Sources médiatiques</string>
@@ -463,7 +463,7 @@
   <string name="settings_system_options">Ouvrir les paramètres système</string>
   <string name="settings_system_options_error">Impossible d\'ouvrir les options de l\'économiseur d\'écran de votre appareil</string>
   <string name="settings_system_options_removed">Cette fonction a été supprimée par le fabricant
-Pour plus d\'informations, veuillez consulter le site web Aerial Views.</string>
+Pour plus d\'informations, veuillez consulter le site web AerialViews+.</string>
   <string name="show_media_error_toasts_summary">Affichage de messages de toast en cas d\'erreurs de lecture des médias</string>
   <string name="show_media_error_toasts_title">Tartines d\'erreurs dans les médias</string>
   <string name="sources_amazon_summary">Regardez des vidéos d\'ambiance Amazon en streaming via votre connexion Internet.</string>

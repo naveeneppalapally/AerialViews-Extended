@@ -353,7 +353,7 @@
   <string name="nowplaying_permission_title">Habilitar el acceso a las notificaciones del sistema</string>
   <string name="nowplaying_shorten_track_name_summary">Eliminar sufijos comunes como \"- Mezcla original\" o \"(Remasterizado)\"</string>
   <string name="nowplaying_shorten_track_name_title">Acortar los nombres de las pistas</string>
-  <string name="nowplaying_toast_text">Por favor, habilite Aerial Views en: Acceso especial de aplicaciones &gt; Acceso a notificaciones</string>
+  <string name="nowplaying_toast_text">Por favor, habilite AerialViews+ en: Acceso especial de aplicaciones &gt; Acceso a notificaciones</string>
   <string name="playlist_ignore_unmatched_videos_summary">Omitir vídeos que no figuran en ninguna lista de vídeos de Apple</string>
   <string name="playlist_ignore_unmatched_videos_title">Ignorar vídeos no reconocidos o que no sean de Apple</string>
   <string name="playlist_limit_longer_videos_title">Vídeos más largos</string>
@@ -448,7 +448,7 @@
   <string name="settings_import_settings">¿Importar los ajustes desde una copia de seguridad?</string>
   <string name="settings_import_successful">Ajustes importados correctamente</string>
   <string name="settings_import_summary1">Para importar los ajustes, utilice una aplicación de gestión de archivos para abrir el archivo de copia de seguridad de los ajustes</string>
-  <string name="settings_import_summary2">Esto abrirá Aerial Views o dará una opción para hacerlo</string>
+  <string name="settings_import_summary2">Esto abrirá AerialViews+ o dará una opción para hacerlo</string>
   <string name="settings_import_summary3">Cuando esté correcto, se le pedirá que confirme la importación de los ajustes</string>
   <string name="settings_media_sources_summary">Reproduzca vídeos e imágenes desde Internet, almacenamiento USB y fuentes de red</string>
   <string name="settings_media_sources_title">Fuentes de medios</string>
@@ -463,7 +463,7 @@
   <string name="settings_settings_title">Ajustes</string>
   <string name="settings_system_options">Abrir opciones de sistema de protector de pantalla</string>
   <string name="settings_system_options_error">No es posible abrir las opciones de protector de pantalla de tu dispositivo</string>
-  <string name="settings_system_options_removed">Esta característica fue eliminada por el fabricante. Por favor visite el sitio web de Aerial Views para más detalles</string>
+  <string name="settings_system_options_removed">Esta característica fue eliminada por el fabricante. Por favor visite el sitio web de AerialViews+ para más detalles</string>
   <string name="show_media_error_toasts_summary">Mostrar mensajes de aviso cuando se producen errores de reproducción de medios</string>
   <string name="show_media_error_toasts_title">Mostrar notificaciones del sistema de error multimedia</string>
   <string name="sources_amazon_summary">Reproduce vídeos ambientales de Amazon usando tu conexión a internet</string>

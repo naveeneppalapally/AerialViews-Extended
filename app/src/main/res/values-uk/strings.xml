@@ -378,7 +378,7 @@
   <string name="nowplaying_permission_title">Увімкнути доступ до системних повідомлень</string>
   <string name="nowplaying_shorten_track_name_summary">Видаліть поширені суфікси на кшталт \"- Original Mix\" або \"(Remastered)\"</string>
   <string name="nowplaying_shorten_track_name_title">Скоротити назви треків</string>
-  <string name="nowplaying_toast_text">Увімкніть Aerial Views у: Спеціальний доступ &gt; Доступ до сповіщень</string>
+  <string name="nowplaying_toast_text">Увімкніть AerialViews+ у: Спеціальний доступ &gt; Доступ до сповіщень</string>
   <string name="overlay_metadata_folder_levels_title">Рівні папок для відображення</string>
   <string name="overlay_metadata_photo_date_format_summary">Вкажіть власний формат дати для дат EXIF фотографій</string>
   <string name="overlay_metadata_photo_date_format_title">Формат дати зйомки</string>
@@ -490,7 +490,7 @@
   <string name="settings_import_settings">Імпортувати налаштування з резервної копії?</string>
   <string name="settings_import_successful">Налаштування успішно імпортовано</string>
   <string name="settings_import_summary1">Щоб імпортувати установки, відкрийте файл резервної копії налаштувань за допомогою програми \"Файловий менеджер\"</string>
-  <string name="settings_import_summary2">Це викличе Aerial Views або надасть можливість зробити це</string>
+  <string name="settings_import_summary2">Це викличе AerialViews+ або надасть можливість зробити це</string>
   <string name="settings_import_summary3">У разі успіху вам буде запропоновано підтвердити імпорт налаштувань</string>
   <string name="settings_media_sources_summary">Відтворення відео та зображень з Інтернету, USB-накопичувачів і мережевих джерел</string>
   <string name="settings_media_sources_title">Медіа-джерела</string>
@@ -506,7 +506,7 @@
   <string name="settings_system_options">Відкрити системні налаштування заставки</string>
   <string name="settings_system_options_error">Неможливо відкрити параметри заставки вашого пристрою</string>
   <string name="settings_system_options_removed">Ця функція була видалена виробником
-Для отримання додаткової інформації відвідайте веб-сайт Aerial Views</string>
+Для отримання додаткової інформації відвідайте веб-сайт AerialViews+</string>
   <string name="show_media_error_toasts_summary">Відображати спливаючі повідомлення, коли виникають помилки відтворення медіафайлів</string>
   <string name="show_media_error_toasts_title">Показувати спливаючі повідомлення про помилки мультимедіа</string>
   <string name="sources_amazon_summary">Трансляція відео з навколишнього середовища Amazon за допомогою інтернет-з\'єднання</string>

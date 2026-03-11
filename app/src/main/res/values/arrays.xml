@@ -53,7 +53,7 @@
     </string-array>
     <string name="youtube_mix_weight_default" translatable="false">2</string>
     <string-array name="source_mode_entries" translatable="false">
-        <item>Aerial Views videos</item>
+        <item>AerialViews+ videos</item>
         <item>YouTube videos</item>
         <item>Combined</item>
     </string-array>

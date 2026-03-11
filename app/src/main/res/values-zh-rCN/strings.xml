@@ -353,7 +353,7 @@
   <string name="nowplaying_permission_title">启用系统通知权限</string>
   <string name="nowplaying_shorten_track_name_summary">删除常见后缀，如\"- Original Mix \"或\"(Remastered)\"</string>
   <string name="nowplaying_shorten_track_name_title">缩短曲目名称</string>
-  <string name="nowplaying_toast_text">请在“特殊应用访问权限 &gt; 通知权限”中启用“Aerial Views”</string>
+  <string name="nowplaying_toast_text">请在“特殊应用访问权限 &gt; 通知权限”中启用“AerialViews+”</string>
   <string name="playlist_ignore_unmatched_videos_summary">跳过未识别为 Apple 或社区视频的视频</string>
   <string name="playlist_ignore_unmatched_videos_title">忽略非 Apple、非社区视频</string>
   <string name="playlist_limit_longer_videos_title">较长的视频</string>
@@ -448,7 +448,7 @@
   <string name="settings_import_settings">从备份导入设置？</string>
   <string name="settings_import_successful">设置已成功导入</string>
   <string name="settings_import_summary1">要导入设置，请使用文件管理器应用程序打开备份设置文件</string>
-  <string name="settings_import_summary2">这将调用 Aerial Views 或提供相关选项</string>
+  <string name="settings_import_summary2">这将调用 AerialViews+ 或提供相关选项</string>
   <string name="settings_import_summary3">成功后，系统会要求您确认导入设置</string>
   <string name="settings_media_sources_summary">播放来自互联网、USB 存储和网络源的视频和照片</string>
   <string name="settings_media_sources_title">媒体来源</string>
@@ -464,7 +464,7 @@
   <string name="settings_system_options">打开系统屏保设置</string>
   <string name="settings_system_options_error">无法打开设备的屏保选项</string>
   <string name="settings_system_options_removed">该功能已被制造商删除
-请访问 Aerial Views 网站了解更多详情</string>
+请访问 AerialViews+ 网站了解更多详情</string>
   <string name="show_media_error_toasts_summary">媒体播放出现异常时弹出提示消息</string>
   <string name="show_media_error_toasts_title">显示媒体错误提示</string>
   <string name="sources_amazon_summary">在线播放 Amazon 氛围视频</string>

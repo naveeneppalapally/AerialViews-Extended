@@ -28,6 +28,18 @@ Plays fresh 4K nature, aerial, and ambient videos from YouTube directly on your 
 * YouTube mixed with built-in sources in the same playlist
 * Background refresh via WorkManager
 
+## Installation
+
+1. Download the latest APK from the [Releases tab](https://github.com/naveeneppalapally/AerialViews-Plus/releases/latest).
+2. Enable `Install unknown apps` on your Android TV.
+3. Install the APK with a file manager on your device.
+
+Or install via ADB:
+
+```sh
+adb install -r AerialViews-Plus-v1.0.0.apk
+```
+
 ## How to set AerialViews+ as the default screensaver
 
 > These setup instructions are taken directly from the original 

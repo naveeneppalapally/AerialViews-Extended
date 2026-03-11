@@ -353,7 +353,7 @@
   <string name="nowplaying_permission_title">Zugriff auf Systembenachrichtigungen aktivieren</string>
   <string name="nowplaying_shorten_track_name_summary">Entfernen Sie gängige Suffixe wie \"- Original Mix\" oder \"(Remastered)\".</string>
   <string name="nowplaying_shorten_track_name_title">Kürzen von Titelnamen</string>
-  <string name="nowplaying_toast_text">Bitte erlaube Aerial Views in Spezieller App-Zugriff &gt; Benachrichtigungszugriff</string>
+  <string name="nowplaying_toast_text">Bitte erlaube AerialViews+ in Spezieller App-Zugriff &gt; Benachrichtigungszugriff</string>
   <string name="playlist_ignore_unmatched_videos_summary">Überspringe Videos die nicht als Apple- oder Community-Videos erkannt werden</string>
   <string name="playlist_ignore_unmatched_videos_title">Nicht-Apple- und Nicht-Community-Videos ignorieren</string>
   <string name="playlist_limit_longer_videos_title">Längere Videos</string>
@@ -447,7 +447,7 @@
   <string name="settings_import_settings">Einstellungen aus einem Backup importieren?</string>
   <string name="settings_import_successful">Einstellungen erfolgreich importiert</string>
   <string name="settings_import_summary1">Um gesicherte Einstellungen zu importieren verwenden Sie bitte einen Dateimanager um die Sicherungsdatei zu öffnen</string>
-  <string name="settings_import_summary2">Dadurch wird Aerial Views aufgerufen oder eine entsprechende Option angeboten</string>
+  <string name="settings_import_summary2">Dadurch wird AerialViews+ aufgerufen oder eine entsprechende Option angeboten</string>
   <string name="settings_import_summary3">Bei erfolgreichem Import werden Sie aufgefordert die geänderten Einstellungen zu bestätigen</string>
   <string name="settings_media_sources_summary">Fotos &amp; Videos aus dem Internet, von USB-Speichern und Netzwerkquellen abspielen</string>
   <string name="settings_media_sources_title">Medienquellen</string>
@@ -463,7 +463,7 @@
   <string name="settings_system_options">Öffne die Bildschirmschoner-Systemeinstellungen</string>
   <string name="settings_system_options_error">Konnte die Bildschirmschonereinstellungen nicht öffnen</string>
   <string name="settings_system_options_removed">Das Feature wurde vom Hersteller entfernt
-Für mehr Infos bitte die Aerial Views Webseite besuchen</string>
+Für mehr Infos bitte die AerialViews+ Webseite besuchen</string>
   <string name="show_media_error_toasts_summary">Anzeige von Toast-Meldungen beim Auftreten von Fehlern bei der Medienwiedergabe</string>
   <string name="show_media_error_toasts_title">Toasts auf Medienfehler anzeigen</string>
   <string name="sources_amazon_summary">Streamen Sie Amazon Ambient Videos über Ihre Internetverbindung.</string>

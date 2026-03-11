@@ -353,7 +353,7 @@
   <string name="nowplaying_permission_title">אפשר גישה להתראות מערכת</string>
   <string name="nowplaying_shorten_track_name_summary">הסר סיומות נפוצות כמו \"- Original Mix\" או \"(Remastered)\"</string>
   <string name="nowplaying_shorten_track_name_title">קיצור שמות רצועות שירום</string>
-  <string name="nowplaying_toast_text">אנא הפעל תצוגות אוויר ב: גישה מיוחדת לאפליקציה &gt; גישת התראות</string>
+  <string name="nowplaying_toast_text">אנא הפעל AerialViews+ ב: גישה מיוחדת לאפליקציה &gt; גישת התראות</string>
   <string name="playlist_ignore_unmatched_videos_summary">דלג על סרטונים שאינם מזוהים כסרטוני אפל או קהילה</string>
   <string name="playlist_ignore_unmatched_videos_title">התעלם מסרטונים שאינם של אפל, ושאינם קהילתיים</string>
   <string name="playlist_limit_longer_videos_title">סרטונים ארוכים יותר</string>
@@ -447,7 +447,7 @@
   <string name="settings_import_settings">לייבא הגדרות מגיבוי?</string>
   <string name="settings_import_successful">ההגדרות יובאו בהצלחה</string>
   <string name="settings_import_summary1">כדי לייבא הגדרות, השתמש באפליקציית מנהל הקבצים כדי לפתוח את קובץ הגדרות הגיבוי</string>
-  <string name="settings_import_summary2">פעולה זו תפעיל את תצוגות אוויריות או תיתן אפשרות לעשות זאת</string>
+  <string name="settings_import_summary2">פעולה זו תפעיל את AerialViews+ או תיתן אפשרות לעשות זאת</string>
   <string name="settings_import_summary3">לאחר שתצליח, תתבקש לאשר את ייבוא ​​ההגדרות</string>
   <string name="settings_media_sources_summary">הפעל סרטונים ותמונות מהאינטרנט, אחסון USB, ומקורות רשת</string>
   <string name="settings_media_sources_title">מקורות מדיה</string>
@@ -463,7 +463,7 @@
   <string name="settings_system_options">פתח את אפשרויות שומר המסך של המערכת</string>
   <string name="settings_system_options_error">לא ניתן לפתוח את אפשרויות שומר המסך של המכשיר שלך</string>
   <string name="settings_system_options_removed">יכולת זו הוסרה על ידי היצרן
- אנא בקר באתר Aerial Views לפרטים נוספים</string>
+ אנא בקר באתר AerialViews+ לפרטים נוספים</string>
   <string name="show_media_error_toasts_summary">הצגת הודעות זמניות כאשר מתרחשות שגיאות הפעלת מדיה</string>
   <string name="show_media_error_toasts_title">הצג הודעות זמניות של שגיאות מדיה</string>
   <string name="sources_amazon_summary">הזרם סרטוני אווירה של אמזון באמצעות חיבור האינטרנט שלך</string>

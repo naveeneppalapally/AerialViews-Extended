@@ -1,11 +1,16 @@
 name: Build APK
 
 on:
-  push:
-    branches:
-      - main
-      - master
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g. 1.0.1)'
+        required: true
+        default: '1.0.0'
+      release_notes:
+        description: 'What changed in this release'
+        required: true
+        default: 'Bug fixes and improvements'
 
 permissions:
   contents: write
@@ -46,41 +51,38 @@ jobs:
           EOF
 
       - name: Build GitHub release APK
-        run: ./gradlew --no-daemon :app:assembleGithubNonMinifiedRelease
-
-      - name: Get date
-        id: date
-        run: |
-          echo "DATE=$(date -u +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
-
-      - name: Check if release exists
-        id: check
-        run: |
-          EXISTS=$(gh release view v${{ steps.date.outputs.DATE }} \
-            --repo naveeneppalapally/AerialViews-Extended 2>/dev/null \
-            && echo "true" || echo "false")
-          echo "EXISTS=$EXISTS" >> "$GITHUB_OUTPUT"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew --no-daemon :app:assembleGithubRelease
 
       - name: Rename APK
         run: |
-          cd app/build/outputs/apk/github/nonMinifiedRelease/
-          mv app-github-nonMinifiedRelease.apk \
-             AerialViews-Extended-v${{ steps.date.outputs.DATE }}.apk
+          mkdir -p dist
+          cp app/build/outputs/apk/github/release/*.apk \
+             dist/AerialViews-Extended-v${{ github.event.inputs.version }}.apk
 
-      - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: AerialViews-Extended-v${{ steps.date.outputs.DATE }}
-          path: app/build/outputs/apk/github/nonMinifiedRelease/*.apk
-
-      - name: Create Release
-        if: steps.check.outputs.EXISTS == 'false'
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.date.outputs.DATE }}
-          name: AerialViews Extended v${{ steps.date.outputs.DATE }}
-          files: app/build/outputs/apk/github/nonMinifiedRelease/*.apk
-          generate_release_notes: true
-          overwrite_files: true
+          tag_name: v${{ github.event.inputs.version }}
+          name: AerialViews Extended v${{ github.event.inputs.version }}
+          body: |
+            ## What's changed
+            ${{ github.event.inputs.release_notes }}
+
+            ## Installation
+            1. Download the APK below
+            2. Enable "Install unknown apps" on your Android TV
+            3. Install via file manager or ADB:
+               `adb install -r AerialViews-Extended-v${{ github.event.inputs.version }}.apk`
+
+            ## Notes
+            - Sideload only — not for Google Play Store
+            - If YouTube stops working, check NewPipe Extractor releases
+            - Source code: github.com/naveeneppalally/AerialViews-Extended
+
+            **Full source:** https://github.com/naveeneppalally/AerialViews-Extended
+          files: dist/*.apk
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

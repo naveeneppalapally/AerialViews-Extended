@@ -128,6 +128,15 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             viewModel.forceRefresh()
             true
         }
+
+        CATEGORY_PREFERENCE_KEYS.forEach { key ->
+            findPreference<SwitchPreference>(key)?.setOnPreferenceChangeListener { _, _ ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    ToastHelper.show(requireContext(), R.string.youtube_categories_changed_notice, Toast.LENGTH_SHORT)
+                }
+                true
+            }
+        }
     }
 
     private fun configureQualityPreference() {
@@ -223,4 +232,18 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
     private fun isCountPending(): Boolean =
         YouTubeVideoPrefs.count.toIntOrNull()?.let { it < 0 } ?: true
+
+    companion object {
+        private val CATEGORY_PREFERENCE_KEYS =
+            listOf(
+                "yt_category_nature",
+                "yt_category_animals",
+                "yt_category_drone",
+                "yt_category_ocean",
+                "yt_category_space",
+                "yt_category_cities",
+                "yt_category_weather",
+                "yt_category_winter",
+            )
+    }
 }

@@ -1,195 +1,54 @@
 package com.neilturner.aerialviews.providers.youtube
 
 import java.util.Calendar
+import java.util.ArrayDeque
 import kotlin.random.Random
 import timber.log.Timber
 
 object QueryFormulaEngine {
     private const val TAG = "YouTubeQueries"
-    private const val NATURE_QUERY_RATIO = 0.45f
-    private const val SCENIC_QUERY_RATIO = 0.20f
-    private const val MIN_NATURE_QUERY_COUNT = 12
-    private const val MIN_SCENIC_QUERY_COUNT = 6
 
     enum class QueryCategory {
         AERIAL,
         NATURE,
     }
 
-    private val qualifiers =
-        listOf(
-            "4K",
-            "8K",
-            "4K HDR",
-            "cinematic 4K",
-            "ultra HD",
-        )
+    enum class ContentCategory(
+        val key: String,
+        val queryCategory: QueryCategory,
+    ) {
+        NATURE("nature", QueryCategory.NATURE),
+        ANIMALS("animals", QueryCategory.NATURE),
+        DRONE("drone", QueryCategory.AERIAL),
+        CITIES("cities", QueryCategory.NATURE),
+        SPACE("space", QueryCategory.NATURE),
+        OCEAN("ocean", QueryCategory.NATURE),
+        WEATHER("weather", QueryCategory.NATURE),
+        WINTER("winter", QueryCategory.NATURE),
+    }
 
-    private val shotTypes =
-        listOf(
-            "aerial drone",
-            "drone footage",
-            "aerial timelapse",
-            "aerial flyover",
-            "drone flythrough",
-            "bird's eye view",
-            "low altitude drone",
-            "hyperlapse aerial",
-        )
-
-    private val subjects =
-        listOf(
-            "waterfall",
-            "ocean waves",
-            "river canyon",
-            "coral reef",
-            "glacier lake",
-            "hot spring",
-            "sea cliffs",
-            "mangrove",
-            "fjord",
-            "frozen lake",
-            "delta river",
-            "lagoon",
-            "mountain range",
-            "volcanic crater",
-            "sand dunes",
-            "canyon",
-            "valley",
-            "plateau",
-            "salt flats",
-            "cave",
-            "lava field",
-            "limestone karst",
-            "rice terraces",
-            "forest",
-            "rainforest",
-            "bamboo forest",
-            "cherry blossom",
-            "lavender fields",
-            "tulip fields",
-            "autumn foliage",
-            "wildfire smoke",
-            "lightning storm",
-            "fog valley",
-            "savanna wildlife",
-            "arctic tundra",
-            "mangrove swamp",
-            "city skyline",
-            "ancient ruins",
-            "coastal village",
-            "mountain monastery",
-            "floating market",
-            "rooftop garden",
-        )
-
-    private val locations =
-        listOf(
-            "Iceland",
-            "Norway",
-            "Scotland",
-            "Faroe Islands",
-            "Dolomites Italy",
-            "Swiss Alps",
-            "Amalfi Coast Italy",
-            "Santorini Greece",
-            "Lofoten Norway",
-            "Azores Portugal",
-            "Plitvice Croatia",
-            "Transylvania Romania",
-            "Cappadocia Turkey",
-            "Meteora Greece",
-            "Bali Indonesia",
-            "Ha Long Bay Vietnam",
-            "Zhangjiajie China",
-            "Guilin China",
-            "Kyoto Japan",
-            "Hokkaido Japan",
-            "Raja Ampat Indonesia",
-            "Coron Philippines",
-            "Kerala India",
-            "Ladakh India",
-            "Bhutan Himalayas",
-            "Mekong Delta Vietnam",
-            "Patagonia Chile",
-            "Amazon rainforest",
-            "Antelope Canyon Arizona",
-            "Banff Canada",
-            "Alaska wilderness",
-            "Zion Canyon Utah",
-            "Angel Falls Venezuela",
-            "Atacama Desert Chile",
-            "Iguazu Falls Brazil",
-            "Torres del Paine Chile",
-            "Moab Utah",
-            "Big Sur California",
-            "Sahara Desert Morocco",
-            "Serengeti Tanzania",
-            "Victoria Falls Zimbabwe",
-            "Namib Desert Namibia",
-            "Okavango Delta Botswana",
-            "Mount Kilimanjaro",
-            "Wadi Rum Jordan",
-            "Dead Sea",
-            "Great Barrier Reef Australia",
-            "New Zealand fjords",
-            "Milford Sound New Zealand",
-            "Whitsundays Australia",
-            "Tasmania wilderness",
-            "Antarctica",
-            "Svalbard Norway",
-            "Greenland",
-            "Northern Lights Finland",
-            "Arctic Ocean",
-        )
-
-    private val conditions =
-        listOf(
-            "sunrise",
-            "golden hour sunset",
-            "blue hour",
-            "storm clouds",
-            "fog mist",
-            "snow winter",
-            "autumn fall colors",
-            "spring bloom",
-            "night stars",
-            "moonlight",
-            "rain",
-            "crystal clear",
-            "4K no music",
-            "ambient sounds only",
-        )
-
-    private val channels =
-        listOf(
-            "Jakob Owens aerial",
-            "Drone Footage 4K",
-            "Nature Relaxation Films",
-            "4K Relaxation Channel",
-            "Mavic Drone",
-            "JSFILMZ aerial",
-            "Expedia Viewfinder aerial",
-            "LoungeV Films",
-            "FreqFlyer",
-            "Beautiful Destinations aerial",
-        )
-
-    private val seasonalQueries =
-        mapOf(
-            1 to listOf("4K aerial snow winter mountains", "4K arctic frozen landscape"),
-            2 to listOf("4K aerial snow melt river", "4K winter aerial Nordic"),
-            3 to listOf("4K aerial cherry blossom Japan", "4K spring bloom fields aerial"),
-            4 to listOf("4K tulip fields aerial Netherlands", "4K spring waterfall aerial"),
-            5 to listOf("4K aerial wildflower meadow", "4K lavender fields aerial Provence"),
-            6 to listOf("4K aerial summer ocean beach", "4K aerial midnight sun Scandinavia"),
-            7 to listOf("4K aerial tropical island summer", "4K aerial alpine meadow summer"),
-            8 to listOf("4K aerial summer monsoon rainforest", "4K aerial coastal summer"),
-            9 to listOf("4K aerial autumn foliage New England", "4K fall colors aerial canyon"),
-            10 to listOf("4K aerial Halloween fog misty forest", "4K autumn aerial Japan"),
-            11 to listOf("4K aerial late autumn bare forest", "4K aerial first snow mountains"),
-            12 to listOf("4K aerial winter wonderland", "4K aerial northern lights aurora"),
-        )
+    data class CategoryPreferences(
+        val categoryNature: Boolean = true,
+        val categoryAnimals: Boolean = true,
+        val categoryDrone: Boolean = true,
+        val categoryCities: Boolean = false,
+        val categorySpace: Boolean = true,
+        val categoryOcean: Boolean = true,
+        val categoryWeather: Boolean = false,
+        val categoryWinter: Boolean = true,
+    ) {
+        fun isEnabled(category: ContentCategory): Boolean =
+            when (category) {
+                ContentCategory.NATURE -> categoryNature
+                ContentCategory.ANIMALS -> categoryAnimals
+                ContentCategory.DRONE -> categoryDrone
+                ContentCategory.CITIES -> categoryCities
+                ContentCategory.SPACE -> categorySpace
+                ContentCategory.OCEAN -> categoryOcean
+                ContentCategory.WEATHER -> categoryWeather
+                ContentCategory.WINTER -> categoryWinter
+            }
+    }
 
     val aiVideoBlacklist =
         listOf(
@@ -289,87 +148,177 @@ object QueryFormulaEngine {
             "wildlife",
         )
 
-    private fun weeklySeed(): Long {
-        val cal = Calendar.getInstance()
-        return cal.get(Calendar.YEAR).toLong() * 1000 + cal.get(Calendar.WEEK_OF_YEAR)
-    }
+    private val categoryQueries =
+        linkedMapOf(
+            ContentCategory.NATURE to
+                listOf(
+                    "4k nature walk forest ambient",
+                    "4k mountain landscape timelapse",
+                    "4k river valley scenic",
+                    "4k countryside landscape ambient",
+                    "4k waterfall nature",
+                    "4k forest river no talking",
+                    "4k canyon landscape ambient",
+                    "4k national park scenic footage",
+                ),
+            ContentCategory.ANIMALS to
+                listOf(
+                    "4k wildlife documentary africa",
+                    "4k wildlife nature animals",
+                    "4k birds wildlife ambient",
+                    "4k safari wildlife footage",
+                    "4k wildlife national park",
+                    "4k whale documentary ocean",
+                    "4k elephants documentary ambient",
+                    "4k deer forest wildlife footage",
+                ),
+            ContentCategory.DRONE to
+                listOf(
+                    "4k drone aerial landscape",
+                    "4k aerial footage nature",
+                    "4k drone flyover scenic",
+                    "4k aerial nature cinematic",
+                    "4k fpv drone landscape",
+                    "4k drone fjord cinematic",
+                    "4k aerial mountain range no music",
+                    "4k drone coastline cinematic",
+                ),
+            ContentCategory.OCEAN to
+                listOf(
+                    "4k ocean waves ambient",
+                    "4k underwater ocean nature",
+                    "4k beach waves relaxing",
+                    "4k coral reef underwater",
+                    "4k ocean sunset ambient",
+                    "4k underwater fish documentary",
+                    "4k sea cliffs waves ambient",
+                    "4k deep ocean nature film",
+                ),
+            ContentCategory.SPACE to
+                listOf(
+                    "4k space earth timelapse",
+                    "4k aurora borealis timelapse",
+                    "4k milky way night sky timelapse",
+                    "4k earth from space nasa",
+                    "4k northern lights ambient",
+                    "4k iss earth view timelapse",
+                    "4k moonrise night sky timelapse",
+                    "4k galaxy documentary ambient",
+                ),
+            ContentCategory.CITIES to
+                listOf(
+                    "4k city skyline timelapse",
+                    "4k city aerial drone",
+                    "4k architecture timelapse",
+                    "4k city night timelapse",
+                    "4k urban landscape ambient",
+                    "4k downtown skyline no talking",
+                    "4k city sunrise timelapse",
+                ),
+            ContentCategory.WEATHER to
+                listOf(
+                    "4k thunderstorm timelapse",
+                    "4k storm clouds timelapse",
+                    "4k rain nature ambient",
+                    "4k lightning storm timelapse",
+                    "4k cloud timelapse nature",
+                    "4k rain forest storm ambient",
+                    "4k fog valley weather timelapse",
+                ),
+            ContentCategory.WINTER to
+                listOf(
+                    "4k snow landscape ambient",
+                    "4k winter forest snow",
+                    "4k arctic landscape timelapse",
+                    "4k frozen lake winter",
+                    "4k snowfall nature ambient",
+                    "4k glacier winter documentary",
+                    "4k polar landscape no music",
+                    "4k aurora snow landscape",
+                ),
+        )
 
-    private fun dailySeed(): Long {
-        val cal = Calendar.getInstance()
-        return cal.get(Calendar.YEAR).toLong() * 10_000L + cal.get(Calendar.DAY_OF_YEAR)
-    }
-
-    private fun refreshSeed(): Long = System.currentTimeMillis() / (1000L * 60L * 60L * 6L)
-
-    private fun weeklyRng(): Random = Random(weeklySeed())
-
-    private fun dailyRng(): Random = Random(dailySeed())
-
-    private fun refreshRng(): Random = Random(refreshSeed())
-
-    fun generateQueryPool(count: Int = 25): List<String> {
-        val resolvedCount = count.coerceAtLeast(1)
-        val natureCount = (resolvedCount * NATURE_QUERY_RATIO).toInt().coerceAtLeast(MIN_NATURE_QUERY_COUNT).coerceAtMost(resolvedCount)
-        val scenicCount =
-            (resolvedCount * SCENIC_QUERY_RATIO)
-                .toInt()
-                .coerceAtLeast(MIN_SCENIC_QUERY_COUNT)
-                .coerceAtMost((resolvedCount - natureCount).coerceAtLeast(0))
-        val aerialCount = (resolvedCount - natureCount - scenicCount).coerceAtLeast(1)
-
-        val natureQueries = buildNatureQueries(dailyRng(), natureCount)
-        val scenicQueries = buildScenicQueries(weeklyRng(), scenicCount)
-        val aerialQueries = buildAerialQueries(refreshRng(), aerialCount)
-        val finalPool =
-            (natureQueries + scenicQueries + aerialQueries)
-                .distinct()
-                .shuffled(Random(dailySeed() xor refreshSeed() xor weeklySeed()))
-                .take(resolvedCount)
-        Timber.tag(TAG).d("Generated %s YouTube search variants", finalPool.size)
-        return finalPool
-    }
+    fun generateQueryPool(count: Int = 25): List<String> =
+        generateQueryPool(
+            count = count,
+            prefs = CategoryPreferences(),
+            entropySeed = refreshSeed(),
+        )
 
     fun generateQueryPool(
         baseQuery: String,
         count: Int = 25,
         entropySeed: Long = 0L,
+        prefs: CategoryPreferences = CategoryPreferences(),
     ): List<String> {
-        val basePool = generateQueryPool(count = count)
+        val categoryPool = generateQueryPool(count = count, prefs = prefs, entropySeed = entropySeed)
         val normalizedBaseQuery = baseQuery.trim()
         if (normalizedBaseQuery.isBlank()) {
-            return basePool
+            return categoryPool
         }
 
-        val rng = Random(dailySeed() xor refreshSeed() xor entropySeed)
-        return (listOf(normalizedBaseQuery) + basePool)
-            .distinct()
-            .shuffled(rng)
+        return (
+            listOf(normalizedBaseQuery) +
+                categoryPool +
+                listOf("$normalizedBaseQuery 4k", "$normalizedBaseQuery cinematic")
+        ).distinct()
+            .shuffled(Random(entropySeed xor dailySeed() xor refreshSeed()))
             .take(count)
+    }
+
+    fun generateQueryPool(
+        count: Int,
+        prefs: CategoryPreferences,
+        entropySeed: Long = 0L,
+    ): List<String> {
+        val enabledPools =
+            categoryQueries
+                .filterKeys(prefs::isEnabled)
+                .ifEmpty { defaultPools() }
+
+        val selectedQueries =
+            roundRobinQueries(
+                pools = enabledPools.mapValues { (category, queries) ->
+                    queries
+                        .shuffled(seedForCategory(category, entropySeed))
+                        .toCollection(ArrayDeque())
+                },
+                count = count,
+            )
+
+        val finalPool = selectedQueries.ifEmpty { SAFE_FALLBACK_QUERIES.take(count) }
+        Timber.tag(TAG).d("Generated %s YouTube search variants across %s categories", finalPool.size, enabledPools.size)
+        return finalPool
     }
 
     fun generateFallbackQueryPool(
         baseQuery: String,
         count: Int = 12,
         entropySeed: Long = 0L,
+        prefs: CategoryPreferences = CategoryPreferences(),
     ): List<String> {
-        val rng = Random(dailySeed() xor weeklySeed() xor refreshSeed() xor entropySeed xor 0x1F123BB5L)
-        val basePool = generateQueryPool(count = (count * 3).coerceAtLeast(24))
+        val categoryPool =
+            generateQueryPool(
+                count = (count * 2).coerceAtLeast(16),
+                prefs = prefs,
+                entropySeed = entropySeed xor 0x51A8C27L,
+            )
         val normalizedBaseQuery = baseQuery.trim()
 
-        val withVariants =
+        val fallbackQueries =
             if (normalizedBaseQuery.isBlank()) {
-                basePool
+                categoryPool + SAFE_FALLBACK_QUERIES
             } else {
                 listOf(
                     normalizedBaseQuery,
-                    "$normalizedBaseQuery 4K aerial",
-                    "$normalizedBaseQuery cinematic drone footage",
-                ) + basePool
+                    "$normalizedBaseQuery 4k nature",
+                    "$normalizedBaseQuery documentary ambient",
+                ) + categoryPool
             }
 
-        return withVariants
+        return fallbackQueries
             .distinct()
-            .shuffled(rng)
+            .shuffled(Random(entropySeed xor weeklySeed() xor refreshSeed()))
             .take(count)
     }
 
@@ -381,123 +330,77 @@ object QueryFormulaEngine {
         }
 
     fun totalPossibleCombinations(): Long =
-        qualifiers.size.toLong() *
-            shotTypes.size *
-            subjects.size *
-            locations.size *
-            conditions.size
+        categoryQueries.values.sumOf { queries -> queries.size.toLong() }
 
     fun freshnessSeed(baseQuery: String): String =
         "${baseQuery.trim()}|${weeklySeed()}|${dailySeed()}|${refreshSeed()}|${timeBucket()}"
 
-    private fun buildNatureQueries(
-        rng: Random,
-        count: Int,
-    ): List<String> {
-        val generated = linkedSetOf<String>()
-
-        repeat((count * 8).coerceAtLeast(24)) {
-            generated +=
-                buildString {
-                    append(qualifiers.random(rng))
-                    append(" ")
-                    append(subjects.random(rng))
-                    append(" ")
-                    append(locations.random(rng))
-                    if (rng.nextBoolean()) {
-                        append(" ")
-                        append(conditions.random(rng))
-                    }
-                }
-            generated += "${subjects.random(rng)} ${locations.random(rng)} nature 4K"
+    fun categorySignature(prefs: CategoryPreferences): String =
+        ContentCategory.entries.joinToString(separator = ",") { category ->
+            if (prefs.isEnabled(category)) category.key else "-${category.key}"
         }
 
-        return generated.shuffled(rng).take(count)
-    }
+    private fun defaultPools(): Map<ContentCategory, List<String>> =
+        linkedMapOf(
+            ContentCategory.NATURE to categoryQueries.getValue(ContentCategory.NATURE),
+            ContentCategory.OCEAN to categoryQueries.getValue(ContentCategory.OCEAN),
+            ContentCategory.DRONE to categoryQueries.getValue(ContentCategory.DRONE),
+        )
 
-    private fun buildScenicQueries(
-        rng: Random,
+    private fun roundRobinQueries(
+        pools: Map<ContentCategory, ArrayDeque<String>>,
         count: Int,
     ): List<String> {
-        val generated = linkedSetOf<String>()
-        val month = Calendar.getInstance().get(Calendar.MONTH) + 1
+        val selected = mutableListOf<String>()
+        val buckets = pools.toMutableMap()
 
-        seasonalQueries[month]?.let { generated.addAll(it.shuffled(rng)) }
-        generated.addAll(channels.shuffled(rng).take(count.coerceAtMost(3)))
+        while (selected.size < count && buckets.isNotEmpty()) {
+            val exhausted = mutableListOf<ContentCategory>()
 
-        repeat((count * 6).coerceAtLeast(18)) {
-            generated +=
-                buildString {
-                    append(qualifiers.random(rng))
-                    append(" ")
-                    append(subjects.random(rng))
-                    append(" ")
-                    append(locations.random(rng))
-                    append(" ")
-                    append(conditions.random(rng))
+            ContentCategory.entries.forEach { category ->
+                val bucket = buckets[category] ?: return@forEach
+                val query = bucket.pollFirst()
+                if (query != null) {
+                    selected += query
                 }
+                if (bucket.isEmpty()) {
+                    exhausted += category
+                }
+                if (selected.size >= count) {
+                    return@forEach
+                }
+            }
+
+            exhausted.forEach(buckets::remove)
         }
 
-        return generated.shuffled(rng).take(count)
+        return selected.distinct().take(count)
     }
 
-    private fun buildAerialQueries(
-        rng: Random,
-        count: Int,
-    ): List<String> {
-        val generated = linkedSetOf<String>()
+    private fun seedForCategory(
+        category: ContentCategory,
+        entropySeed: Long,
+    ): Random =
+        when (category) {
+            ContentCategory.DRONE -> Random(refreshSeed() xor entropySeed xor category.ordinal.toLong())
+            ContentCategory.CITIES,
+            ContentCategory.SPACE,
+            -> Random(weeklySeed() xor entropySeed xor category.ordinal.toLong())
 
-        repeat((count * 10).coerceAtLeast(32)) {
-            generated +=
-                buildString {
-                    append(qualifiers.random(rng))
-                    append(" ")
-                    append(shotTypes.random(rng))
-                    append(" ")
-                    append(subjects.random(rng))
-                    append(" ")
-                    append(locations.random(rng))
-                    if (rng.nextBoolean()) {
-                        append(" ")
-                        append(conditions.random(rng))
-                    }
-                }
+            else -> Random(dailySeed() xor entropySeed xor category.ordinal.toLong())
         }
 
-        generated.addAll(getTimeOfDayQueries(rng))
-        return generated.shuffled(rng).take(count)
+    private fun weeklySeed(): Long {
+        val calendar = Calendar.getInstance()
+        return calendar.get(Calendar.YEAR).toLong() * 1000 + calendar.get(Calendar.WEEK_OF_YEAR)
     }
 
-    private fun getTimeOfDayQueries(rng: Random): List<String> =
-        when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
-            in 5..9 ->
-                listOf(
-                    "4K aerial sunrise misty valley",
-                    "4K morning fog forest aerial",
-                    "4K sunrise golden hour mountains aerial",
-                )
+    private fun dailySeed(): Long {
+        val calendar = Calendar.getInstance()
+        return calendar.get(Calendar.YEAR).toLong() * 10_000L + calendar.get(Calendar.DAY_OF_YEAR)
+    }
 
-            in 10..16 ->
-                listOf(
-                    "4K aerial crystal clear ocean midday",
-                    "4K sunny aerial tropical island",
-                    "4K aerial clear sky mountains",
-                )
-
-            in 17..20 ->
-                listOf(
-                    "4K aerial golden hour sunset coast",
-                    "4K sunset timelapse city aerial",
-                    "4K dusk aerial ocean sunset",
-                )
-
-            else ->
-                listOf(
-                    "4K aerial city lights night",
-                    "4K night sky milky way timelapse aerial",
-                    "4K aurora borealis aerial time lapse",
-                )
-        }.shuffled(rng)
+    private fun refreshSeed(): Long = System.currentTimeMillis() / (1000L * 60L * 60L * 6L)
 
     private fun timeBucket(): String =
         when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
@@ -507,9 +410,16 @@ object QueryFormulaEngine {
             else -> "night"
         }
 
+    private val SAFE_FALLBACK_QUERIES =
+        listOf(
+            "4k nature ambient",
+            "4k landscape timelapse",
+            "4k scenic nature",
+        )
+
     private val AERIAL_QUERY_REGEX =
         Regex(
-            "(aerial|drone|bird's eye|flyover|flythrough|hyperlapse)",
+            "(aerial|drone|flyover|flythrough|fpv|bird's eye)",
             RegexOption.IGNORE_CASE,
         )
 }

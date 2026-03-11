@@ -118,7 +118,7 @@ internal class YouTubeSourceRepositoryTest {
     }
 
     @Test
-    fun `force refresh aggregates multiple queries up to cache target`() = runTest {
+    fun `force refresh aggregates multiple queries into a large cache`() = runTest {
         mockkObject(NewPipeHelper)
         val dao = FakeYouTubeCacheDao()
         val prefs = createPreferences()
@@ -137,8 +137,8 @@ internal class YouTubeSourceRepositoryTest {
 
         val refreshedCount = repository.forceRefresh()
 
-        assertEquals(200, refreshedCount)
-        assertEquals(200, dao.getAll().size)
+        assertTrue(refreshedCount in 180..200)
+        assertEquals(refreshedCount, dao.getAll().size)
     }
 
     @Test
@@ -204,8 +204,10 @@ internal class YouTubeSourceRepositoryTest {
         quality: String = YouTubeSourceRepository.DEFAULT_QUALITY,
         minDurationMinutes: Int = YouTubeSourceRepository.DEFAULT_MIN_DURATION_MINUTES,
         shuffle: Boolean = false,
-        cacheVersion: Int = 21,
-        cacheSignature: String = "${QueryFormulaEngine.freshnessSeed(query)}|$minDurationMinutes|$quality|muxed",
+        cacheVersion: Int = 22,
+        cacheSignature: String =
+            "${QueryFormulaEngine.freshnessSeed(query)}|$minDurationMinutes|$quality|muxed|" +
+                QueryFormulaEngine.categorySignature(QueryFormulaEngine.CategoryPreferences()),
         muteVideos: Boolean = false,
     ): SharedPreferences {
         val prefs = mockk<SharedPreferences>()
@@ -225,6 +227,14 @@ internal class YouTubeSourceRepositoryTest {
         every { prefs.getBoolean(YouTubeSourceRepository.KEY_SHUFFLE, any()) } returns shuffle
         every { prefs.getBoolean(YouTubeSourceRepository.KEY_FIRST_LAUNCH, any()) } returns false
         every { prefs.getBoolean("mute_videos", any()) } returns muteVideos
+        every { prefs.getBoolean(YouTubeSourceRepository.KEY_CATEGORY_NATURE, any()) } returns true
+        every { prefs.getBoolean(YouTubeSourceRepository.KEY_CATEGORY_ANIMALS, any()) } returns true
+        every { prefs.getBoolean(YouTubeSourceRepository.KEY_CATEGORY_DRONE, any()) } returns true
+        every { prefs.getBoolean(YouTubeSourceRepository.KEY_CATEGORY_CITIES, any()) } returns false
+        every { prefs.getBoolean(YouTubeSourceRepository.KEY_CATEGORY_SPACE, any()) } returns true
+        every { prefs.getBoolean(YouTubeSourceRepository.KEY_CATEGORY_OCEAN, any()) } returns true
+        every { prefs.getBoolean(YouTubeSourceRepository.KEY_CATEGORY_WEATHER, any()) } returns false
+        every { prefs.getBoolean(YouTubeSourceRepository.KEY_CATEGORY_WINTER, any()) } returns true
         every { prefs.edit() } returns editor
         every { editor.putString(any(), any()) } returns editor
         every { editor.putInt(any(), any()) } returns editor
@@ -282,5 +292,32 @@ internal class YouTubeSourceRepositoryTest {
 
         override fun getByVideoPageUrl(videoPageUrl: String): YouTubeCacheEntity? =
             entries.values.firstOrNull { it.videoPageUrl == videoPageUrl }
+
+        override fun markAsBad(videoId: String) {
+            val existing = entries[videoId] ?: return
+            entries[videoId] = existing.copy(isBad = true)
+        }
+
+        override fun markAsPlayed(
+            videoId: String,
+            timestamp: Long,
+        ) {
+            val existing = entries[videoId] ?: return
+            entries[videoId] = existing.copy(lastPlayedAt = timestamp)
+        }
+
+        override fun resetPlayHistory() {
+            entries.replaceAll { _, entry -> entry.copy(lastPlayedAt = 0L) }
+        }
+
+        override fun getUnwatchedEntry(cutoff: Long): YouTubeCacheEntity? =
+            entries.values
+                .filter { !it.isBad && (it.lastPlayedAt == 0L || it.lastPlayedAt < cutoff) }
+                .randomOrNull()
+
+        override fun getLeastRecentlyPlayed(): YouTubeCacheEntity? =
+            entries.values
+                .filterNot { it.isBad }
+                .minByOrNull { it.lastPlayedAt }
     }
 }

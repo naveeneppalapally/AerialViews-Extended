@@ -14,4 +14,6 @@ data class YouTubeCacheEntity(
     val streamUrlExpiresAt: Long,
     val searchCachedAt: Long,
     val searchQuery: String? = null,
+    val isBad: Boolean = false,
+    val lastPlayedAt: Long = 0L,
 )

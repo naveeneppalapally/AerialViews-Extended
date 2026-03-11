@@ -16,4 +16,12 @@ object YouTubeVideoPrefs : KotprefModel() {
     var mixWeight by stringPref(YouTubeSourceRepository.DEFAULT_MIX_WEIGHT, YouTubeSourceRepository.KEY_MIX_WEIGHT)
     var shuffle by booleanPref(YouTubeSourceRepository.DEFAULT_SHUFFLE, YouTubeSourceRepository.KEY_SHUFFLE)
     var count by stringPref("-1", YouTubeSourceRepository.KEY_COUNT)
+    var categoryNature by booleanPref(true, "yt_category_nature")
+    var categoryAnimals by booleanPref(true, "yt_category_animals")
+    var categoryDrone by booleanPref(true, "yt_category_drone")
+    var categoryCities by booleanPref(false, "yt_category_cities")
+    var categorySpace by booleanPref(true, "yt_category_space")
+    var categoryOcean by booleanPref(true, "yt_category_ocean")
+    var categoryWeather by booleanPref(false, "yt_category_weather")
+    var categoryWinter by booleanPref(true, "yt_category_winter")
 }

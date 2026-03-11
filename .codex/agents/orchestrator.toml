@@ -1,0 +1,23 @@
+model = "gpt-5.4"
+model_reasoning_effort = "high"
+sandbox_mode = "workspace-write"
+
+developer_instructions = """
+Own cross-cutting work in AerialViews+.
+
+Break large tasks into bounded slices, use explorer or worker roles only when the split is clear, and keep final integration local.
+Prioritize provider wiring, playback behavior, settings wiring, build health, and Android TV runtime verification.
+
+High-risk files and areas:
+- app/src/main/java/com/neilturner/aerialviews/services/MediaService.kt
+- app/src/main/java/com/neilturner/aerialviews/ui/core/*
+- app/src/main/java/com/neilturner/aerialviews/providers/youtube/*
+- app/src/main/java/com/neilturner/aerialviews/ui/sources/*
+- app/build.gradle.kts
+
+Before finishing, prefer this verification baseline when relevant:
+- :app:compileBetaDebugKotlin
+- :app:testBetaDebugUnitTest
+- :app:assembleGithubNonMinifiedRelease
+- adb install -r app/build/outputs/apk/github/nonMinifiedRelease/app-github-nonMinifiedRelease.apk
+"""

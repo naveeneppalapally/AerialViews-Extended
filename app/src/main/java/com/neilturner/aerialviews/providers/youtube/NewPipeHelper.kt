@@ -68,6 +68,7 @@ object NewPipeHelper {
     suspend fun searchVideos(
         query: String,
         minDurationSeconds: Int = 600,
+        category: QueryFormulaEngine.ContentCategory? = null,
     ): List<StreamInfoItem> =
         withContext(Dispatchers.IO) {
             init()
@@ -76,7 +77,7 @@ object NewPipeHelper {
                 val requiredMinDurationSeconds = maxOf(minDurationSeconds, MIN_SEARCH_DURATION_SECONDS)
                 val searchInfo = loadSearchInfo(query)
                 val baseCandidates = buildSearchCandidates(searchInfo, requiredMinDurationSeconds)
-                selectSearchResults(query, baseCandidates)
+                selectSearchResults(query, category, baseCandidates)
             } catch (exception: Exception) {
                 Timber.tag(TAG).w(exception, "Failed to search YouTube for \"%s\"", query)
                 throw YouTubeExtractionException(
@@ -149,29 +150,41 @@ object NewPipeHelper {
 
     private fun selectSearchResults(
         query: String,
+        category: QueryFormulaEngine.ContentCategory?,
         baseCandidates: List<StreamInfoItem>,
     ): List<StreamInfoItem> {
         val queryLower = query.lowercase(Locale.US)
-        val queryMatchedCandidates =
+        val categoryMatchedCandidates =
             baseCandidates.filter { candidate ->
-                matchesQueryIntent(
-                    queryLower = queryLower,
-                    titleLower = candidate.getName().lowercase(Locale.US),
+                QueryFormulaEngine.matchesCandidateCategory(
+                    title = candidate.getName(),
+                    uploader = candidate.getUploaderName().orEmpty(),
+                    category = category,
                 )
             }.ifEnoughOrElse(MIN_QUERY_MATCH_RESULTS) { baseCandidates }
 
-        val preferredCandidates =
-            queryMatchedCandidates.filter { candidate ->
-                hasPreferredContentSignal(candidate.getName().lowercase(Locale.US))
-            }
+        val queryMatchedCandidates =
+            categoryMatchedCandidates.filter { candidate ->
+                matchesQueryIntent(
+                    queryLower = queryLower,
+                    titleLower = candidate.getName().lowercase(Locale.US),
+                    category = category,
+                )
+            }.ifEnoughOrElse(MIN_QUERY_MATCH_RESULTS) { categoryMatchedCandidates }
 
-        return preferredCandidates
-            .ifEnoughOrElse(MIN_PREFERRED_RESULTS_PER_QUERY) { queryMatchedCandidates }
+        return queryMatchedCandidates
             .asSequence()
             .distinctBy { extractVideoId(it.getUrl()) ?: it.getUrl() }
             .distinctBy {
                 val fallbackKey = extractVideoId(it.getUrl()) ?: it.getUrl()
                 normalizeTitleFingerprint(it.getName()).ifBlank { fallbackKey }
+            }
+            .sortedByDescending { candidate ->
+                QueryFormulaEngine.categoryMatchScore(
+                    title = candidate.getName(),
+                    uploader = candidate.getUploaderName().orEmpty(),
+                    category = category,
+                ) + preferredContentScore(candidate.getName().lowercase(Locale.US))
             }
             .take(MAX_RESULTS_PER_QUERY)
             .toList()
@@ -226,8 +239,6 @@ object NewPipeHelper {
         preferVideoOnly: Boolean,
     ): String? {
         val normalizedPreference = preferredQuality.trim().lowercase()
-        val preferredHeight = qualityToHeight(normalizedPreference)
-        val minimumAcceptableHeight = minimumAcceptableHeight(normalizedPreference)
         val playableProgressiveStreams =
             progressiveStreams.filter { !it.isVideoOnly() && it.isUrl() && it.getContent().isNotBlank() }
         val playableVideoOnlyStreams =
@@ -238,62 +249,53 @@ object NewPipeHelper {
         val primaryStreams = if (preferVideoOnly) playableVideoOnlyStreams else playableProgressiveStreams
         val secondaryStreams = if (preferVideoOnly) playableProgressiveStreams else playableVideoOnlyStreams
 
-        return selectStreamContent(primaryStreams, preferredHeight, minimumAcceptableHeight)
-            ?: selectStreamContent(secondaryStreams, preferredHeight, minimumAcceptableHeight)
+        return selectStreamContent(primaryStreams, normalizedPreference)
+            ?: selectStreamContent(secondaryStreams, normalizedPreference)
             ?: playableDashUrl
             ?: playableHlsUrl
-            ?: selectStreamContent(primaryStreams + secondaryStreams, preferredHeight, null)
+            ?: selectStreamContent(primaryStreams + secondaryStreams, normalizedPreference)
     }
 
     private fun selectStreamContent(
         streams: List<VideoStream>,
-        preferredHeight: Int?,
-        minimumAcceptableHeight: Int?,
+        preferredQuality: String,
     ): String? =
-        selectBestVideoStream(streams, preferredHeight, minimumAcceptableHeight)?.let { stream ->
+        selectBestVideoStream(streams, preferredQuality)?.let { stream ->
             logSelectedStream(stream)
             stream.getContent()
         }
 
     private fun selectBestVideoStream(
         streams: List<VideoStream>,
-        preferredHeight: Int?,
-        minimumAcceptableHeight: Int?,
+        preferredQuality: String,
     ): VideoStream? {
-        val filteredStreams =
+        val candidates =
             streams
                 .filterNot { it.getItag() in REJECTED_LOW_QUALITY_ITAGS }
-                .filter { minimumAcceptableHeight == null || streamHeight(it) >= minimumAcceptableHeight }
-        if (filteredStreams.isEmpty()) {
-            return null
+                .filter { streamHeight(it) > 0 }
+        if (candidates.isEmpty()) {
+            return streams.firstOrNull()
         }
 
-        val bitrateCap = bitrateCapForHeight(preferredHeight)
-        val memoryFriendlyStreams =
-            if (bitrateCap == null) {
-                filteredStreams
-            } else {
-                filteredStreams.filter { it.getBitrate() <= bitrateCap }.ifEmpty { filteredStreams }
+        val preferredHeight = qualityToHeight(preferredQuality)
+        if (preferredHeight != null) {
+            val exactMatch = selectBestStreamAtResolution(candidates, preferredHeight)
+            if (exactMatch != null) {
+                return exactMatch
             }
-
-        val rankedStreams = memoryFriendlyStreams.sortedWith(streamComparator(preferredHeight))
-        return rankedStreams.firstOrNull()
-    }
-
-    private fun minimumAcceptableHeight(quality: String): Int? =
-        when (quality) {
-            "2160p",
-            "4k",
-            -> 1080
-
-            "1080p",
-            "720p",
-            "best",
-            "best available",
-            -> 720
-
-            else -> null
         }
+
+        RESOLUTION_PRIORITY.forEach { resolution ->
+            selectBestStreamAtResolution(candidates, resolution)?.let { return it }
+        }
+
+        Timber.tag(TAG).w("No preferred YouTube stream quality found, using best available fallback")
+        return candidates.maxWithOrNull(
+            compareByDescending<VideoStream> { streamHeight(it) }
+                .thenBy { codecPriorityIndex(it) }
+                .thenByDescending { it.getBitrate() },
+        )
+    }
 
     private fun qualityToHeight(quality: String): Int? =
         when (quality) {
@@ -307,6 +309,27 @@ object NewPipeHelper {
             -> null
             else -> null
         }
+
+    private fun selectBestStreamAtResolution(
+        streams: List<VideoStream>,
+        resolution: Int,
+    ): VideoStream? {
+        val atResolution = streams.filter { streamHeight(it) == resolution }
+        if (atResolution.isEmpty()) {
+            return null
+        }
+
+        CODEC_PRIORITY.forEach { codec ->
+            atResolution
+                .filter { stream ->
+                    stream.getCodec().orEmpty().lowercase(Locale.US).contains(codec)
+                }.maxByOrNull { stream ->
+                    stream.getBitrate()
+                }?.let { return it }
+        }
+
+        return atResolution.maxByOrNull { it.getBitrate() }
+    }
 
     private fun streamHeight(stream: VideoStream): Int {
         if (stream.getHeight() > 0) {
@@ -331,31 +354,9 @@ object NewPipeHelper {
             ?: 0
     }
 
-    private fun streamComparator(preferredHeight: Int?): Comparator<VideoStream> =
-        compareBy<VideoStream> { streamScore(it, preferredHeight) }
-            .thenByDescending { it.getBitrate() }
-            .thenByDescending { streamHeight(it) }
-
-    private fun streamScore(
-        stream: VideoStream,
-        preferredHeight: Int?,
-    ): Int =
-        heightPenalty(stream, preferredHeight) + codecPenalty(stream)
-
-    private fun heightPenalty(
-        stream: VideoStream,
-        preferredHeight: Int?,
-    ): Int {
-        if (preferredHeight == null) {
-            return 0
-        }
-
-        val height = streamHeight(stream)
-        return if (height > preferredHeight) {
-            1_000 + (height - preferredHeight) * 2
-        } else {
-            preferredHeight - height
-        }
+    private fun codecPriorityIndex(stream: VideoStream): Int {
+        val codec = stream.getCodec().orEmpty().lowercase(Locale.US)
+        return CODEC_PRIORITY.indexOfFirst(codec::contains).takeIf { it >= 0 } ?: CODEC_PRIORITY.size
     }
 
     private fun codecPenalty(stream: VideoStream): Int {
@@ -386,15 +387,6 @@ object NewPipeHelper {
                 }
         }
     }
-
-    private fun bitrateCapForHeight(preferredHeight: Int?): Int? =
-        when {
-            preferredHeight == null -> 20_000_000
-            preferredHeight >= 2160 -> 22_000_000
-            preferredHeight >= 1080 -> 10_000_000
-            preferredHeight >= 720 -> 6_500_000
-            else -> 4_500_000
-        }
 
     private fun logSelectedStream(stream: VideoStream) {
         Timber.tag(TAG).d(
@@ -440,15 +432,18 @@ object NewPipeHelper {
     private fun matchesQueryIntent(
         queryLower: String,
         titleLower: String,
+        category: QueryFormulaEngine.ContentCategory?,
     ): Boolean {
         val queryTokens = significantQueryTokens(queryLower)
         val matchedTokens = queryTokens.count { token -> titleLower.contains(token) }
         val queryIsAerial = AERIAL_QUERY_REGEX.containsMatchIn(queryLower)
         val titleIsAerial = AERIAL_TITLE_REGEX.containsMatchIn(titleLower)
+        val requiredTokenMatches = if (category == null) 2 else 1
 
         return when {
-            queryIsAerial -> titleIsAerial || matchedTokens >= 2
-            else -> matchedTokens >= 2 || hasPreferredContentSignal(titleLower)
+            queryTokens.isEmpty() -> true
+            queryIsAerial -> titleIsAerial || matchedTokens >= requiredTokenMatches
+            else -> matchedTokens >= requiredTokenMatches
         }
     }
 
@@ -466,6 +461,9 @@ object NewPipeHelper {
         PREFERRED_CONTENT_SIGNALS.any { signal ->
             titleLower.contains(signal)
         }
+
+    private fun preferredContentScore(titleLower: String): Int =
+        PREFERRED_CONTENT_SIGNALS.count(titleLower::contains)
 
     private fun isLikelySyntheticWallpaperTitle(titleLower: String): Boolean =
         SYNTHETIC_WALLPAPER_BLACKLIST.any { token ->
@@ -665,8 +663,8 @@ object NewPipeHelper {
     private val SearchInfo.relatedItems: List<InfoItem>
         get() = getRelatedItems()
 
-    private const val MIN_SEARCH_DURATION_SECONDS = 480
-    private const val MAX_RESULTS_PER_QUERY = 20
+    private const val MIN_SEARCH_DURATION_SECONDS = 240
+    private const val MAX_RESULTS_PER_QUERY = 24
     private const val MIN_QUERY_MATCH_RESULTS = 4
     private const val MIN_PREFERRED_RESULTS_PER_QUERY = 6
     private val AI_WORD_REGEX = Regex("\\bai\\b", RegexOption.IGNORE_CASE)
@@ -783,7 +781,9 @@ object NewPipeHelper {
             "artificial",
         )
     private val SUSPICIOUS_EXACT_DURATIONS = setOf(3600, 7200, 10800, 14400, 21600)
-    private val REJECTED_LOW_QUALITY_ITAGS = setOf(18, 133, 160)
+    private val RESOLUTION_PRIORITY = listOf(2160, 1440, 1080, 720, 480)
+    private val CODEC_PRIORITY = listOf("av01", "vp9", "vp09", "avc1", "avc")
+    private val REJECTED_LOW_QUALITY_ITAGS = setOf(18, 133, 134, 135, 160)
     private val RESOLUTION_REGEX = Regex("(\\d{3,4})p")
     private val RESOLUTION_PAIR_REGEX = Regex("(\\d{3,4})\\s*[xX]\\s*(\\d{3,4})")
     private val decoderSupportCache = mutableMapOf<DecoderSupportKey, DecoderSupport>()

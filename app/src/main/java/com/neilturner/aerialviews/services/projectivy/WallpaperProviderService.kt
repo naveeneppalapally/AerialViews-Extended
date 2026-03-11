@@ -27,6 +27,12 @@ import tv.projectivy.plugin.wallpaperprovider.api.WallpaperDisplayMode
 import tv.projectivy.plugin.wallpaperprovider.api.WallpaperType
 
 class WallpaperProviderService : Service() {
+    @Volatile
+    private var cachedWallpapers: List<Wallpaper> = emptyList()
+
+    @Volatile
+    private var cachedWallpapersAt: Long = 0L
+
     override fun onBind(intent: Intent): IBinder = binder
 
     private val binder =
@@ -34,45 +40,15 @@ class WallpaperProviderService : Service() {
             override fun getWallpapers(event: Event?): List<Wallpaper> =
                 when (event) {
                     is Event.TimeElapsed -> {
-                        // Get enabled providers based on shareProjectivyVideos preference
-                        val enabledProviders = getEnabledProviders()
-                        Timber.i("Enabled providers: ${enabledProviders.size}")
-
-                        // Fetch media from all enabled providers
-                        val aerialMediaList =
-                            runBlocking {
-                                enabledProviders
-                                    .filter { it.enabled }
-                                    .flatMap { provider ->
-                                        try {
-                                            provider.fetchMedia()
-                                        } catch (ex: Exception) {
-                                            emptyList()
-                                        }
-                                    }
-                            }.let { mediaList ->
-                                Timber.log(2, "Wallpaper media items: ${mediaList.size}")
-                                if (ProjectivyPrefs.shuffleVideos) {
-                                    mediaList.shuffled()
-                                } else {
-                                    mediaList
-                                }
+                        cachedWallpapers
+                            .takeIf { it.isNotEmpty() && System.currentTimeMillis() - cachedWallpapersAt < WALLPAPER_REUSE_WINDOW_MS }
+                            ?.also {
+                                Timber.i("Reusing cached Projectivy wallpapers: %s", it.size)
                             }
-
-                        // Convert AerialMedia objects to Wallpaper objects
-                        aerialMediaList.map { media ->
-                            val wallpaperType =
-                                when (media.type) {
-                                    AerialMediaType.VIDEO -> WallpaperType.VIDEO
-                                    AerialMediaType.IMAGE -> WallpaperType.IMAGE
-                                }
-                            Wallpaper(
-                                media.uri.toString(),
-                                wallpaperType,
-                                WallpaperDisplayMode.DEFAULT,
-                                title = media.metadata.shortDescription,
-                            )
-                        }
+                            ?: buildWallpapers().also { wallpapers ->
+                                cachedWallpapers = wallpapers
+                                cachedWallpapersAt = System.currentTimeMillis()
+                            }
                     }
 
                     else -> {
@@ -100,5 +76,46 @@ class WallpaperProviderService : Service() {
 
     private companion object {
         const val PROJECTIVY_YOUTUBE_PROVIDER = "youtube"
+        const val WALLPAPER_REUSE_WINDOW_MS = 30_000L
+    }
+
+    private fun buildWallpapers(): List<Wallpaper> {
+        val enabledProviders = getEnabledProviders()
+        Timber.i("Enabled providers: %s", enabledProviders.size)
+
+        val aerialMediaList =
+            runBlocking {
+                enabledProviders
+                    .filter { it.enabled }
+                    .flatMap { provider ->
+                        try {
+                            provider.fetchMedia()
+                        } catch (exception: Exception) {
+                            Timber.w(exception, "Projectivy provider failed: %s", provider.javaClass.simpleName)
+                            emptyList()
+                        }
+                    }
+            }.let { mediaList ->
+                Timber.log(2, "Wallpaper media items: %s", mediaList.size)
+                if (ProjectivyPrefs.shuffleVideos) {
+                    mediaList.shuffled()
+                } else {
+                    mediaList
+                }
+            }
+
+        return aerialMediaList.map { media ->
+            val wallpaperType =
+                when (media.type) {
+                    AerialMediaType.VIDEO -> WallpaperType.VIDEO
+                    AerialMediaType.IMAGE -> WallpaperType.IMAGE
+                }
+            Wallpaper(
+                media.uri.toString(),
+                wallpaperType,
+                WallpaperDisplayMode.DEFAULT,
+                title = media.metadata.shortDescription,
+            )
+        }
     }
 }

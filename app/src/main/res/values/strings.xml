@@ -262,8 +262,11 @@
 
     <!-- Main / Video Sources / Samba videos -->
     <string name="samba_videos_enabled_title">Use SMB/Samba share media</string>
+    <string name="samba_videos2_enabled_title">Use secondary SMB/Samba credentials</string>
     <string name="samba_media_type_title">Choose media type</string>
     <string name="samba_videos_test_connection">Test connection settings</string>
+    <string name="samba_videos2_options_title">Second Account</string>
+    <string name="samba_videos2_options_summary">Configure secondary SMB/Samba credentials</string>
 
     <string name="samba_videos_hostname_title">Hostname</string>
     <string name="samba_videos_hostname_summary">IP address of the server</string>
@@ -316,8 +319,11 @@
 
     <!-- Main / Video Sources / WebDAV videos -->
     <string name="webdav_media_enabled_title">Use WebDAV share media</string>
+    <string name="webdav_media2_enabled_title">Use secondary WebDAV credentials</string>
     <string name="webdav_media_type_title">Choose media type</string>
     <string name="webdav_media_test_connection">Test connection settings</string>
+    <string name="webdav_media2_options_title">Second Account</string>
+    <string name="webdav_media2_options_summary">Configure secondary WebDAV credentials</string>
 
     <string name="webdav_media_scheme_title">Scheme</string>
     <string name="webdav_media_hostname_title">Hostname &amp; port</string>
@@ -581,8 +587,8 @@
     <string name="appearance_brightness_title">Brightness / Dimness</string>
     <string name="appearance_brightness_summary">Control the overall brightness of videos &amp; photos</string>
 
-    <string name="appearance_scaling_title">Scaling / Cropping</string>
-    <string name="appearance_scaling_summary">Change scaling and cropping options for videos &amp; photos</string>
+    <string name="appearance_scaling_title">Scaling, Cropping and Backgrounds</string>
+    <string name="appearance_scaling_summary">Change scaling, cropping, background colour and blur options</string>
 
     <string name="appearance_animations_title">Animations</string>
     <string name="appearance_animations_summary">Configure the animations used for overlays and between videos &amp; photos</string>
@@ -616,6 +622,8 @@
     <string name="appearance_gradient_bottom_summary">Display a gradient behind overlays at the bottom of the screen making them easier to see</string>
 
     <!-- Main / Settings / Appearance / Animations -->
+    <string name="appearance_auto_hide_options_title">Auto hide options</string>
+    <string name="appearance_auto_hide_options_summary">Configure when and how overlays are automatically hidden</string>
     <string name="appearance_auto_hide_title">Auto hide overlays</string>
     <string name="appearance_reveal_for_title">Overlay reveal timeout</string>
     <string name="appearance_fade_corners_title">Corners to fade</string>
@@ -767,6 +775,8 @@
 
     <string name="advanced_philips_dolby_vision_fix_title">Use alternate MediaCodec parsing</string>
     <string name="advanced_philips_dolby_vision_fix_summary">Fixes Dolby Vision playback on some older Philips TVs</string>
+    <string name="advanced_use_texture_view_title">Use TextureView for video</string>
+    <string name="advanced_use_texture_view_summary">Use TextureView instead of SurfaceView for video rendering</string>
 
     <string name="advanced_ignore_animation_scale_title">Ignore system animation override</string>
     <string name="advanced_ignore_animation_scale_summary">Ignores Settings > Developer options > Animation duration scale - and uses 1x for animation duration</string>

@@ -1,9 +1,9 @@
 package com.neilturner.aerialviews.utils
 
 import android.graphics.Bitmap
+import androidx.core.graphics.scale
 import coil3.size.Size
 import coil3.transform.Transformation
-import androidx.core.graphics.scale
 import timber.log.Timber
 
 /**
@@ -47,8 +47,17 @@ class BlurTransformation(
 
         Timber.d("BlurTransformation: Using FastBlurCompat")
         FastBlurCompat.applyBlur(workBitmap, radius)
-        
+
+        val outputBitmap =
+            if (workBitmap.width == input.width && workBitmap.height == input.height) {
+                workBitmap
+            } else {
+                val upscaled = workBitmap.scale(input.width, input.height, useBilinearFiltering)
+                workBitmap.recycle()
+                upscaled
+            }
+
         Timber.d("BlurTransformation: Finished transform")
-        return workBitmap
+        return outputBitmap
     }
 }

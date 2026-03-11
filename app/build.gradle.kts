@@ -24,9 +24,9 @@ android {
         applicationId = "com.neilturner.aerialviews"
         minSdk = 23 // Android v6
         targetSdk = 36
-        versionCode = 99
+        versionCode = 102
         versionName = "1.8.2"
-        betaVersion = "-beta9"
+        betaVersion = "-beta12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -39,12 +39,9 @@ android {
         buildConfigField("String", "BUILD_TIME", "\"${System.currentTimeMillis()}\"")
     }
 
-    kotlin {
-        jvmToolchain(21)
-
-        sourceSets.configureEach {
-            languageSettings.languageVersion = "2.3"
-        }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
 
     buildFeatures {
@@ -205,8 +202,8 @@ dependencies {
     debugImplementation(libs.leakcanary)
 
     testImplementation(libs.junit.jupiter.api)
-    testImplementation(libs.coroutines.test)
     testImplementation(libs.mockk)
+    testImplementation(libs.coroutines.test)
     testRuntimeOnly(libs.junit.jupiter.engine)
 
     implementation(libs.profileinstaller)

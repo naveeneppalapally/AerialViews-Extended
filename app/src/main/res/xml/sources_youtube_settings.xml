@@ -119,6 +119,7 @@
                     app:disableDependentsState="false"
                     app:key="yt_quality"
                     app:title="@string/youtube_quality_title"
+                    app:summary="@string/youtube_quality_summary"
                     app:entries="@array/youtube_quality_entries"
                     app:entryValues="@array/youtube_quality_values"
                     app:defaultValue="@string/youtube_quality_default"

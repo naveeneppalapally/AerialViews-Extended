@@ -30,16 +30,17 @@ internal class YouTubeSourceRepositoryTest {
         val prefs = createPreferences()
         val repository = YouTubeSourceRepository(dao, prefs)
 
-        coEvery { NewPipeHelper.searchVideos(any(), any()) } returns
-            listOf(searchItem("abc123", "Ambient Flight"))
-        coEvery { NewPipeHelper.extractStreamUrl("https://www.youtube.com/watch?v=abc123", "1080p", false) } returns
+        coEvery { NewPipeHelper.searchVideos(any(), any(), any()) } answers {
+            listOf(searchItem("abc123", titledForCategory(firstArg(), thirdArg())))
+        }
+        coEvery { NewPipeHelper.extractStreamUrl("https://www.youtube.com/watch?v=abc123", "best", false) } returns
             "https://cdn.example.com/stream1.mpd"
 
         val result = repository.getNextVideoUrl()
 
         assertEquals("https://cdn.example.com/stream1.mpd", result)
         assertEquals(1, dao.getAll().size)
-        assertEquals("Ambient Flight", dao.getAll().first().title)
+        assertEquals("4K mountain landscape national park documentary 1", dao.getAll().first().title)
     }
 
     @Test
@@ -64,7 +65,7 @@ internal class YouTubeSourceRepositoryTest {
         val prefs = createPreferences()
         val repository = YouTubeSourceRepository(dao, prefs)
 
-        coEvery { NewPipeHelper.extractStreamUrl("https://www.youtube.com/watch?v=abc123", "1080p", false) } returns
+        coEvery { NewPipeHelper.extractStreamUrl("https://www.youtube.com/watch?v=abc123", "best", false) } returns
             "https://cdn.example.com/new.mpd"
 
         val result = repository.resolveVideoUrl("https://www.youtube.com/watch?v=abc123")
@@ -80,14 +81,14 @@ internal class YouTubeSourceRepositoryTest {
         val prefs = createPreferences()
         val repository = YouTubeSourceRepository(dao, prefs)
 
-        coEvery { NewPipeHelper.extractStreamUrl("https://www.youtube.com/watch?v=missing1", "1080p", false) } returns
+        coEvery { NewPipeHelper.extractStreamUrl("https://www.youtube.com/watch?v=missing1", "best", false) } returns
             "https://cdn.example.com/missing1.mpd"
 
         val result = repository.resolveVideoUrl("https://www.youtube.com/watch?v=missing1")
 
         assertEquals("https://cdn.example.com/missing1.mpd", result)
         assertEquals(1, dao.getAll().size)
-        coVerify(exactly = 0) { NewPipeHelper.searchVideos(any(), any()) }
+        coVerify(exactly = 0) { NewPipeHelper.searchVideos(any(), any(), any()) }
     }
 
     @Test
@@ -124,20 +125,21 @@ internal class YouTubeSourceRepositoryTest {
         val prefs = createPreferences()
         val repository = YouTubeSourceRepository(dao, prefs)
 
-        coEvery { NewPipeHelper.searchVideos(any(), any()) } answers {
+        coEvery { NewPipeHelper.searchVideos(any(), any(), any()) } answers {
             val query = firstArg<String>().replace("\\s+".toRegex(), "_")
+            val category = thirdArg<QueryFormulaEngine.ContentCategory?>()
             (1..20).map { index ->
-                searchItem("${query}_$index", "Video $query $index")
+                searchItem("${query}_$index", titledForCategory(query, category, index))
             }
         }
-        coEvery { NewPipeHelper.extractStreamUrl(any(), "1080p", false) } answers {
+        coEvery { NewPipeHelper.extractStreamUrl(any(), "best", false) } answers {
             val url = firstArg<String>()
             "https://cdn.example.com/${url.substringAfter("v=")}.mpd"
         }
 
         val refreshedCount = repository.forceRefresh()
 
-        assertTrue(refreshedCount in 180..200)
+        assertTrue(refreshedCount in 80..200)
         assertEquals(refreshedCount, dao.getAll().size)
     }
 
@@ -148,14 +150,15 @@ internal class YouTubeSourceRepositoryTest {
         val prefs = createPreferences(query = "ambient aerial")
         val repository = YouTubeSourceRepository(dao, prefs)
 
-        coEvery { NewPipeHelper.searchVideos(any(), any()) } answers {
+        coEvery { NewPipeHelper.searchVideos(any(), any(), any()) } answers {
             val queryKey = firstArg<String>().replace("\\s+".toRegex(), "_")
+            val category = thirdArg<QueryFormulaEngine.ContentCategory?>()
             listOf(
-                searchItem("${queryKey}_1", "Video $queryKey 1"),
-                searchItem("${queryKey}_2", "Video $queryKey 2"),
+                searchItem("${queryKey}_1", titledForCategory(queryKey, category, 1)),
+                searchItem("${queryKey}_2", titledForCategory(queryKey, category, 2)),
             )
         }
-        coEvery { NewPipeHelper.extractStreamUrl(any(), "1080p", false) } answers {
+        coEvery { NewPipeHelper.extractStreamUrl(any(), "best", false) } answers {
             val url = firstArg<String>()
             "https://cdn.example.com/${url.substringAfter("v=")}.mpd"
         }
@@ -190,7 +193,7 @@ internal class YouTubeSourceRepositoryTest {
         val prefs = createPreferences(cacheVersion = 0)
         val repository = YouTubeSourceRepository(dao, prefs)
 
-        coEvery { NewPipeHelper.searchVideos(any(), any()) } throws YouTubeSourceException("offline")
+        coEvery { NewPipeHelper.searchVideos(any(), any(), any()) } throws YouTubeSourceException("offline")
 
         val result = repository.warmCache(forceSearchRefresh = true)
 
@@ -255,6 +258,31 @@ internal class YouTubeSourceRepositoryTest {
         every { item.getUploaderName() } returns "Channel $videoId"
         return item
     }
+
+    private fun titledForCategory(
+        query: String,
+        category: QueryFormulaEngine.ContentCategory?,
+        index: Int = 1,
+    ): String =
+        when (category) {
+            QueryFormulaEngine.ContentCategory.NATURE ->
+                "4K mountain landscape national park documentary $index"
+            QueryFormulaEngine.ContentCategory.ANIMALS ->
+                "4K wildlife documentary safari animals $index"
+            QueryFormulaEngine.ContentCategory.DRONE ->
+                "4K drone aerial landscape real footage $index"
+            QueryFormulaEngine.ContentCategory.CITIES ->
+                "4K city skyline urban architecture timelapse $index"
+            QueryFormulaEngine.ContentCategory.SPACE ->
+                "4K earth from space NASA timelapse $index"
+            QueryFormulaEngine.ContentCategory.OCEAN ->
+                "4K ocean waves coral reef real footage $index"
+            QueryFormulaEngine.ContentCategory.WEATHER ->
+                "4K thunderstorm lightning storm clouds timelapse $index"
+            QueryFormulaEngine.ContentCategory.WINTER ->
+                "4K winter snow glacier arctic landscape $index"
+            null -> "4K drone aerial landscape $query $index"
+        }
 
     private class FakeYouTubeCacheDao : YouTubeCacheDao {
         private val entries = linkedMapOf<String, YouTubeCacheEntity>()

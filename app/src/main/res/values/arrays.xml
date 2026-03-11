@@ -19,28 +19,28 @@
 
     <!-- YouTube -->
     <string-array name="youtube_quality_entries" translatable="false">
+        <item>Highest Available</item>
         <item>1080p</item>
         <item>720p</item>
-        <item>Best Available</item>
     </string-array>
     <string-array name="youtube_quality_values" translatable="false">
+        <item>best</item>
         <item>1080p</item>
         <item>720p</item>
-        <item>best</item>
     </string-array>
     <string-array name="youtube_quality_entries_uhd" translatable="false">
+        <item>Highest Available</item>
         <item>4K</item>
         <item>1080p</item>
         <item>720p</item>
-        <item>Best Available</item>
     </string-array>
     <string-array name="youtube_quality_values_uhd" translatable="false">
+        <item>best</item>
         <item>2160p</item>
         <item>1080p</item>
         <item>720p</item>
-        <item>best</item>
     </string-array>
-    <string name="youtube_quality_default" translatable="false">1080p</string>
+    <string name="youtube_quality_default" translatable="false">best</string>
     <string-array name="youtube_mix_weight_entries" translatable="false">
         <item>Same as other sources</item>
         <item>YouTube more often</item>

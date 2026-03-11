@@ -50,6 +50,19 @@ object QueryFormulaEngine {
             }
     }
 
+    data class CategoryQuery(
+        val category: ContentCategory,
+        val query: String,
+    )
+
+    private data class CategoryConfig(
+        val queryCategory: QueryCategory,
+        val queries: List<String>,
+        val titleKeywords: Set<String>,
+        val preferredTitleKeywords: Set<String> = emptySet(),
+        val uploaderKeywords: Set<String> = emptySet(),
+    )
+
     val aiVideoBlacklist =
         listOf(
             "ai generated",
@@ -148,93 +161,322 @@ object QueryFormulaEngine {
             "wildlife",
         )
 
-    private val categoryQueries =
+    private val categoryConfigs =
         linkedMapOf(
             ContentCategory.NATURE to
-                listOf(
-                    "4k nature walk forest ambient",
-                    "4k mountain landscape timelapse",
-                    "4k river valley scenic",
-                    "4k countryside landscape ambient",
-                    "4k waterfall nature",
-                    "4k forest river no talking",
-                    "4k canyon landscape ambient",
-                    "4k national park scenic footage",
+                CategoryConfig(
+                    queryCategory = QueryCategory.NATURE,
+                    queries =
+                        listOf(
+                            "4k forest trail real footage no talking",
+                            "4k mountain valley landscape timelapse",
+                            "4k river gorge landscape no music",
+                            "4k national park landscape documentary",
+                            "4k waterfall forest real footage",
+                            "4k canyon landscape nature film",
+                            "4k countryside meadow landscape 4k",
+                            "4k alpine valley landscape no talking",
+                            "4k jungle rainforest ambient",
+                            "4k mangrove forest river",
+                            "4k desert landscape sunset",
+                            "4k volcanic landscape iceland",
+                            "4k canyon landscape usa",
+                            "4k rice terrace asia landscape",
+                            "4k cherry blossom japan ambient",
+                            "4k autumn fall foliage timelapse",
+                            "4k lavender field france scenic",
+                            "4k vineyard landscape timelapse",
+                            "4k glacier landscape timelapse",
+                            "4k hot spring yellowstone",
+                        ),
+                    titleKeywords =
+                        setOf(
+                            "forest",
+                            "mountain",
+                            "landscape",
+                            "river",
+                            "waterfall",
+                            "valley",
+                            "canyon",
+                            "meadow",
+                            "countryside",
+                            "national park",
+                            "trail",
+                            "alpine",
+                        ),
+                    preferredTitleKeywords =
+                        setOf(
+                            "real footage",
+                            "documentary",
+                            "nature film",
+                            "national park",
+                        ),
                 ),
             ContentCategory.ANIMALS to
-                listOf(
-                    "4k wildlife documentary africa",
-                    "4k wildlife nature animals",
-                    "4k birds wildlife ambient",
-                    "4k safari wildlife footage",
-                    "4k wildlife national park",
-                    "4k whale documentary ocean",
-                    "4k elephants documentary ambient",
-                    "4k deer forest wildlife footage",
+                CategoryConfig(
+                    queryCategory = QueryCategory.NATURE,
+                    queries =
+                        listOf(
+                            "4k wildlife documentary no talking",
+                            "4k safari wildlife real footage",
+                            "4k birds wildlife documentary 4k",
+                            "4k whale documentary real footage",
+                            "4k elephant wildlife documentary",
+                            "4k deer forest wildlife footage",
+                            "4k marine wildlife documentary 4k",
+                            "4k national geographic wildlife 4k",
+                            "4k savanna wildlife timelapse",
+                            "4k tundra arctic wildlife",
+                            "4k wetlands birds wildlife",
+                            "4k grassland plains wildlife",
+                        ),
+                    titleKeywords =
+                        setOf(
+                            "wildlife",
+                            "animal",
+                            "animals",
+                            "safari",
+                            "bird",
+                            "birds",
+                            "whale",
+                            "elephant",
+                            "deer",
+                            "lion",
+                            "tiger",
+                            "penguin",
+                            "dolphin",
+                            "marine life",
+                        ),
+                    preferredTitleKeywords =
+                        setOf(
+                            "documentary",
+                            "national geographic",
+                            "nat geo",
+                            "real footage",
+                        ),
+                    uploaderKeywords = setOf("nat geo", "national geographic", "bbc earth", "discovery"),
                 ),
             ContentCategory.DRONE to
-                listOf(
-                    "4k drone aerial landscape",
-                    "4k aerial footage nature",
-                    "4k drone flyover scenic",
-                    "4k aerial nature cinematic",
-                    "4k fpv drone landscape",
-                    "4k drone fjord cinematic",
-                    "4k aerial mountain range no music",
-                    "4k drone coastline cinematic",
+                CategoryConfig(
+                    queryCategory = QueryCategory.AERIAL,
+                    queries =
+                        listOf(
+                            "4k drone aerial landscape no music",
+                            "4k aerial nature cinematic no talking",
+                            "4k drone flyover mountains 4k",
+                            "4k fpv drone landscape real footage",
+                            "4k aerial coastline cinematic no music",
+                            "4k drone fjord cinematic real footage",
+                            "4k aerial waterfall drone 4k",
+                            "4k bird's eye landscape drone footage",
+                            "4k estuary river delta aerial",
+                        ),
+                    titleKeywords =
+                        setOf(
+                            "drone",
+                            "aerial",
+                            "flyover",
+                            "flythrough",
+                            "fpv",
+                            "bird's eye",
+                            "uav",
+                            "cinematic aerial",
+                        ),
+                    preferredTitleKeywords =
+                        setOf(
+                            "drone",
+                            "aerial",
+                            "fpv",
+                            "bird's eye",
+                            "real footage",
+                        ),
                 ),
             ContentCategory.OCEAN to
-                listOf(
-                    "4k ocean waves ambient",
-                    "4k underwater ocean nature",
-                    "4k beach waves relaxing",
-                    "4k coral reef underwater",
-                    "4k ocean sunset ambient",
-                    "4k underwater fish documentary",
-                    "4k sea cliffs waves ambient",
-                    "4k deep ocean nature film",
+                CategoryConfig(
+                    queryCategory = QueryCategory.NATURE,
+                    queries =
+                        listOf(
+                            "4k ocean waves real footage no music",
+                            "4k underwater coral reef documentary",
+                            "4k sea cliffs coastline waves 4k",
+                            "4k beach waves real footage ambient",
+                            "4k deep ocean documentary 4k",
+                            "4k underwater marine life 4k",
+                            "4k coral reef underwater real footage",
+                            "4k coast waves sunset real footage",
+                            "4k tropical beach ambient",
+                            "4k mediterranean coast scenic",
+                            "4k sea cliff coastal waves",
+                        ),
+                    titleKeywords =
+                        setOf(
+                            "ocean",
+                            "sea",
+                            "underwater",
+                            "beach",
+                            "waves",
+                            "reef",
+                            "coral",
+                            "coast",
+                            "coastal",
+                            "marine",
+                            "sea cliffs",
+                        ),
+                    preferredTitleKeywords =
+                        setOf(
+                            "underwater",
+                            "coral reef",
+                            "marine life",
+                            "real footage",
+                            "documentary",
+                        ),
                 ),
             ContentCategory.SPACE to
-                listOf(
-                    "4k space earth timelapse",
-                    "4k aurora borealis timelapse",
-                    "4k milky way night sky timelapse",
-                    "4k earth from space nasa",
-                    "4k northern lights ambient",
-                    "4k iss earth view timelapse",
-                    "4k moonrise night sky timelapse",
-                    "4k galaxy documentary ambient",
+                CategoryConfig(
+                    queryCategory = QueryCategory.NATURE,
+                    queries =
+                        listOf(
+                            "4k earth from space nasa timelapse",
+                            "4k iss earth view real footage",
+                            "4k milky way night sky timelapse",
+                            "4k aurora borealis real timelapse",
+                            "4k northern lights timelapse no music",
+                            "4k nasa earth horizon space station",
+                            "4k moonrise night sky real footage",
+                            "4k stars night sky timelapse 4k",
+                        ),
+                    titleKeywords =
+                        setOf(
+                            "space",
+                            "earth from space",
+                            "iss",
+                            "nasa",
+                            "aurora",
+                            "northern lights",
+                            "milky way",
+                            "night sky",
+                            "stars",
+                            "moonrise",
+                            "space station",
+                        ),
+                    preferredTitleKeywords =
+                        setOf(
+                            "nasa",
+                            "iss",
+                            "earth from space",
+                            "milky way",
+                            "aurora",
+                            "northern lights",
+                        ),
+                    uploaderKeywords = setOf("nasa", "esa"),
                 ),
             ContentCategory.CITIES to
-                listOf(
-                    "4k city skyline timelapse",
-                    "4k city aerial drone",
-                    "4k architecture timelapse",
-                    "4k city night timelapse",
-                    "4k urban landscape ambient",
-                    "4k downtown skyline no talking",
-                    "4k city sunrise timelapse",
+                CategoryConfig(
+                    queryCategory = QueryCategory.NATURE,
+                    queries =
+                        listOf(
+                            "4k city skyline timelapse no music",
+                            "4k downtown skyline blue hour timelapse",
+                            "4k city lights night timelapse 4k",
+                            "4k urban architecture no talking",
+                            "4k modern city skyline real footage",
+                            "4k metropolis night skyline 4k",
+                            "4k urban street architecture timelapse",
+                            "4k rooftop skyline sunset city 4k",
+                        ),
+                    titleKeywords =
+                        setOf(
+                            "city",
+                            "urban",
+                            "skyline",
+                            "downtown",
+                            "architecture",
+                            "cityscape",
+                            "metropolis",
+                            "streets",
+                            "street",
+                            "rooftop",
+                            "city lights",
+                        ),
+                    preferredTitleKeywords =
+                        setOf(
+                            "city skyline",
+                            "urban",
+                            "downtown",
+                            "architecture",
+                            "city lights",
+                            "cityscape",
+                        ),
                 ),
             ContentCategory.WEATHER to
-                listOf(
-                    "4k thunderstorm timelapse",
-                    "4k storm clouds timelapse",
-                    "4k rain nature ambient",
-                    "4k lightning storm timelapse",
-                    "4k cloud timelapse nature",
-                    "4k rain forest storm ambient",
-                    "4k fog valley weather timelapse",
+                CategoryConfig(
+                    queryCategory = QueryCategory.NATURE,
+                    queries =
+                        listOf(
+                            "4k thunderstorm landscape timelapse",
+                            "4k storm clouds timelapse real footage",
+                            "4k lightning storm real footage",
+                            "4k rain over mountains timelapse",
+                            "4k fog rolling through valley 4k",
+                            "4k misty forest weather timelapse",
+                            "4k storm front clouds 4k timelapse",
+                            "4k heavy rain landscape real footage",
+                        ),
+                    titleKeywords =
+                        setOf(
+                            "storm",
+                            "thunderstorm",
+                            "lightning",
+                            "rain",
+                            "cloud",
+                            "clouds",
+                            "fog",
+                            "mist",
+                            "storm front",
+                            "weather",
+                        ),
+                    preferredTitleKeywords =
+                        setOf(
+                            "thunderstorm",
+                            "lightning",
+                            "storm clouds",
+                            "real footage",
+                        ),
                 ),
             ContentCategory.WINTER to
-                listOf(
-                    "4k snow landscape ambient",
-                    "4k winter forest snow",
-                    "4k arctic landscape timelapse",
-                    "4k frozen lake winter",
-                    "4k snowfall nature ambient",
-                    "4k glacier winter documentary",
-                    "4k polar landscape no music",
-                    "4k aurora snow landscape",
+                CategoryConfig(
+                    queryCategory = QueryCategory.NATURE,
+                    queries =
+                        listOf(
+                            "4k winter forest snow landscape",
+                            "4k arctic landscape timelapse no music",
+                            "4k frozen lake winter real footage",
+                            "4k snowfall landscape 4k",
+                            "4k glacier winter documentary",
+                            "4k polar snow landscape no talking",
+                            "4k snowy mountain valley 4k",
+                            "4k ice landscape arctic real footage",
+                        ),
+                    titleKeywords =
+                        setOf(
+                            "winter",
+                            "snow",
+                            "snowfall",
+                            "arctic",
+                            "frozen",
+                            "ice",
+                            "glacier",
+                            "polar",
+                            "snowy",
+                        ),
+                    preferredTitleKeywords =
+                        setOf(
+                            "winter",
+                            "arctic",
+                            "glacier",
+                            "polar",
+                            "real footage",
+                        ),
                 ),
         )
 
@@ -272,14 +514,14 @@ object QueryFormulaEngine {
         entropySeed: Long = 0L,
     ): List<String> {
         val enabledPools =
-            categoryQueries
+            categoryConfigs
                 .filterKeys(prefs::isEnabled)
                 .ifEmpty { defaultPools() }
 
         val selectedQueries =
             roundRobinQueries(
                 pools = enabledPools.mapValues { (category, queries) ->
-                    queries
+                    queries.queries
                         .shuffled(seedForCategory(category, entropySeed))
                         .toCollection(ArrayDeque())
                 },
@@ -297,23 +539,18 @@ object QueryFormulaEngine {
         entropySeed: Long = 0L,
         prefs: CategoryPreferences = CategoryPreferences(),
     ): List<String> {
-        val categoryPool =
+        val enabledQueries =
             generateQueryPool(
-                count = (count * 2).coerceAtLeast(16),
+                count = (count * 3).coerceAtLeast(18),
                 prefs = prefs,
                 entropySeed = entropySeed xor 0x51A8C27L,
             )
-        val normalizedBaseQuery = baseQuery.trim()
 
         val fallbackQueries =
-            if (normalizedBaseQuery.isBlank()) {
-                categoryPool + SAFE_FALLBACK_QUERIES
+            if (enabledQueries.isNotEmpty()) {
+                enabledQueries
             } else {
-                listOf(
-                    normalizedBaseQuery,
-                    "$normalizedBaseQuery 4k nature",
-                    "$normalizedBaseQuery documentary ambient",
-                ) + categoryPool
+                buildSafeFallbackQueries(baseQuery)
             }
 
         return fallbackQueries
@@ -323,14 +560,63 @@ object QueryFormulaEngine {
     }
 
     fun categoryOf(query: String): QueryCategory =
-        if (AERIAL_QUERY_REGEX.containsMatchIn(query)) {
-            QueryCategory.AERIAL
-        } else {
-            QueryCategory.NATURE
+        categoryForQuery(query)?.queryCategory
+            ?: if (AERIAL_QUERY_REGEX.containsMatchIn(query)) {
+                QueryCategory.AERIAL
+            } else {
+                QueryCategory.NATURE
+            }
+
+    fun categoryForQuery(query: String): ContentCategory? =
+        categoryConfigs.entries.firstOrNull { (_, config) ->
+            query in config.queries
+        }?.key
+
+    fun enabledCategories(prefs: CategoryPreferences): List<ContentCategory> =
+        ContentCategory.entries.filter(prefs::isEnabled).ifEmpty { defaultPools().keys.toList() }
+
+    fun matchesCandidateCategory(
+        title: String,
+        uploader: String,
+        category: ContentCategory?,
+    ): Boolean {
+        if (category == null) {
+            return true
         }
 
+        val config = categoryConfigs.getValue(category)
+        val titleLower = title.lowercase()
+        val uploaderLower = uploader.lowercase()
+
+        val directMatch = config.titleKeywords.any(titleLower::contains)
+        val uploaderMatch =
+            config.uploaderKeywords.isNotEmpty() &&
+                config.uploaderKeywords.any(uploaderLower::contains)
+        val strongTitleMatch = config.preferredTitleKeywords.any(titleLower::contains)
+        return directMatch || strongTitleMatch || uploaderMatch
+    }
+
+    fun categoryMatchScore(
+        title: String,
+        uploader: String,
+        category: ContentCategory?,
+    ): Int {
+        if (category == null) {
+            return 0
+        }
+
+        val config = categoryConfigs.getValue(category)
+        val titleLower = title.lowercase()
+        val uploaderLower = uploader.lowercase()
+        val titleMatches = config.titleKeywords.count(titleLower::contains)
+        val preferredMatches = config.preferredTitleKeywords.count(titleLower::contains)
+        val uploaderMatches = config.uploaderKeywords.count(uploaderLower::contains)
+
+        return titleMatches + preferredMatches * 2 + uploaderMatches * 2
+    }
+
     fun totalPossibleCombinations(): Long =
-        categoryQueries.values.sumOf { queries -> queries.size.toLong() }
+        categoryConfigs.values.sumOf { config -> config.queries.size.toLong() }
 
     fun freshnessSeed(baseQuery: String): String =
         "${baseQuery.trim()}|${weeklySeed()}|${dailySeed()}|${refreshSeed()}|${timeBucket()}"
@@ -340,11 +626,11 @@ object QueryFormulaEngine {
             if (prefs.isEnabled(category)) category.key else "-${category.key}"
         }
 
-    private fun defaultPools(): Map<ContentCategory, List<String>> =
+    private fun defaultPools(): Map<ContentCategory, CategoryConfig> =
         linkedMapOf(
-            ContentCategory.NATURE to categoryQueries.getValue(ContentCategory.NATURE),
-            ContentCategory.OCEAN to categoryQueries.getValue(ContentCategory.OCEAN),
-            ContentCategory.DRONE to categoryQueries.getValue(ContentCategory.DRONE),
+            ContentCategory.NATURE to categoryConfigs.getValue(ContentCategory.NATURE),
+            ContentCategory.OCEAN to categoryConfigs.getValue(ContentCategory.OCEAN),
+            ContentCategory.DRONE to categoryConfigs.getValue(ContentCategory.DRONE),
         )
 
     private fun roundRobinQueries(
@@ -412,10 +698,23 @@ object QueryFormulaEngine {
 
     private val SAFE_FALLBACK_QUERIES =
         listOf(
-            "4k nature ambient",
-            "4k landscape timelapse",
-            "4k scenic nature",
+            "4k national park landscape documentary",
+            "4k ocean waves real footage no music",
+            "4k drone aerial landscape no music",
         )
+
+    private fun buildSafeFallbackQueries(baseQuery: String): List<String> {
+        val normalizedBaseQuery = baseQuery.trim()
+        if (normalizedBaseQuery.isBlank()) {
+            return SAFE_FALLBACK_QUERIES
+        }
+
+        return listOf(
+            normalizedBaseQuery,
+            "$normalizedBaseQuery documentary 4k",
+            "$normalizedBaseQuery no talking 4k",
+        ) + SAFE_FALLBACK_QUERIES
+    }
 
     private val AERIAL_QUERY_REGEX =
         Regex(

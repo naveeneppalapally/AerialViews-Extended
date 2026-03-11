@@ -111,10 +111,10 @@ object VideoPlayerHelper {
             DefaultLoadControl
                 .Builder()
                 .setBufferDurationsMs(
-                    15_000, // Minimum buffer duration
-                    120_000, // Maximum buffer duration
-                    1_500, // Buffer before initial playback
-                    3_000, // Buffer after rebuffering
+                    30_000, // Minimum buffer duration
+                    180_000, // Maximum buffer duration
+                    2_500, // Buffer before initial playback
+                    5_000, // Buffer after rebuffering
                 ).build()
 
         val player =

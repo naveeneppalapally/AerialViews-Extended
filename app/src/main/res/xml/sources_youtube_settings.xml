@@ -46,13 +46,5 @@
                     app:key="yt_shuffle"
                     app:title="@string/youtube_shuffle_title"
                     app:defaultValue="true" />
-
-                <SwitchPreference
-                    app:dependency="yt_enabled"
-                    app:disableDependentsState="false"
-                    app:key="yt_filter_ai_videos"
-                    app:title="@string/youtube_filter_ai_title"
-                    app:summary="@string/youtube_filter_ai_summary"
-                    app:defaultValue="true" />
         </PreferenceCategory>
 </PreferenceScreen>

@@ -14,6 +14,7 @@ import androidx.preference.SwitchPreference
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.providers.youtube.QueryFormulaEngine
+import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.providers.youtube.YouTubeSourceRepository
 import com.neilturner.aerialviews.services.getDisplay
 import com.neilturner.aerialviews.services.supportsUltraHdOutput
@@ -133,6 +134,10 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             }
         }
 
+        qualityPreference.setOnPreferenceChangeListener { _, _ ->
+            YouTubeFeature.markQualitySelectionExplicit(requireContext())
+            true
+        }
         qualityPreference.summaryProvider = ListPreference.SimpleSummaryProvider.getInstance()
     }
 

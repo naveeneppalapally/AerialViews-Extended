@@ -96,6 +96,12 @@ object YouTubeFeature {
             )
     }
 
+    fun markQualitySelectionExplicit(context: Context) {
+        PreferenceManager.getDefaultSharedPreferences(context.applicationContext).edit {
+            putBoolean(KEY_QUALITY_USER_SELECTED, true)
+        }
+    }
+
     private fun scheduleAutomaticRefresh(context: Context) {
         val workManager = WorkManager.getInstance(context)
         val constraints =
@@ -153,17 +159,20 @@ object YouTubeFeature {
     private fun initializePreferences(context: Context) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val hasInitializedQuality = prefs.getBoolean(KEY_QUALITY_INITIALIZED, false)
-        if (!hasInitializedQuality) {
-            val configuredQuality = prefs.getString(YouTubeSourceRepository.KEY_QUALITY, null)?.trim()
-            val deviceDefaultQuality = if (supportsUltraHdOutput(context)) UHD_QUALITY else YouTubeSourceRepository.DEFAULT_QUALITY
-            val resolvedQuality =
-                when {
-                    configuredQuality.isNullOrBlank() -> deviceDefaultQuality
-                    configuredQuality.equals("4k", ignoreCase = true) -> UHD_QUALITY
-                    configuredQuality == YouTubeSourceRepository.DEFAULT_QUALITY && deviceDefaultQuality == UHD_QUALITY -> UHD_QUALITY
-                    else -> configuredQuality
-                }
+        val configuredQuality = prefs.getString(YouTubeSourceRepository.KEY_QUALITY, null)?.trim()
+        val userSelectedQuality = prefs.getBoolean(KEY_QUALITY_USER_SELECTED, false)
+        val deviceDefaultQuality = if (supportsUltraHdOutput(context)) UHD_QUALITY else YouTubeSourceRepository.DEFAULT_QUALITY
+        val resolvedQuality =
+            when {
+                configuredQuality.isNullOrBlank() -> deviceDefaultQuality
+                configuredQuality.equals("4k", ignoreCase = true) -> UHD_QUALITY
+                !userSelectedQuality &&
+                    configuredQuality == YouTubeSourceRepository.DEFAULT_QUALITY &&
+                    deviceDefaultQuality == UHD_QUALITY -> UHD_QUALITY
+                else -> configuredQuality
+            }
 
+        if (!hasInitializedQuality || resolvedQuality != configuredQuality) {
             prefs.edit {
                 putString(YouTubeSourceRepository.KEY_QUALITY, resolvedQuality)
                 putBoolean(KEY_QUALITY_INITIALIZED, true)
@@ -210,6 +219,7 @@ object YouTubeFeature {
     private const val STREAM_REFRESH_INITIAL_DELAY_MINUTES = 15L
     private const val MIN_PREWARM_CACHE_SIZE = 10
     private const val KEY_QUALITY_INITIALIZED = "yt_quality_initialized"
+    private const val KEY_QUALITY_USER_SELECTED = "yt_quality_user_selected"
     private const val TAG = "YouTubeFeature"
     private const val UHD_QUALITY = "2160p"
     private const val UHD_WIDTH = 3840

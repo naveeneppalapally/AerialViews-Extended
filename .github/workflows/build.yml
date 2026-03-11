@@ -32,10 +32,10 @@ jobs:
 
       - name: Prepare CI signing config
         run: |
-          mkdir -p signing
+          mkdir -p signing app/signing
           keytool -genkeypair \
             -storetype PKCS12 \
-            -keystore signing/legacy.jks \
+            -keystore app/signing/legacy.jks \
             -storepass android \
             -keypass android \
             -alias ci \

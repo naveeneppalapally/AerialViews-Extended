@@ -30,33 +30,23 @@ jobs:
           java-version: '21'
           cache: gradle
 
-      - name: Prepare CI signing config
+      - name: Decode keystore
         run: |
-          mkdir -p signing app/signing
-          keytool -genkeypair \
-            -storetype PKCS12 \
-            -keystore app/signing/legacy.jks \
-            -storepass android \
-            -keypass android \
-            -alias ci \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 3650 \
-            -dname "CN=AerialViews Plus, OU=CI, O=GitHub, L=NA, S=NA, C=US"
-          cat > signing/legacy.properties <<'EOF'
-          storeFile=signing/legacy.jks
-          storePassword=android
-          keyAlias=ci
-          keyPassword=android
-          EOF
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode \
+            > app/aerialviews-plus-release.jks
 
-      - name: Build GitHub release APK
-        run: ./gradlew --no-daemon :app:assembleGithubRelease
+      - name: Build signed release APK
+        run: ./gradlew --no-daemon :app:assembleGithubNonMinifiedRelease
+        env:
+          KEYSTORE_PATH: app/aerialviews-plus-release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Rename APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/github/release/*.apk \
+          cp app/build/outputs/apk/github/nonMinifiedRelease/*.apk \
              dist/AerialViews-Plus-v${{ github.event.inputs.version }}.apk
 
       - name: Create GitHub Release
@@ -86,3 +76,7 @@ jobs:
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean up keystore
+        run: rm -f app/aerialviews-plus-release.jks
+        if: always()

@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -30,13 +31,29 @@ class YouTubeSourceRepository(
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val backgroundWarmInFlight = AtomicBoolean(false)
     private val lastBackgroundWarmAt = AtomicLong(0L)
+    private val preResolvedLock = Any()
+
+    @Volatile
+    private var preResolvedEntry: YouTubeCacheEntity? = null
+
+    @Volatile
+    private var preResolvingJob: Job? = null
 
     suspend fun getNextVideoUrl(): String =
         withContext(Dispatchers.IO) {
+            consumeAnyPreResolvedEntry()?.let { cachedEntry ->
+                recordPlayback(cachedEntry)
+                maybeWarmSearchCacheNearPlaylistEnd()
+                preResolveNext(repositoryScope)
+                return@withContext cachedEntry.streamUrl
+            }
+
             val entries = ensureSearchCache()
             prunePlayHistory(entries)
             val selectedEntry = selectEntryForPlayback(entries) ?: throw YouTubeSourceException("No videos available")
-            resolveEntryStreamUrl(selectedEntry)
+            resolveEntryStreamUrl(selectedEntry).also {
+                preResolveNext(repositoryScope)
+            }
         }
 
     suspend fun getCachedVideos(): List<YouTubeCacheEntity> =
@@ -48,8 +65,50 @@ class YouTubeSourceRepository(
             cachedEntries
         }
 
+    suspend fun getCacheSize(): Int =
+        withContext(Dispatchers.IO) {
+            cacheDao.getAll().size
+        }
+
+    fun preWarmInBackground() {
+        scheduleBackgroundWarmCache(forceSearchRefresh = true)
+    }
+
+    fun preResolveNext(scope: CoroutineScope) {
+        preResolvingJob?.cancel()
+        preResolvingJob =
+            scope.launch(Dispatchers.IO) {
+                if (cacheDao.getAll().size < COLD_CACHE_SKIP_THRESHOLD) {
+                    clearPreResolvedEntry()
+                    return@launch
+                }
+
+                try {
+                    val nextEntry = selectNextCandidate() ?: run {
+                        clearPreResolvedEntry()
+                        return@launch
+                    }
+                    val resolvedAt = System.currentTimeMillis()
+                    val resolvedUrl = resolveEntryStreamUrl(nextEntry, recordPlayback = false)
+                    cachePreResolvedEntry(
+                        buildResolvedEntry(
+                            entry = nextEntry,
+                            resolvedUrl = resolvedUrl,
+                            resolvedAt = resolvedAt,
+                        ),
+                    )
+                    Timber.tag(TAG).d("Pre-resolved YouTube video: %s", nextEntry.title)
+                } catch (exception: Exception) {
+                    clearPreResolvedEntry()
+                    Timber.tag(TAG).w(exception, "Failed to pre-resolve next YouTube video")
+                }
+            }
+    }
+
     suspend fun preloadVideoUrl(videoPageUrl: String): String? =
         withContext(Dispatchers.IO) {
+            peekPreResolvedEntry(videoPageUrl)?.streamUrl?.let { return@withContext it }
+
             cacheDao.getByVideoPageUrl(videoPageUrl)?.let { cachedEntry ->
                 return@withContext runCatching {
                     resolveEntryStreamUrl(cachedEntry, recordPlayback = false)
@@ -70,8 +129,17 @@ class YouTubeSourceRepository(
 
     suspend fun resolveVideoUrl(videoPageUrl: String): String =
         withContext(Dispatchers.IO) {
+            consumePreResolvedEntry(videoPageUrl)?.let { cachedEntry ->
+                recordPlayback(cachedEntry)
+                maybeWarmSearchCacheNearPlaylistEnd()
+                preResolveNext(repositoryScope)
+                return@withContext cachedEntry.streamUrl
+            }
+
             cacheDao.getByVideoPageUrl(videoPageUrl)?.let { cachedEntry ->
-                return@withContext resolveEntryStreamUrl(cachedEntry)
+                return@withContext resolveEntryStreamUrl(cachedEntry).also {
+                    preResolveNext(repositoryScope)
+                }
             }
 
             val directEntry =
@@ -84,6 +152,8 @@ class YouTubeSourceRepository(
             cacheDao.insertAll(listOf(directEntry))
             updateCachedCount(cacheDao.getAll().size)
             recordPlayback(directEntry)
+            maybeWarmSearchCacheNearPlaylistEnd()
+            preResolveNext(repositoryScope)
             directEntry.streamUrl
         }
 
@@ -210,6 +280,7 @@ class YouTubeSourceRepository(
             cachedAt = refreshPlan.cachedAt,
             preferredQuality = refreshPlan.preferredQuality,
             limit = EXTRACTION_TARGET_SIZE,
+            publishMinimumCache = refreshPlan.existingEntries.size < COLD_CACHE_SKIP_THRESHOLD,
         )
     }
 
@@ -505,9 +576,11 @@ class YouTubeSourceRepository(
         cachedAt: Long,
         preferredQuality: String,
         limit: Int,
+        publishMinimumCache: Boolean,
     ): List<YouTubeCacheEntity> =
         supervisorScope {
             val entries = mutableListOf<YouTubeCacheEntity>()
+            var minimumCachePublished = false
 
             for (chunk in items.chunked(EXTRACTION_BATCH_SIZE)) {
                 val extractedChunk =
@@ -529,6 +602,13 @@ class YouTubeSourceRepository(
                         .filterNotNull()
 
                 entries += extractedChunk
+                if (publishMinimumCache && !minimumCachePublished && entries.size >= MINIMUM_VIABLE_CACHE_SIZE) {
+                    cacheDao.clearAndInsert(entries.toList())
+                    updateCachedCount(entries.size)
+                    minimumCachePublished = true
+                    Timber.tag(TAG).i("Minimum viable YouTube cache ready (%s videos)", entries.size)
+                }
+
                 if (entries.size >= limit) {
                     break
                 }
@@ -620,6 +700,16 @@ class YouTubeSourceRepository(
                 backgroundWarmInFlight.set(false)
             }
         }
+    }
+
+    private fun selectNextCandidate(): YouTubeCacheEntity? {
+        val cachedEntries = cacheDao.getAll()
+        if (cachedEntries.isEmpty()) {
+            return null
+        }
+
+        prunePlayHistory(cachedEntries)
+        return selectEntryForPlayback(cachedEntries)
     }
 
     private fun buildPlaylistEntries(entries: List<YouTubeCacheEntity>): List<YouTubeCacheEntity> {
@@ -832,6 +922,39 @@ class YouTubeSourceRepository(
         }
     }
 
+    private fun peekPreResolvedEntry(videoPageUrl: String): YouTubeCacheEntity? =
+        synchronized(preResolvedLock) {
+            preResolvedEntry?.takeIf { entry -> entry.videoPageUrl == videoPageUrl }
+        }
+
+    private fun consumePreResolvedEntry(videoPageUrl: String): YouTubeCacheEntity? =
+        synchronized(preResolvedLock) {
+            val entry = preResolvedEntry?.takeIf { cachedEntry -> cachedEntry.videoPageUrl == videoPageUrl }
+            if (entry != null) {
+                preResolvedEntry = null
+            }
+            entry
+        }
+
+    private fun consumeAnyPreResolvedEntry(): YouTubeCacheEntity? =
+        synchronized(preResolvedLock) {
+            val entry = preResolvedEntry
+            preResolvedEntry = null
+            entry
+        }
+
+    private fun cachePreResolvedEntry(entry: YouTubeCacheEntity) {
+        synchronized(preResolvedLock) {
+            preResolvedEntry = entry
+        }
+    }
+
+    private fun clearPreResolvedEntry() {
+        synchronized(preResolvedLock) {
+            preResolvedEntry = null
+        }
+    }
+
     private fun cacheSignature(): String =
         "${QueryFormulaEngine.freshnessSeed(searchQuery())}|${minimumDurationMinutes()}|${preferredQuality()}|${streamMode()}"
 
@@ -878,6 +1001,20 @@ class YouTubeSourceRepository(
         }
         return resolvedUrl
     }
+
+    private fun buildResolvedEntry(
+        entry: YouTubeCacheEntity,
+        resolvedUrl: String,
+        resolvedAt: Long,
+    ): YouTubeCacheEntity =
+        if (entry.streamUrl == resolvedUrl && entry.streamUrlExpiresAt >= resolvedAt + STREAM_REEXTRACT_BUFFER_MS) {
+            entry
+        } else {
+            entry.copy(
+                streamUrl = resolvedUrl,
+                streamUrlExpiresAt = resolvedAt + STREAM_URL_TTL_MS,
+            )
+        }
 
     private suspend fun buildCacheEntry(
         candidate: SearchCandidate,
@@ -1502,6 +1639,8 @@ class YouTubeSourceRepository(
         private const val MAX_RECENT_REFRESH_IDS = 960
         private const val MIN_HEALTHY_CANDIDATE_POOL_SIZE = 120
         private const val SEARCH_PREWARM_REMAINING_ITEMS = 30
+        private const val MINIMUM_VIABLE_CACHE_SIZE = 10
+        private const val COLD_CACHE_SKIP_THRESHOLD = 5
         private const val BACKGROUND_REFRESH_COOLDOWN_MS = 30L * 60L * 1000L
         private const val SEARCH_CALL_TIMEOUT_MS = 20_000L
         private const val EXTRACTION_CALL_TIMEOUT_MS = 25_000L

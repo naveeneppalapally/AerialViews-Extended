@@ -16,6 +16,10 @@ import java.time.Duration
 import java.time.LocalTime
 import java.time.ZonedDateTime
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import timber.log.Timber
 
 object YouTubeFeature {
     const val DAILY_REFRESH_WORK_NAME = "youtube_daily_refresh"
@@ -29,8 +33,27 @@ object YouTubeFeature {
     fun initialize(context: Context) {
         val appContext = context.applicationContext
         NewPipeHelper.init()
+        repository(appContext)
         initializePreferences(appContext)
         scheduleAutomaticRefresh(appContext)
+    }
+
+    fun preWarmIfNeeded(scope: CoroutineScope) {
+        val currentRepository = repository ?: return
+        scope.launch(Dispatchers.IO) {
+            try {
+                val cacheSize = currentRepository.getCacheSize()
+                if (cacheSize < MIN_PREWARM_CACHE_SIZE) {
+                    Timber.tag(TAG).d("Cache cold (%s videos), pre-warming", cacheSize)
+                    currentRepository.refreshSearchResults()
+                    Timber.tag(TAG).d("Pre-warm complete")
+                } else {
+                    Timber.tag(TAG).d("Cache warm (%s videos), skipping pre-warm", cacheSize)
+                }
+            } catch (exception: Exception) {
+                Timber.tag(TAG).w(exception, "Pre-warm failed")
+            }
+        }
     }
 
     fun repository(context: Context): YouTubeSourceRepository {
@@ -185,7 +208,9 @@ object YouTubeFeature {
 
     private const val STREAM_REFRESH_INTERVAL_MINUTES = 330L
     private const val STREAM_REFRESH_INITIAL_DELAY_MINUTES = 15L
+    private const val MIN_PREWARM_CACHE_SIZE = 10
     private const val KEY_QUALITY_INITIALIZED = "yt_quality_initialized"
+    private const val TAG = "YouTubeFeature"
     private const val UHD_QUALITY = "2160p"
     private const val UHD_WIDTH = 3840
     private const val UHD_HEIGHT = 2160

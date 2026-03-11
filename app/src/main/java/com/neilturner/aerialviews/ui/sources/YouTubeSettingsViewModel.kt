@@ -18,6 +18,10 @@ class YouTubeSettingsViewModel(
 
     val refreshState: StateFlow<RefreshState> = _refreshState.asStateFlow()
 
+    init {
+        YouTubeFeature.preWarmIfNeeded(viewModelScope)
+    }
+
     fun forceRefresh() {
         if (_refreshState.value == RefreshState.Loading) {
             return

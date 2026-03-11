@@ -22,6 +22,19 @@ class YouTubeSettingsViewModel(
         YouTubeFeature.preWarmIfNeeded(viewModelScope)
     }
 
+    fun refreshIfCachePending() {
+        if (_refreshState.value == RefreshState.Loading) {
+            return
+        }
+
+        viewModelScope.launch {
+            val cacheSize = repository.getCacheSize()
+            if (cacheSize <= 0) {
+                forceRefresh()
+            }
+        }
+    }
+
     fun forceRefresh() {
         if (_refreshState.value == RefreshState.Loading) {
             return

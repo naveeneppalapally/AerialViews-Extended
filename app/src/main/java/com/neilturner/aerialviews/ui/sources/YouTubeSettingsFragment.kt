@@ -13,7 +13,6 @@ import androidx.preference.SeekBarPreference
 import androidx.preference.SwitchPreference
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
-import com.neilturner.aerialviews.providers.youtube.QueryFormulaEngine
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.providers.youtube.YouTubeSourceRepository
 import com.neilturner.aerialviews.services.getDisplay
@@ -22,7 +21,6 @@ import com.neilturner.aerialviews.utils.DialogHelper
 import com.neilturner.aerialviews.utils.MenuStateFragment
 import com.neilturner.aerialviews.utils.ToastHelper
 import kotlinx.coroutines.launch
-import java.text.NumberFormat
 
 class YouTubeSettingsFragment : MenuStateFragment() {
     private val viewModel by viewModels<YouTubeSettingsViewModel>()
@@ -96,22 +94,24 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
     private fun setupPreferences() {
         val formulaInfoPreference = findPreference<Preference>("yt_formula_info")
-        formulaInfoPreference?.summary =
-            getString(
-                R.string.youtube_formula_info_summary,
-                NumberFormat.getIntegerInstance().format(QueryFormulaEngine.totalPossibleCombinations()),
-            )
+        formulaInfoPreference?.summary = getString(R.string.youtube_formula_info_summary)
 
         configureQualityPreference()
 
-        findPreference<SeekBarPreference>("yt_min_duration")?.summaryProvider =
-            Preference.SummaryProvider<SeekBarPreference> { preference ->
-                getString(R.string.youtube_min_duration_summary_value, preference.value)
+        findPreference<SeekBarPreference>("yt_min_duration")?.apply {
+            summaryProvider =
+                Preference.SummaryProvider<SeekBarPreference> { preference ->
+                    getString(R.string.youtube_min_duration_summary_value, preference.value)
+                }
+            setOnPreferenceChangeListener { _, _ ->
+                queueBackgroundRefresh(R.string.youtube_refresh_background_started)
+                true
             }
+        }
 
         findPreference<SwitchPreference>("yt_enabled")?.setOnPreferenceChangeListener { _, newValue ->
             if (newValue == true) {
-                queueBackgroundRefresh(R.string.youtube_refresh_background_started)
+                queueBackgroundRefresh(R.string.youtube_refresh_background_started, immediate = true)
             } else {
                 progressDialog?.dismiss()
                 progressDialog = null
@@ -122,7 +122,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         }
 
         findPreference<Preference>("yt_refresh_now")?.setOnPreferenceClickListener {
-            queueBackgroundRefresh(R.string.youtube_refresh_background_started)
+            queueBackgroundRefresh(R.string.youtube_refresh_background_started, immediate = true)
             true
         }
 
@@ -228,11 +228,26 @@ class YouTubeSettingsFragment : MenuStateFragment() {
     private fun isCountPending(): Boolean =
         YouTubeVideoPrefs.count.toIntOrNull()?.let { it < 0 } ?: true
 
-    private fun queueBackgroundRefresh(messageResId: Int) {
+    private fun queueBackgroundRefresh(
+        messageResId: Int,
+        immediate: Boolean = false,
+    ) {
         YouTubeVideoPrefs.count = "-1"
         updateVideoCount()
         viewModel.refreshCacheSize()
-        viewModel.refreshInBackground()
+        view?.post {
+            if (immediate) {
+                viewModel.scheduleBackgroundRefresh(delayMs = 0L)
+            } else {
+                viewModel.scheduleBackgroundRefresh()
+            }
+        } ?: run {
+            if (immediate) {
+                viewModel.scheduleBackgroundRefresh(delayMs = 0L)
+            } else {
+                viewModel.scheduleBackgroundRefresh()
+            }
+        }
         viewLifecycleOwner.lifecycleScope.launch {
             ToastHelper.show(requireContext(), messageResId, Toast.LENGTH_SHORT)
         }

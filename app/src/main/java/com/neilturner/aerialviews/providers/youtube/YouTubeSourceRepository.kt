@@ -338,7 +338,6 @@ class YouTubeSourceRepository(
             query = searchQuery(),
             queryPool =
                 QueryFormulaEngine.generateQueryPool(
-                    baseQuery = searchQuery(),
                     count = QUERY_POOL_SIZE,
                     entropySeed = cachedAt,
                     prefs = categoryPreferences,
@@ -520,7 +519,7 @@ class YouTubeSourceRepository(
 
         val fallbackQueries =
             QueryFormulaEngine.generateFallbackQueryPool(
-                baseQuery = query,
+                baseQuery = "",
                 count = FALLBACK_QUERY_POOL_SIZE,
                 entropySeed = System.nanoTime(),
                 prefs = categoryPreferences(),

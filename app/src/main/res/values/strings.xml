@@ -199,7 +199,7 @@
     <string name="youtube_enabled_title">Use YouTube videos</string>
     <string name="youtube_search_category_title">Search formula</string>
     <string name="youtube_formula_info_title">Rotating query formula</string>
-    <string name="youtube_formula_info_summary">Builds rotating searches from the categories you enable below. Over %1$s possible combinations are available.</string>
+    <string name="youtube_formula_info_summary">Builds rotating searches from the categories you enable below and refreshes the library in the background automatically.</string>
     <string name="youtube_query_title">Base Search Theme</string>
     <string name="youtube_query_default_value">4K aerial nature ambient</string>
     <string name="youtube_min_duration_title">Minimum Duration (mins)</string>

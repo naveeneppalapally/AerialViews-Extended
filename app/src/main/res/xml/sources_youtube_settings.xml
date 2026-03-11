@@ -43,6 +43,76 @@
                     app:defaultValue="10" />
         </PreferenceCategory>
 
+        <PreferenceCategory
+            app:title="@string/youtube_content_categories_title"
+            app:summary="@string/youtube_content_categories_summary">
+
+                <SwitchPreference
+                    app:dependency="yt_enabled"
+                    app:disableDependentsState="false"
+                    app:key="yt_category_nature"
+                    app:title="@string/youtube_category_nature_title"
+                    app:summary="@string/youtube_category_nature_summary"
+                    app:defaultValue="true" />
+
+                <SwitchPreference
+                    app:dependency="yt_enabled"
+                    app:disableDependentsState="false"
+                    app:key="yt_category_animals"
+                    app:title="@string/youtube_category_animals_title"
+                    app:summary="@string/youtube_category_animals_summary"
+                    app:defaultValue="true" />
+
+                <SwitchPreference
+                    app:dependency="yt_enabled"
+                    app:disableDependentsState="false"
+                    app:key="yt_category_drone"
+                    app:title="@string/youtube_category_drone_title"
+                    app:summary="@string/youtube_category_drone_summary"
+                    app:defaultValue="true" />
+
+                <SwitchPreference
+                    app:dependency="yt_enabled"
+                    app:disableDependentsState="false"
+                    app:key="yt_category_ocean"
+                    app:title="@string/youtube_category_ocean_title"
+                    app:summary="@string/youtube_category_ocean_summary"
+                    app:defaultValue="true" />
+
+                <SwitchPreference
+                    app:dependency="yt_enabled"
+                    app:disableDependentsState="false"
+                    app:key="yt_category_space"
+                    app:title="@string/youtube_category_space_title"
+                    app:summary="@string/youtube_category_space_summary"
+                    app:defaultValue="true" />
+
+                <SwitchPreference
+                    app:dependency="yt_enabled"
+                    app:disableDependentsState="false"
+                    app:key="yt_category_cities"
+                    app:title="@string/youtube_category_cities_title"
+                    app:summary="@string/youtube_category_cities_summary"
+                    app:defaultValue="false" />
+
+                <SwitchPreference
+                    app:dependency="yt_enabled"
+                    app:disableDependentsState="false"
+                    app:key="yt_category_weather"
+                    app:title="@string/youtube_category_weather_title"
+                    app:summary="@string/youtube_category_weather_summary"
+                    app:defaultValue="false" />
+
+                <SwitchPreference
+                    app:dependency="yt_enabled"
+                    app:disableDependentsState="false"
+                    app:key="yt_category_winter"
+                    app:title="@string/youtube_category_winter_title"
+                    app:summary="@string/youtube_category_winter_summary"
+                    app:defaultValue="true" />
+
+        </PreferenceCategory>
+
         <PreferenceCategory app:title="@string/youtube_playlist_category_title">
                 <ListPreference
                     app:dependency="yt_enabled"

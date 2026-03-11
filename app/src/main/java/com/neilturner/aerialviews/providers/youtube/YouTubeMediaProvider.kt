@@ -7,6 +7,7 @@ import com.neilturner.aerialviews.models.enums.AerialMediaType
 import com.neilturner.aerialviews.models.enums.ProviderSourceType
 import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.models.videos.AerialMedia
+import com.neilturner.aerialviews.models.videos.AerialExifMetadata
 import com.neilturner.aerialviews.models.videos.AerialMediaMetadata
 import com.neilturner.aerialviews.providers.MediaProvider
 import com.neilturner.aerialviews.utils.NetworkHelper
@@ -115,6 +116,10 @@ class YouTubeMediaProvider(
             metadata =
                 AerialMediaMetadata(
                     shortDescription = entry.title,
+                    exif =
+                        AerialExifMetadata(
+                            description = entry.videoId,
+                        ),
                 ),
         )
 

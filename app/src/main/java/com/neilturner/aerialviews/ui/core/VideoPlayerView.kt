@@ -319,12 +319,17 @@ class VideoPlayerView
                     return@withContext media
                 }
 
+                val repository = YouTubeFeature.repository(context)
+                val youtubeVideoId = media.metadata.exif.description?.takeIf { it.isNotBlank() }
                 val mediaUrl = media.uri.toString()
                 if (!isYouTubePageUrl(mediaUrl)) {
+                    youtubeVideoId?.let { videoId ->
+                        repository.markAsPlayed(videoId)
+                    }
                     return@withContext media
                 }
 
-                val streamUrl = YouTubeFeature.repository(context).resolveVideoUrl(mediaUrl)
+                val streamUrl = repository.resolveVideoUrl(mediaUrl)
                 media.copy(uri = streamUrl.toUri())
             }
 

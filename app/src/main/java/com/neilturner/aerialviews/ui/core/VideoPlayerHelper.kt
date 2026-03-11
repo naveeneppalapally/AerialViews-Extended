@@ -77,7 +77,13 @@ object VideoPlayerHelper {
         context: Context,
         prefs: GeneralPrefs,
     ): ExoPlayer {
-        val parametersBuilder = Parameters.Builder()
+        val parametersBuilder =
+            Parameters
+                .Builder()
+                .setPreferredTextLanguage(null)
+                .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .setDisabledTextTrackSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
 
         if (prefs.enableTunneling) {
             parametersBuilder

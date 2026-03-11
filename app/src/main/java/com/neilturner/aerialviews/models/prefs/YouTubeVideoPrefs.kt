@@ -15,5 +15,6 @@ object YouTubeVideoPrefs : KotprefModel() {
     )
     var mixWeight by stringPref(YouTubeSourceRepository.DEFAULT_MIX_WEIGHT, YouTubeSourceRepository.KEY_MIX_WEIGHT)
     var shuffle by booleanPref(YouTubeSourceRepository.DEFAULT_SHUFFLE, YouTubeSourceRepository.KEY_SHUFFLE)
+    var filterAiVideos by booleanPref(true, "yt_filter_ai_videos")
     var count by stringPref("-1", YouTubeSourceRepository.KEY_COUNT)
 }

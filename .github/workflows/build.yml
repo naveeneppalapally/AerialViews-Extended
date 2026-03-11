@@ -42,7 +42,7 @@ jobs:
             -keyalg RSA \
             -keysize 2048 \
             -validity 3650 \
-            -dname "CN=AerialViews Extended, OU=CI, O=GitHub, L=NA, S=NA, C=US"
+            -dname "CN=AerialViews+, OU=CI, O=GitHub, L=NA, S=NA, C=US"
           cat > signing/legacy.properties <<'EOF'
           storeFile=signing/legacy.jks
           storePassword=android
@@ -57,13 +57,13 @@ jobs:
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/github/release/*.apk \
-             dist/AerialViews-Extended-v${{ github.event.inputs.version }}.apk
+             dist/AerialViews-Plus-v${{ github.event.inputs.version }}.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.event.inputs.version }}
-          name: AerialViews Extended v${{ github.event.inputs.version }}
+          name: AerialViews+ v${{ github.event.inputs.version }}
           body: |
             ## What's changed
             ${{ github.event.inputs.release_notes }}
@@ -72,14 +72,14 @@ jobs:
             1. Download the APK below
             2. Enable "Install unknown apps" on your Android TV
             3. Install via file manager or ADB:
-               `adb install -r AerialViews-Extended-v${{ github.event.inputs.version }}.apk`
+               `adb install -r AerialViews-Plus-v${{ github.event.inputs.version }}.apk`
 
             ## Notes
             - Sideload only — not for Google Play Store
             - If YouTube stops working, check NewPipe Extractor releases
-            - Source code: github.com/naveeneppalally/AerialViews-Extended
+            - Source code: github.com/naveeneppalapally/AerialViews-Plus
 
-            **Full source:** https://github.com/naveeneppalally/AerialViews-Extended
+            **Full source:** https://github.com/naveeneppalapally/AerialViews-Plus
           files: dist/*.apk
           draft: false
           prerelease: false

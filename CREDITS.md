@@ -3,7 +3,7 @@
 ## Fork Maintainer
 
 - Maintainer: `naveeneppalapally`
-- Fork repository: <https://github.com/naveeneppalapally/AerialViews-Extended>
+- Fork repository: <https://github.com/naveeneppalapally/AerialViews-Plus>
 
 ## Original Project
 

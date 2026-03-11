@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:791639863634:android:e382263c88192469ed8a8b",
         "android_client_info": {
-          "package_name": "com.neilturner.aerialviews"
+          "package_name": "com.naveeneppalapally.aerialviewsplus"
         }
       },
       "oauth_client": [
@@ -38,7 +38,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:791639863634:android:7d0672961f4c5f43ed8a8b",
         "android_client_info": {
-          "package_name": "com.neilturner.aerialviews.debug"
+          "package_name": "com.naveeneppalapally.aerialviewsplus.debug"
         }
       },
       "oauth_client": [

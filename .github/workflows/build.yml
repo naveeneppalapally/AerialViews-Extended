@@ -48,23 +48,39 @@ jobs:
       - name: Build GitHub release APK
         run: ./gradlew --no-daemon :app:assembleGithubNonMinifiedRelease
 
-      - name: Set release metadata
-        id: release_meta
+      - name: Get date
+        id: date
         run: |
-          echo "tag=v$(date -u +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
-          echo "apk_path=app/build/outputs/apk/github/nonMinifiedRelease/app-github-nonMinifiedRelease.apk" >> "$GITHUB_OUTPUT"
+          echo "DATE=$(date -u +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Check if release exists
+        id: check
+        run: |
+          EXISTS=$(gh release view v${{ steps.date.outputs.DATE }} \
+            --repo naveeneppalapally/AerialViews-Extended 2>/dev/null \
+            && echo "true" || echo "false")
+          echo "EXISTS=$EXISTS" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Rename APK
+        run: |
+          cd app/build/outputs/apk/github/nonMinifiedRelease/
+          mv app-github-nonMinifiedRelease.apk \
+             AerialViews-Extended-v${{ steps.date.outputs.DATE }}.apk
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-github-nonMinifiedRelease
-          path: ${{ steps.release_meta.outputs.apk_path }}
+          name: AerialViews-Extended-v${{ steps.date.outputs.DATE }}
+          path: app/build/outputs/apk/github/nonMinifiedRelease/*.apk
 
-      - name: Publish GitHub release
+      - name: Create Release
+        if: steps.check.outputs.EXISTS == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.release_meta.outputs.tag }}
-          name: ${{ steps.release_meta.outputs.tag }}
-          files: ${{ steps.release_meta.outputs.apk_path }}
+          tag_name: v${{ steps.date.outputs.DATE }}
+          name: AerialViews Extended v${{ steps.date.outputs.DATE }}
+          files: app/build/outputs/apk/github/nonMinifiedRelease/*.apk
           generate_release_notes: true
           overwrite_files: true

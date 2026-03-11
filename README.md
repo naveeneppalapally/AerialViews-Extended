@@ -1,8 +1,8 @@
 # AerialViews Extended
 
-[![Latest GitHub release](https://img.shields.io/github/v/release/naveeneppalally/AerialViews-Extended.svg?logo=github&label=GitHub&cacheSeconds=3600)](https://github.com/naveeneppalally/AerialViews-Extended/releases/latest)
-[![GitHub Downloads](https://img.shields.io/github/downloads/naveeneppalally/AerialViews-Extended/total?color=blue&label=Downloads&logo=github)](https://github.com/naveeneppalally/AerialViews-Extended/releases/latest)
-[![License](https://img.shields.io/:license-gpl%20v3-lightgrey.svg?style=flat)](https://raw.githubusercontent.com/naveeneppalally/AerialViews-Extended/main/LICENSE)
+[![Latest GitHub release](https://img.shields.io/github/v/release/naveeneppalapally/AerialViews-Extended.svg?logo=github&label=GitHub&cacheSeconds=3600)](https://github.com/naveeneppalapally/AerialViews-Extended/releases/latest)
+[![GitHub Downloads](https://img.shields.io/github/downloads/naveeneppalapally/AerialViews-Extended/total?color=blue&label=Downloads&logo=github)](https://github.com/naveeneppalapally/AerialViews-Extended/releases/latest)
+[![License](https://img.shields.io/:license-gpl%20v3-lightgrey.svg?style=flat)](https://raw.githubusercontent.com/naveeneppalapally/AerialViews-Extended/main/LICENSE)
 [![API](https://img.shields.io/badge/API-23%2B-lightgrey.svg?style=flat)](https://android-arsenal.com/api?level=23)
 
 A fork of AerialViews that adds YouTube as a native video source.  
@@ -30,7 +30,7 @@ Plays fresh 4K nature, aerial, and ambient videos from YouTube directly on your 
 
 ## How to Get It
 
-Download the APK from the [Releases tab](https://github.com/naveeneppalally/AerialViews-Extended/releases/latest) and install it manually.  
+Download the APK from the [Releases tab](https://github.com/naveeneppalapally/AerialViews-Extended/releases/latest) and install it manually.  
 Sideloading is required — this fork is not on the Play Store.
 
 1. Download the APK from the Releases tab

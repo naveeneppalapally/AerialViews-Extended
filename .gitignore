@@ -79,3 +79,7 @@ lint/tmp/
 
 # macOS
 *.DS_Store
+
+# Local toolchains used during development
+.jbr21-codex-work/
+.jdk-temurin21/

@@ -2,6 +2,7 @@ package com.neilturner.aerialviews.ui.core
 
 import android.content.Context
 import android.util.AttributeSet
+import androidx.core.net.toUri
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -14,7 +15,9 @@ import com.neilturner.aerialviews.models.enums.AerialMediaSource
 import com.neilturner.aerialviews.models.enums.ProgressBarLocation
 import com.neilturner.aerialviews.models.enums.ProgressBarType
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
+import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.models.videos.AerialMedia
+import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.services.philips.PhilipsMediaCodecAdapterFactory
 import com.neilturner.aerialviews.ui.overlays.ProgressBarEvent
 import com.neilturner.aerialviews.ui.overlays.ProgressState
@@ -25,9 +28,13 @@ import com.neilturner.aerialviews.utils.RefreshRateHelper
 import com.neilturner.aerialviews.utils.ToastHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.kosert.flowbus.GlobalBus
 import timber.log.Timber
+import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
 
 @Suppress("SameParameterValue")
@@ -55,7 +62,9 @@ class VideoPlayerView
                 listener?.onVideoError()
             }
         private val refreshRateHelper by lazy { RefreshRateHelper(context) }
-        private val mainScope = CoroutineScope(Dispatchers.Main)
+        private val mainScopeJob = SupervisorJob()
+        private val mainScope = CoroutineScope(Dispatchers.Main + mainScopeJob)
+        private var resolveVideoJob: Job? = null
         private var canChangePlaybackSpeed = true
         private var playbackSpeed = GeneralPrefs.playbackSpeed
         private var pausedTimestamp: Long = 0
@@ -85,6 +94,8 @@ class VideoPlayerView
 
         fun release() {
             pause()
+            resolveVideoJob?.cancel()
+            mainScopeJob.cancel()
             player?.release()
 
             removeCallbacks(almostFinishedRunnable)
@@ -111,21 +122,38 @@ class VideoPlayerView
         fun setVideo(media: AerialMedia) {
             state = VideoState() // Reset params for each video
             state.type = media.source
+            resolveVideoJob?.cancel()
+            exoPlayer.stop()
+            resizeMode = VideoPlayerHelper.getResizeMode(GeneralPrefs.videoScale)
+            exoPlayer.videoScalingMode = VideoPlayerHelper.getVideoScalingMode(GeneralPrefs.videoScale)
 
-            if (GeneralPrefs.philipsDolbyVisionFix) {
-                PhilipsMediaCodecAdapterFactory.mediaUrl = media.uri.toString()
-            }
+            resolveVideoJob =
+                mainScope.launch {
+                    val playableMedia =
+                        try {
+                            resolveMediaForPlayback(media)
+                        } catch (exception: Exception) {
+                            Timber.e(exception, "Failed to resolve playable media for ${media.uri}")
+                            post(onErrorRunnable)
+                            return@launch
+                        }
 
-            VideoPlayerHelper.setupMediaSource(exoPlayer, media)
+                    if (GeneralPrefs.philipsDolbyVisionFix) {
+                        PhilipsMediaCodecAdapterFactory.mediaUrl = playableMedia.uri.toString()
+                    }
 
-            if (GeneralPrefs.muteVideos) {
-                VideoPlayerHelper.toggleAudioTrack(exoPlayer, true)
-            }
+                    configureTrackSelection(playableMedia)
+                    VideoPlayerHelper.setupMediaSource(exoPlayer, playableMedia)
 
-            // Disable subtitles/text tracks by default
-            VideoPlayerHelper.disableTextTrack(exoPlayer)
+                    if (GeneralPrefs.muteVideos) {
+                        VideoPlayerHelper.toggleAudioTrack(exoPlayer, true)
+                    }
 
-            player?.prepare()
+                    // Disable subtitles/text tracks by default
+                    VideoPlayerHelper.disableTextTrack(exoPlayer)
+
+                    player?.prepare()
+                }
         }
 
         fun increaseSpeed() = changeSpeed(true)
@@ -205,6 +233,7 @@ class VideoPlayerView
                 val result = VideoPlayerHelper.calculatePlaybackParameters(exoPlayer, GeneralPrefs, state.type)
                 state.startPosition = result.first
                 state.endPosition = result.second
+                state.startPosition = adjustYouTubeStartForIntroSkip(state.startPosition, state.endPosition)
 
                 if (state.startPosition > 0) {
                     Timber.i("Seeking to ${state.startPosition.milliseconds}")
@@ -283,6 +312,62 @@ class VideoPlayerView
         override fun onPlayerErrorChanged(error: PlaybackException?) {
             super.onPlayerErrorChanged(error)
             error?.let { Timber.e(it) }
+        }
+
+        private suspend fun resolveMediaForPlayback(media: AerialMedia): AerialMedia =
+            withContext(Dispatchers.IO) {
+                if (media.source != AerialMediaSource.YOUTUBE) {
+                    return@withContext media
+                }
+
+                val mediaUrl = media.uri.toString()
+                if (!isYouTubePageUrl(mediaUrl)) {
+                    return@withContext media
+                }
+
+                val streamUrl = YouTubeFeature.repository(context).resolveVideoUrl(mediaUrl)
+                media.copy(uri = streamUrl.toUri())
+            }
+
+        private fun isYouTubePageUrl(url: String): Boolean {
+            val normalizedUrl = url.lowercase()
+            return normalizedUrl.contains("youtube.com/") || normalizedUrl.contains("youtu.be/")
+        }
+
+        private fun configureTrackSelection(media: AerialMedia) {
+            val builder =
+                exoPlayer.trackSelectionParameters
+                    .buildUpon()
+                    .setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE)
+                    .setForceHighestSupportedBitrate(false)
+                    .setMaxVideoBitrate(Int.MAX_VALUE)
+
+            if (media.source == AerialMediaSource.YOUTUBE) {
+                builder.setForceHighestSupportedBitrate(false)
+                when (YouTubeVideoPrefs.quality.lowercase()) {
+                    "720p" -> {
+                        builder
+                            .setMaxVideoSize(Int.MAX_VALUE, 720)
+                            .setMaxVideoBitrate(6_500_000)
+                    }
+
+                    "1080p" -> {
+                        builder
+                            .setMaxVideoSize(Int.MAX_VALUE, 1080)
+                            .setMaxVideoBitrate(10_000_000)
+                    }
+
+                    "2160p",
+                    "4k",
+                    -> {
+                        builder
+                            .setMaxVideoSize(Int.MAX_VALUE, 2160)
+                            .setMaxVideoBitrate(22_000_000)
+                    }
+                }
+            }
+
+            exoPlayer.trackSelectionParameters = builder.build()
         }
 
         private fun seek(backward: Boolean = false) {
@@ -399,6 +484,28 @@ class VideoPlayerView
             }
         }
 
+        private fun adjustYouTubeStartForIntroSkip(
+            startPosition: Long,
+            endPosition: Long,
+        ): Long {
+            if (state.type != AerialMediaSource.YOUTUBE) {
+                return startPosition
+            }
+
+            val playableDuration = (endPosition - startPosition).coerceAtLeast(0L)
+            if (playableDuration < YOUTUBE_INTRO_SKIP_MIN_DURATION_MS) {
+                return startPosition
+            }
+
+            val introSkip = Random.nextLong(YOUTUBE_INTRO_SKIP_MIN_MS, YOUTUBE_INTRO_SKIP_MAX_MS + 1)
+            val maxAllowedStart = (endPosition - YOUTUBE_INTRO_SKIP_END_GUARD_MS).coerceAtLeast(startPosition)
+            val adjustedStart = (startPosition + introSkip).coerceAtMost(maxAllowedStart)
+            if (adjustedStart > startPosition) {
+                Timber.i("Skipping YouTube intro segment: +${introSkip.milliseconds}")
+            }
+            return adjustedStart
+        }
+
         interface OnVideoPlayerEventListener {
             fun onVideoAlmostFinished()
 
@@ -412,6 +519,10 @@ class VideoPlayerView
         companion object {
             const val CHANGE_PLAYBACK_SPEED_DELAY: Long = 2000
             const val CHANGE_PLAYBACK_START_END_DELAY: Long = 4000
+            const val YOUTUBE_INTRO_SKIP_MIN_DURATION_MS: Long = 180_000
+            const val YOUTUBE_INTRO_SKIP_MIN_MS: Long = 12_000
+            const val YOUTUBE_INTRO_SKIP_MAX_MS: Long = 55_000
+            const val YOUTUBE_INTRO_SKIP_END_GUARD_MS: Long = 90_000
         }
     }
 

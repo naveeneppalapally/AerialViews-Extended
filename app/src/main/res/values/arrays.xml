@@ -17,6 +17,53 @@
     </string-array>
     <string name="apple_videos_quality_default" translatable="false">VIDEO_1080_SDR</string>
 
+    <!-- YouTube -->
+    <string-array name="youtube_quality_entries" translatable="false">
+        <item>1080p</item>
+        <item>720p</item>
+        <item>Best Available</item>
+    </string-array>
+    <string-array name="youtube_quality_values" translatable="false">
+        <item>1080p</item>
+        <item>720p</item>
+        <item>best</item>
+    </string-array>
+    <string-array name="youtube_quality_entries_uhd" translatable="false">
+        <item>4K</item>
+        <item>1080p</item>
+        <item>720p</item>
+        <item>Best Available</item>
+    </string-array>
+    <string-array name="youtube_quality_values_uhd" translatable="false">
+        <item>2160p</item>
+        <item>1080p</item>
+        <item>720p</item>
+        <item>best</item>
+    </string-array>
+    <string name="youtube_quality_default" translatable="false">1080p</string>
+    <string-array name="youtube_mix_weight_entries" translatable="false">
+        <item>Same as other sources</item>
+        <item>YouTube more often</item>
+        <item>YouTube most often</item>
+    </string-array>
+    <string-array name="youtube_mix_weight_values" translatable="false">
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+    </string-array>
+    <string name="youtube_mix_weight_default" translatable="false">2</string>
+    <string-array name="source_mode_entries" translatable="false">
+        <item>Aerial Views videos</item>
+        <item>YouTube videos</item>
+        <item>Combined</item>
+    </string-array>
+    <string-array name="source_mode_values" translatable="false">
+        <item>aerial</item>
+        <item>youtube</item>
+        <item>combined</item>
+    </string-array>
+    <string name="source_mode_default" translatable="false">combined</string>
+
     <!-- Estimated data usage per hour -->
     <string-array name="apple_videos_data_usage_values" translatable="false">
         <item>~3GB</item>

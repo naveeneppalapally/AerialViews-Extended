@@ -79,6 +79,13 @@ android {
             isMinifyEnabled = false
             // isPseudoLocalesEnabled = true
         }
+        create("nonMinifiedRelease") {
+            initWith(getByName("release"))
+            isDebuggable = false
+            isMinifyEnabled = false
+            isShrinkResources = false
+            matchingFallbacks += listOf("release")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -182,14 +189,24 @@ dependencies {
 
     implementation(libs.bundles.ktor)
     implementation(libs.bundles.exoplayer)
+    implementation(libs.media3.dash)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
     implementation(libs.sardine.android)
     implementation(libs.smbj)
     implementation(libs.timber)
     implementation(libs.slf4j.simple)
+    implementation(libs.work.runtime.ktx)
+    implementation("com.github.teamnewpipe:newpipeextractor:v0.25.2") {
+        exclude(group = "com.google.protobuf", module = "protobuf-javalite")
+    }
+    ksp(libs.room.compiler)
 
     debugImplementation(libs.leakcanary)
 
     testImplementation(libs.junit.jupiter.api)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.mockk)
     testRuntimeOnly(libs.junit.jupiter.engine)
 
     implementation(libs.profileinstaller)

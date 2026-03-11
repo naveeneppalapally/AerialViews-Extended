@@ -13,4 +13,5 @@ enum class AerialMediaSource {
     WEBDAV,
     IMMICH,
     HLS,
+    YOUTUBE,
 }

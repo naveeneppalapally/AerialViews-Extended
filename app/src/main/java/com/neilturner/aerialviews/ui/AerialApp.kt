@@ -10,6 +10,7 @@ import com.neilturner.aerialviews.models.prefs.AppleVideoPrefs
 import com.neilturner.aerialviews.models.prefs.Comm1VideoPrefs
 import com.neilturner.aerialviews.models.prefs.Comm2VideoPrefs
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
+import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.utils.DeviceHelper
 import timber.log.Timber
 
@@ -37,6 +38,8 @@ class AerialApp : Application() {
 
             GeneralPrefs.checkForHevcSupport = true
         }
+
+        YouTubeFeature.initialize(this)
     }
 
     private fun configureLogging() {

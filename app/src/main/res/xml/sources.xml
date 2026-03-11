@@ -2,6 +2,17 @@
 <PreferenceScreen
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
+    <PreferenceCategory app:title="@string/sources_mode_category_title">
+        <ListPreference
+            app:key="source_mode"
+            app:title="@string/sources_mode_title"
+            app:summary="@string/sources_mode_summary"
+            app:entries="@array/source_mode_entries"
+            app:entryValues="@array/source_mode_values"
+            app:defaultValue="@string/source_mode_default"
+            app:useSimpleSummaryProvider="true" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="@string/category_remote_streaming">
         <Preference
             app:title="@string/sources_apple_title"
@@ -34,6 +45,18 @@
             app:title="@string/sources_custom_feed_title"
             app:summary="@string/sources_custom_feed_summary"
             app:fragment="com.neilturner.aerialviews.ui.sources.CustomFeedFragment"/>
+
+        <Preference
+            app:title="@string/sources_youtube_title"
+            app:summary="@string/sources_youtube_summary"
+            app:fragment="com.neilturner.aerialviews.ui.sources.YouTubeSettingsFragment"/>
+
+        <ListPreference
+            app:key="yt_mix_weight"
+            app:title="@string/youtube_mix_weight_title"
+            app:entries="@array/youtube_mix_weight_entries"
+            app:entryValues="@array/youtube_mix_weight_values"
+            app:defaultValue="@string/youtube_mix_weight_default" />
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/category_network">

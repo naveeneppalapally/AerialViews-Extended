@@ -35,6 +35,13 @@
 # Ktor
 -dontwarn java.lang.management.ManagementFactory
 -dontwarn java.lang.management.RuntimeMXBean
+-dontwarn java.beans.BeanDescriptor
+-dontwarn java.beans.BeanInfo
+-dontwarn java.beans.IntrospectionException
+-dontwarn java.beans.Introspector
+-dontwarn java.beans.PropertyDescriptor
+-dontwarn com.google.re2j.Matcher
+-dontwarn com.google.re2j.Pattern
 -dontwarn org.apache.log4j.Level
 -dontwarn org.apache.log4j.Logger
 -dontwarn org.apache.log4j.Priority

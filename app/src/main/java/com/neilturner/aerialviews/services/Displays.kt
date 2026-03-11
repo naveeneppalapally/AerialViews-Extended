@@ -205,3 +205,9 @@ fun getDisplay(activity: Activity?): Display {
     val windowManager = activity.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     return Display(display, windowManager, context)
 }
+
+fun Display.supportsUltraHdOutput(): Boolean =
+    sequenceOf(renderOutput, physicalOutput)
+        .filterNotNull()
+        .any { it.width >= 3840 || it.height >= 2160 } ||
+        supportedModes.any { it.width >= 3840 || it.height >= 2160 }

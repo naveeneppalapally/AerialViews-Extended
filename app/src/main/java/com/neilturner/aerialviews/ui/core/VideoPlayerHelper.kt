@@ -10,6 +10,8 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.dash.DashMediaSource
+import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
@@ -25,6 +27,7 @@ import com.neilturner.aerialviews.models.prefs.ImmichMediaPrefs
 import com.neilturner.aerialviews.models.videos.AerialMedia
 import com.neilturner.aerialviews.providers.samba.SambaDataSourceFactory
 import com.neilturner.aerialviews.providers.webdav.WebDavDataSourceFactory
+import com.neilturner.aerialviews.providers.youtube.NewPipeHelper
 import com.neilturner.aerialviews.services.philips.CustomRendererFactory
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
@@ -62,6 +65,13 @@ object VideoPlayerHelper {
             AspectRatioFrameLayout.RESIZE_MODE_FIT
         }
 
+    fun getVideoScalingMode(scale: VideoScale?): Int =
+        if (scale == VideoScale.SCALE_TO_FIT_WITH_CROPPING) {
+            C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+        } else {
+            C.VIDEO_SCALING_MODE_SCALE_TO_FIT
+        }
+
     @OptIn(UnstableApi::class)
     fun buildPlayer(
         context: Context,
@@ -77,23 +87,28 @@ object VideoPlayerHelper {
         val trackSelector = DefaultTrackSelector(context)
         trackSelector.parameters = parametersBuilder.build()
 
-        var rendererFactory = DefaultRenderersFactory(context)
+        var rendererFactory: DefaultRenderersFactory = DefaultRenderersFactory(context)
+        rendererFactory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
         if (prefs.allowFallbackDecoders) {
             rendererFactory.setEnableDecoderFallback(true)
         }
 
         if (prefs.philipsDolbyVisionFix) {
             rendererFactory = CustomRendererFactory(context)
+            rendererFactory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+            if (prefs.allowFallbackDecoders) {
+                rendererFactory.setEnableDecoderFallback(true)
+            }
         }
 
         val loadControl =
             DefaultLoadControl
                 .Builder()
                 .setBufferDurationsMs(
-                    10_000, // Minimum buffer duration
+                    6_000, // Minimum buffer duration
                     20_000, // Maximum buffer duration
-                    3_000, // Buffer before initial playback
-                    5_000, // Buffer after rebuffering
+                    1_500, // Buffer before initial playback
+                    2_500, // Buffer after rebuffering
                 ).build()
 
         val player =
@@ -103,6 +118,8 @@ object VideoPlayerHelper {
                 .setLoadControl(loadControl)
                 .setRenderersFactory(rendererFactory)
                 .build()
+
+        player.videoScalingMode = getVideoScalingMode(prefs.videoScale)
 
         if (prefs.enablePlaybackLogging) {
             player.addAnalyticsListener(EventLogger())
@@ -183,6 +200,38 @@ object VideoPlayerHelper {
                     ProgressiveMediaSource
                         .Factory(WebDavDataSourceFactory())
                         .createMediaSource(mediaItem)
+                player.setMediaSource(mediaSource)
+            }
+
+            AerialMediaSource.YOUTUBE -> {
+                val dataSourceFactory =
+                    DefaultHttpDataSource
+                        .Factory()
+                        .setDefaultRequestProperties(NewPipeHelper.playbackRequestHeaders())
+                        .setAllowCrossProtocolRedirects(true)
+                        .setConnectTimeoutMs(TimeUnit.SECONDS.toMillis(30).toInt())
+                        .setReadTimeoutMs(TimeUnit.SECONDS.toMillis(30).toInt())
+
+                val mediaSource =
+                    when {
+                        media.uri.toString().contains("manifest/dash", ignoreCase = true) ||
+                            media.uri.toString().contains(".mpd", ignoreCase = true) ->
+                            DashMediaSource
+                                .Factory(dataSourceFactory)
+                                .createMediaSource(mediaItem)
+
+                        media.uri.toString().contains("manifest/hls", ignoreCase = true) ||
+                            media.uri.toString().contains(".m3u8", ignoreCase = true) ->
+                            HlsMediaSource
+                                .Factory(dataSourceFactory)
+                                .createMediaSource(mediaItem)
+
+                        else ->
+                            ProgressiveMediaSource
+                                .Factory(dataSourceFactory)
+                                .createMediaSource(mediaItem)
+                    }
+
                 player.setMediaSource(mediaSource)
             }
 

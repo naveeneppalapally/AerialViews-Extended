@@ -353,7 +353,7 @@
   <string name="nowplaying_permission_title">Sistem bildirimlerine erişimi etkinleştirin.</string>
   <string name="nowplaying_shorten_track_name_summary">\"Orijinal versiyon\" veya \"(Yeniden düzenlenmiş)\" gibi yaygın ekleri kaldırın</string>
   <string name="nowplaying_shorten_track_name_title">Parça adlarını kısaltın</string>
-  <string name="nowplaying_toast_text">Lütfen şu bölümden Hava Görünümlerini etkinleştirin: Özel uygulama erişimi &gt; Bildirim erişimi</string>
+  <string name="nowplaying_toast_text">Lütfen şu bölümden AerialViews+ uygulamasını etkinleştirin: Özel uygulama erişimi &gt; Bildirim erişimi</string>
   <string name="playlist_ignore_unmatched_videos_summary">Apple veya topluluk videosu olarak tanınmayan videoları atla</string>
   <string name="playlist_ignore_unmatched_videos_title">Apple dışı ve topluluk dışı videoları dikkate almayın</string>
   <string name="playlist_limit_longer_videos_title">Daha uzun videolar</string>
@@ -447,7 +447,7 @@
   <string name="settings_import_settings">Yedeklemeden ayarları içe aktar?</string>
   <string name="settings_import_successful">Ayarlar başarıyla içe aktarıldı</string>
   <string name="settings_import_summary1">Ayarları içe aktarmak için lütfen bir Dosya Yöneticisi uygulaması kullanarak yedek ayarlar dosyasını açın</string>
-  <string name="settings_import_summary2">Bu, havadan görünüm özelliğini etkinleştirecek veya bunu yapma seçeneği sunacaktır</string>
+  <string name="settings_import_summary2">Bu, AerialViews+ uygulamasını açacak veya bunu yapma seçeneği sunacaktır</string>
   <string name="settings_import_summary3">İşlem başarılı olduğunda, ayarların içe aktarılmasını onaylamanız istenecektir</string>
   <string name="settings_media_sources_summary">İnternetten, USB depolama aygıtlarından ve ağ kaynaklarından video ve fotoğraf oynatın</string>
   <string name="settings_media_sources_title">Medya Kaynakları</string>
@@ -462,7 +462,7 @@
   <string name="settings_settings_title">Ayarlar</string>
   <string name="settings_system_options">Sistem ekran koruyucu seçeneklerini açın</string>
   <string name="settings_system_options_error">Cihazınızın ekran koruyucu seçeneklerini açamıyorsunuz</string>
-  <string name="settings_system_options_removed">Bu özellik üretici tarafından kaldırılmıştır. Daha fazla bilgi için lütfen Aerial Views web sitesini ziyaret edin</string>
+  <string name="settings_system_options_removed">Bu özellik üretici tarafından kaldırılmıştır. Daha fazla bilgi için lütfen AerialViews+ web sitesini ziyaret edin</string>
   <string name="show_media_error_toasts_summary">Medya oynatma hataları oluştuğunda bildirimleri görüntüle</string>
   <string name="show_media_error_toasts_title">Oynatma hatası bildirimlerini göster</string>
   <string name="sources_amazon_summary">İnternet bağlantınızı kullanarak Amazon ortam videolarını izleyin</string>

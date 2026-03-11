@@ -131,7 +131,7 @@
     <string name="settings_system_options">Open system screensaver options</string>
 
     <string name="settings_system_options_error">Unable to open your device\'s screensaver options</string>
-    <string name="settings_system_options_removed">This feature was removed by the manufacturer\nPlease visit the Aerial Views website for more details</string>
+    <string name="settings_system_options_removed">This feature was removed by the manufacturer\nPlease visit the AerialViews+ website for more details</string>
 
     <!-- Main / Video Sources -->
     <string name="sources_apple_title">Videos by Apple</string>
@@ -156,7 +156,7 @@
     <string name="sources_youtube_summary">Search YouTube on-device and cache ambient videos for screensaver playback</string>
     <string name="sources_mode_category_title">Playback mode</string>
     <string name="sources_mode_title">Video source mode</string>
-    <string name="sources_mode_summary">Quickly switch between Aerial Views videos, YouTube videos, or both</string>
+    <string name="sources_mode_summary">Quickly switch between AerialViews+ videos, YouTube videos, or both</string>
 
     <string name="sources_samba_title">SMB/Samba share</string>
     <string name="sources_samba_summary">Play videos &amp; photos from a local network share on a PC or NAS device</string>
@@ -493,7 +493,7 @@
     <string name="nowplaying_shorten_track_name_title">Shorten track names</string>
     <string name="nowplaying_shorten_track_name_summary">Remove common suffixes like \"- Original Mix\" or \"(Remastered)\"</string>
 
-    <string name="nowplaying_toast_text">Please enable Aerial Views in: Special app access > Notification access</string>
+    <string name="nowplaying_toast_text">Please enable AerialViews+ in: Special app access > Notification access</string>
 
     <!-- Main / Settings / Overlays / Weather -->
     <string name="weather_location_title">Location</string>
@@ -827,7 +827,7 @@
     <string name="settings_export_summary1">Only settings which have been changed from the defaults will be exported</string>
 
     <string name="settings_import_summary1">To import settings, please use a File Manager app to open the backup settings file</string>
-    <string name="settings_import_summary2">This will invoke Aerial Views or give an option to do so</string>
+    <string name="settings_import_summary2">This will invoke AerialViews+ or give an option to do so</string>
     <string name="settings_import_summary3">When successful, you will be asked to confirm the settings import</string>
 
     <string name="settings_export_successful">Settings exported successfully</string>

@@ -25,7 +25,7 @@ android {
         minSdk = 23 // Android v6
         targetSdk = 36
         versionCode = 102
-        versionName = "1.8.2"
+        versionName = "1.0.0"
         betaVersion = "-beta12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -194,7 +194,7 @@ dependencies {
     implementation(libs.timber)
     implementation(libs.slf4j.simple)
     implementation(libs.work.runtime.ktx)
-    implementation("com.github.teamnewpipe:newpipeextractor:v0.25.2") {
+    implementation(libs.newpipe.extractor) {
         exclude(group = "com.google.protobuf", module = "protobuf-javalite")
     }
     ksp(libs.room.compiler)

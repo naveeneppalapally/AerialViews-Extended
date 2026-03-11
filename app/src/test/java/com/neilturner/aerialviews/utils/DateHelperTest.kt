@@ -43,7 +43,7 @@ internal class DateHelperTest {
         val result =
             DateHelper.formatExifDate(
                 date = "2024-01-15T19:30:00.000Z",
-                offset = null,
+                offset = "+00:00",
                 type = DateType.CUSTOM,
                 custom = "yyyy-MM-dd",
             )

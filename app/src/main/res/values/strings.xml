@@ -152,6 +152,12 @@
     <string name="sources_custom_feed_title">Custom feeds</string>
     <string name="sources_custom_feed_summary">Add expansion packs from Jetson Creative or a custom feed of media with descriptions</string>
 
+    <string name="sources_youtube_title">YouTube search</string>
+    <string name="sources_youtube_summary">Search YouTube on-device and cache ambient videos for screensaver playback</string>
+    <string name="sources_mode_category_title">Playback mode</string>
+    <string name="sources_mode_title">Video source mode</string>
+    <string name="sources_mode_summary">Quickly switch between Aerial Views videos, YouTube videos, or both</string>
+
     <string name="sources_samba_title">SMB/Samba share</string>
     <string name="sources_samba_summary">Play videos &amp; photos from a local network share on a PC or NAS device</string>
 
@@ -187,6 +193,26 @@
     <string name="custom_media_urls_title">Feed URLs</string>
     <string name="custom_media_urls_summary">Separate multiple URLs with a comma</string>
     <string name="custom_media_urls_invalid">One or more URLs are invalid</string>
+
+    <!-- Main / Video Sources / YouTube -->
+    <string name="youtube_enabled_title">Use YouTube videos</string>
+    <string name="youtube_search_category_title">Search formula</string>
+    <string name="youtube_formula_info_title">Rotating query formula</string>
+    <string name="youtube_formula_info_summary">Builds 25 rotating searches from locations, subjects, channels, seasons, and time of day. Over %1$s combinations available.</string>
+    <string name="youtube_query_title">Base Search Theme</string>
+    <string name="youtube_query_default_value">4K aerial nature ambient</string>
+    <string name="youtube_min_duration_title">Minimum Duration (mins)</string>
+    <string name="youtube_min_duration_summary_value">%1$d minutes minimum</string>
+    <string name="youtube_playlist_category_title">Quality &amp; playback</string>
+    <string name="youtube_quality_title">Video Quality</string>
+    <string name="youtube_mix_weight_title">YouTube Playlist Weight</string>
+    <string name="youtube_mix_weight_disabled_summary">Enable YouTube videos first to change playlist balance</string>
+    <string name="youtube_count_pending_summary">Searching in background…</string>
+    <string name="youtube_shuffle_title">Shuffle Playback</string>
+    <string name="youtube_refresh_now_title">Refresh Now</string>
+    <string name="youtube_refresh_now_summary">Rebuild the rotating YouTube search pool immediately and update the local cache</string>
+    <string name="youtube_refresh_success">Refreshed %1$d videos</string>
+    <string name="youtube_refresh_failed">Refresh failed</string>
 
     <!-- Main / Video Sources / Local+USB videos -->
     <string name="local_videos_enabled_title">Use Local or USB storage media</string>

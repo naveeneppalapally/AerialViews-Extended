@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.net.toUri
 import androidx.core.view.isVisible
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.databinding.AerialActivityBinding
@@ -16,12 +17,15 @@ import com.neilturner.aerialviews.databinding.ImageViewBinding
 import com.neilturner.aerialviews.databinding.OverlayViewBinding
 import com.neilturner.aerialviews.databinding.VideoViewBinding
 import com.neilturner.aerialviews.models.MediaPlaylist
+import com.neilturner.aerialviews.models.enums.AerialMediaSource
 import com.neilturner.aerialviews.models.enums.AerialMediaType
 import com.neilturner.aerialviews.models.enums.MetadataType
 import com.neilturner.aerialviews.models.enums.OverlayType
 import com.neilturner.aerialviews.models.enums.ProgressBarLocation
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
+import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.models.videos.AerialMedia
+import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.services.KtorServer
 import com.neilturner.aerialviews.services.MediaService
 import com.neilturner.aerialviews.services.NowPlayingService
@@ -53,6 +57,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.kosert.flowbus.GlobalBus
 import timber.log.Timber
 import kotlin.math.abs
@@ -88,8 +93,13 @@ class ScreenController(
     private var isPaused = false
     private var pauseStartTime: Long = 0
     private var sleepTimerJob: Job? = null
+    private var preloadJob: Job? = null
+    private var playlistRefreshJob: Job? = null
     private val metadataJobs = mutableMapOf<OverlayType, Job>()
     private var currentMedia: AerialMedia? = null
+    private var preloadedNextMedia: AerialMedia? = null
+    private var preloadedNextSourceUri: String? = null
+    private var pendingPlaylist: MediaPlaylist? = null
 
     private val videoViewBinding: VideoViewBinding
     private val imageViewBinding: ImageViewBinding
@@ -260,22 +270,24 @@ class ScreenController(
     }
 
     private fun loadItem(media: AerialMedia) {
+        val mediaToLoad = consumePreloadedMedia(media) ?: media
+
         // Reset pause state when loading new item
         isPaused = false
         pauseStartTime = 0
-        currentMedia = media
+        currentMedia = mediaToLoad
         overlayStateStore.resetForNextMedia()
 
-        if (media.uri.toString().contains("smb://")) {
+        if (mediaToLoad.uri.toString().contains("smb://")) {
             val pattern = Regex("(smb://)([^:]+):([^@]+)@([\\d.]+)/")
             val replacement = "$1****:****@****/"
-            val url = pattern.replace(media.uri.toString(), replacement)
-            Timber.i("Loading: ${media.metadata.shortDescription} - $url (${media.metadata.pointsOfInterest})")
+            val url = pattern.replace(mediaToLoad.uri.toString(), replacement)
+            Timber.i("Loading: ${mediaToLoad.metadata.shortDescription} - $url (${mediaToLoad.metadata.pointsOfInterest})")
         } else {
-            Timber.i("Loading: ${media.metadata.shortDescription} - ${media.uri} (${media.metadata.pointsOfInterest})")
+            Timber.i("Loading: ${mediaToLoad.metadata.shortDescription} - ${mediaToLoad.uri} (${mediaToLoad.metadata.pointsOfInterest})")
         }
 
-        updateMetadataOverlayData(media)
+        updateMetadataOverlayData(mediaToLoad)
 
         // Set overlay positions
         overlayHelper.assignOverlaysAndIds(
@@ -299,15 +311,15 @@ class ScreenController(
         }
 
         // Videos
-        if (media.type == AerialMediaType.VIDEO) {
-            videoPlayer.setVideo(media)
+        if (mediaToLoad.type == AerialMediaType.VIDEO) {
+            videoPlayer.setVideo(mediaToLoad)
             videoViewBinding.root.visibility = View.VISIBLE
             imageViewBinding.root.visibility = View.INVISIBLE
         }
 
         // Images
-        if (media.type == AerialMediaType.IMAGE) {
-            imagePlayer.setImage(media)
+        if (mediaToLoad.type == AerialMediaType.IMAGE) {
+            imagePlayer.setImage(mediaToLoad)
             imageViewBinding.root.visibility = View.VISIBLE
             videoViewBinding.root.visibility = View.INVISIBLE
         }
@@ -318,6 +330,115 @@ class ScreenController(
         }
 
         videoPlayer.start()
+        preloadUpcomingMedia()
+        prebuildUpcomingPlaylist()
+    }
+
+    private fun consumePreloadedMedia(media: AerialMedia): AerialMedia? {
+        val requestedUri = media.uri.toString()
+        if (preloadedNextSourceUri != requestedUri) {
+            return null
+        }
+
+        val preloaded = preloadedNextMedia
+        preloadedNextMedia = null
+        preloadedNextSourceUri = null
+        return preloaded
+    }
+
+    private fun preloadUpcomingMedia() {
+        preloadJob?.cancel()
+        preloadedNextMedia = null
+        preloadedNextSourceUri = null
+
+        if (!this::playlist.isInitialized || playlist.size <= 1) {
+            return
+        }
+
+        val upcomingMedia =
+            if (previousItem) {
+                playlist.peekPreviousItem()
+            } else {
+                peekUpcomingMedia()
+            }
+
+        if (upcomingMedia.type != AerialMediaType.VIDEO || upcomingMedia.source != AerialMediaSource.YOUTUBE) {
+            return
+        }
+
+        val sourceUri = upcomingMedia.uri.toString()
+        preloadJob =
+            mainScope.launch {
+                val resolvedUrl =
+                    withContext(Dispatchers.IO) {
+                        YouTubeFeature.repository(context).preloadVideoUrl(sourceUri)
+                    } ?: return@launch
+
+                preloadedNextSourceUri = sourceUri
+                preloadedNextMedia = upcomingMedia.copy(uri = resolvedUrl.toUri())
+            }
+    }
+
+    private fun prebuildUpcomingPlaylist() {
+        if (!this::playlist.isInitialized || playlist.size <= PLAYLIST_PREBUILD_MIN_SIZE) {
+            return
+        }
+
+        val prebuildThreshold =
+            PLAYLIST_PREBUILD_REMAINING_ITEMS
+                .coerceAtMost((playlist.size - 2).coerceAtLeast(1))
+        if (playlist.remainingUntilWrap() > prebuildThreshold) {
+            return
+        }
+
+        if (pendingPlaylist != null || playlistRefreshJob != null) {
+            return
+        }
+
+        playlistRefreshJob =
+            mainScope.launch {
+                val refreshedPlaylist =
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            if (YouTubeVideoPrefs.enabled) {
+                                YouTubeFeature.repository(context).warmCache(forceSearchRefresh = true)
+                            }
+                            MediaService(context).fetchMedia()
+                        }.onFailure { exception ->
+                            Timber.w(exception, "Failed to prebuild next playlist")
+                        }.getOrNull()
+                    } ?: return@launch
+
+                if (refreshedPlaylist.size == 0) {
+                    return@launch
+                }
+
+                pendingPlaylist = refreshedPlaylist
+                Timber.i("Prepared next playlist in background: ${refreshedPlaylist.size} items")
+            }.also { job ->
+                job.invokeOnCompletion {
+                    playlistRefreshJob = null
+                }
+            }
+    }
+
+    private fun peekUpcomingMedia(): AerialMedia =
+        if (playlist.remainingUntilWrap() == 0 && pendingPlaylist != null) {
+            pendingPlaylist!!.peekNextItem()
+        } else {
+            playlist.peekNextItem()
+        }
+
+    private fun nextPlaylistItem(): AerialMedia {
+        if (playlist.remainingUntilWrap() == 0) {
+            pendingPlaylist?.let { nextPlaylist ->
+                playlist = nextPlaylist
+                pendingPlaylist = null
+                Timber.i("Swapped to prebuilt playlist with %s items", playlist.size)
+            }
+        }
+
+        return playlist.nextItem()
     }
 
     private fun fadeOutLoadingText() {
@@ -425,7 +546,7 @@ class ScreenController(
                 // Pick next/previous video
                 val media =
                     if (!previousItem) {
-                        playlist.nextItem()
+                        nextPlaylistItem()
                     } else {
                         playlist.previousItem()
                     }
@@ -546,6 +667,8 @@ class ScreenController(
         nowPlayingService?.stop()
         weatherService?.stop()
         sleepTimerJob?.cancel()
+        preloadJob?.cancel()
+        playlistRefreshJob?.cancel()
         metadataJobs.values.forEach { it.cancel() }
         metadataJobs.clear()
         mainScope.cancel()
@@ -568,7 +691,7 @@ class ScreenController(
             fadeOutCurrentItem()
         } else {
             blackOutMode = false
-            loadItem(playlist.nextItem())
+            loadItem(nextPlaylistItem())
             // Restart sleep timer if preference still enabled
             scheduleSleepTimer()
         }
@@ -713,7 +836,7 @@ class ScreenController(
         mainScope.launch {
             delay(ERROR_DELAY)
             if (loadingView.isVisible) {
-                loadItem(playlist.nextItem())
+                loadItem(nextPlaylistItem())
             } else {
                 fadeOutCurrentItem()
             }
@@ -833,6 +956,8 @@ class ScreenController(
     }
 
     companion object {
+        const val PLAYLIST_PREBUILD_MIN_SIZE: Int = 8
+        const val PLAYLIST_PREBUILD_REMAINING_ITEMS: Int = 11
         const val LOADING_FADE_OUT: Long = 300 // Fade out loading text
         const val LOADING_DELAY: Long = 400 // Delay before fading out loading view
         const val ERROR_DELAY: Long = 2000 // Delay before loading next item, after error

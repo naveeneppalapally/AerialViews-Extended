@@ -17,6 +17,7 @@ import com.neilturner.aerialviews.models.prefs.ImmichMediaPrefs
 import com.neilturner.aerialviews.models.prefs.LocalMediaPrefs
 import com.neilturner.aerialviews.models.prefs.SambaMediaPrefs
 import com.neilturner.aerialviews.models.prefs.WebDavMediaPrefs
+import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.providers.AmazonMediaProvider
 import com.neilturner.aerialviews.providers.AppleMediaProvider
 import com.neilturner.aerialviews.providers.Comm1MediaProvider
@@ -27,6 +28,7 @@ import com.neilturner.aerialviews.providers.custom.CustomFeedProvider
 import com.neilturner.aerialviews.providers.immich.ImmichMediaProvider
 import com.neilturner.aerialviews.providers.samba.SambaMediaProvider
 import com.neilturner.aerialviews.providers.webdav.WebDavMediaProvider
+import com.neilturner.aerialviews.providers.youtube.YouTubeMediaProvider
 import com.neilturner.aerialviews.services.MediaServiceHelper.addFilenameAsDescriptionToMedia
 import com.neilturner.aerialviews.services.MediaServiceHelper.addMetadataToManifestVideos
 import com.neilturner.aerialviews.services.MediaServiceHelper.buildMediaList
@@ -51,6 +53,7 @@ class MediaService(
         providers.add(ImmichMediaProvider(context, ImmichMediaPrefs))
         providers.add(AppleMediaProvider(context, AppleVideoPrefs))
         providers.add(CustomFeedProvider(context, CustomFeedPrefs))
+        providers.add(YouTubeMediaProvider(context))
         providers.sortBy { it.type == ProviderSourceType.REMOTE }
     }
 
@@ -69,18 +72,20 @@ class MediaService(
                 val numPhotos = photos.size
                 videos =
                     videos.distinctBy { videos ->
-                        if (videos.source != AerialMediaSource.IMMICH) {
-                            videos.uri.filename.lowercase()
-                        } else {
-                            videos.uri
+                        when (videos.source) {
+                            AerialMediaSource.IMMICH,
+                            AerialMediaSource.YOUTUBE,
+                            -> videos.uri.toString().lowercase()
+
+                            else -> videos.uri.filename.lowercase()
                         }
                     }
                 photos =
                     photos.distinctBy { photo ->
-                        if (photo.source != AerialMediaSource.IMMICH) {
-                            photo.uri.filename.lowercase()
+                        if (photo.source == AerialMediaSource.IMMICH) {
+                            photo.uri.toString().lowercase()
                         } else {
-                            photo.uri
+                            photo.uri.filename.lowercase()
                         }
                     }
                 Timber.i("Duplicates removed: videos ${numVideos - videos.size}, photos ${numPhotos - photos.size}")
@@ -148,11 +153,15 @@ class MediaService(
             }
 
             if (GeneralPrefs.shuffleVideos) {
-                filteredMedia = filteredMedia.shuffled()
-                Timber.i("Shuffling media items")
+                val youtubeMixWeight = YouTubeVideoPrefs.mixWeight.toIntOrNull() ?: 1
+                filteredMedia = MediaServiceHelper.applyYouTubeMixWeight(filteredMedia, youtubeMixWeight)
+                Timber.i("Shuffling media items with YouTube mix weight %s", youtubeMixWeight)
             }
 
             Timber.i("Total media items: ${filteredMedia.size}")
-            return@withContext MediaPlaylist(filteredMedia)
+            return@withContext MediaPlaylist(
+                filteredMedia,
+                reshuffleOnWrap = GeneralPrefs.shuffleVideos,
+            )
         }
 }

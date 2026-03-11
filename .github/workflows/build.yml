@@ -1,0 +1,70 @@
+name: Build APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Prepare CI signing config
+        run: |
+          mkdir -p signing
+          keytool -genkeypair \
+            -storetype PKCS12 \
+            -keystore signing/legacy.jks \
+            -storepass android \
+            -keypass android \
+            -alias ci \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 3650 \
+            -dname "CN=AerialViews Extended, OU=CI, O=GitHub, L=NA, S=NA, C=US"
+          cat > signing/legacy.properties <<'EOF'
+          storeFile=signing/legacy.jks
+          storePassword=android
+          keyAlias=ci
+          keyPassword=android
+          EOF
+
+      - name: Build GitHub release APK
+        run: ./gradlew --no-daemon :app:assembleGithubNonMinifiedRelease
+
+      - name: Set release metadata
+        id: release_meta
+        run: |
+          echo "tag=v$(date -u +%Y.%m.%d)" >> "$GITHUB_OUTPUT"
+          echo "apk_path=app/build/outputs/apk/github/nonMinifiedRelease/app-github-nonMinifiedRelease.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-github-nonMinifiedRelease
+          path: ${{ steps.release_meta.outputs.apk_path }}
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          name: ${{ steps.release_meta.outputs.tag }}
+          files: ${{ steps.release_meta.outputs.apk_path }}
+          generate_release_notes: true
+          overwrite_files: true

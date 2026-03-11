@@ -29,6 +29,7 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 object NewPipeHelper {
+    private const val TAG = "NewPipeHelper"
     private const val USER_AGENT =
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
@@ -70,79 +71,17 @@ object NewPipeHelper {
     ): List<StreamInfoItem> =
         withContext(Dispatchers.IO) {
             init()
-            val requiredMinDurationSeconds = maxOf(minDurationSeconds, MIN_SEARCH_DURATION_SECONDS)
 
             try {
-                val service = NewPipe.getService("YouTube")
-                val searchUrl = buildSearchUrl(query, YoutubeSearchQueryHandlerFactory.VIDEOS)
-                val searchInfo =
-                    SearchInfo.getInfo(
-                        service,
-                        SearchQueryHandler(
-                            searchUrl,
-                            searchUrl,
-                            query,
-                            listOf(YoutubeSearchQueryHandlerFactory.VIDEOS),
-                            "",
-                        ),
-                    )
-
-                val baseCandidates =
-                    searchInfo.relatedItems
-                        .asSequence()
-                        .filterIsInstance<StreamInfoItem>()
-                        .filter { item ->
-                            item.getDuration() >= requiredMinDurationSeconds &&
-                                item.getUrl().isNotBlank() &&
-                                item.getName().isNotBlank()
-                        }.filter { item ->
-                            val titleLower = item.getName().lowercase(Locale.US)
-                            !isLikelyAI(item) &&
-                                !isBumperOrVlogTitle(titleLower) &&
-                                !isLikelySyntheticWallpaperTitle(titleLower)
-                        }.filter(::isRecentEnough)
-                        .toList()
-
-                val relevantCandidates =
-                    baseCandidates.filter { candidate ->
-                        matchesQueryIntent(
-                            queryLower = query.lowercase(Locale.US),
-                            titleLower = candidate.getName().lowercase(Locale.US),
-                        )
-                    }
-
-                val queryMatchedCandidates =
-                    if (relevantCandidates.size >= MIN_QUERY_MATCH_RESULTS) {
-                        relevantCandidates
-                    } else {
-                        baseCandidates
-                    }
-
-                val preferredCandidates =
-                    queryMatchedCandidates.filter { candidate ->
-                        hasPreferredContentSignal(candidate.getName().lowercase(Locale.US))
-                    }
-
-                val selectedCandidates =
-                    if (preferredCandidates.size >= MIN_PREFERRED_RESULTS_PER_QUERY) {
-                        preferredCandidates
-                    } else {
-                        queryMatchedCandidates
-                    }
-
-                selectedCandidates
-                    .asSequence()
-                    .distinctBy { extractVideoId(it.getUrl()) ?: it.getUrl() }
-                    .distinctBy {
-                        val fallbackKey = extractVideoId(it.getUrl()) ?: it.getUrl()
-                        normalizeTitleFingerprint(it.getName()).ifBlank { fallbackKey }
-                    }
-                    .take(20)
-                    .toList()
-            } catch (throwable: Throwable) {
+                val requiredMinDurationSeconds = maxOf(minDurationSeconds, MIN_SEARCH_DURATION_SECONDS)
+                val searchInfo = loadSearchInfo(query)
+                val baseCandidates = buildSearchCandidates(searchInfo, requiredMinDurationSeconds)
+                selectSearchResults(query, baseCandidates)
+            } catch (exception: Exception) {
+                Timber.tag(TAG).w(exception, "Failed to search YouTube for \"%s\"", query)
                 throw YouTubeExtractionException(
                     "Failed to search YouTube for \"$query\"",
-                    throwable,
+                    exception,
                 )
             }
         }
@@ -156,51 +95,127 @@ object NewPipeHelper {
             init()
 
             try {
-                val service = NewPipe.getService("YouTube")
-                val videoId =
-                    extractVideoId(videoPageUrl)
-                        ?: throw YouTubeExtractionException("Could not extract a video ID from $videoPageUrl")
-                val streamExtractor =
-                    service.getStreamExtractor(
-                        LinkHandler(
-                            videoPageUrl,
-                            videoPageUrl,
-                            videoId,
-                        ),
-                    )
-                streamExtractor.fetchPage()
-                val streamUrl =
-                    selectBestStreamUrl(
-                        progressiveStreams = streamExtractor.videoStreams,
-                        videoOnlyStreams = streamExtractor.videoOnlyStreams,
-                        dashUrl = streamExtractor.dashMpdUrl,
-                        hlsUrl = streamExtractor.hlsUrl,
-                        preferredQuality = preferredQuality,
-                        preferVideoOnly = preferVideoOnly,
-                    )
-                if (streamUrl.isNullOrBlank()) {
-                    throw YouTubeExtractionException(
-                        "No playable stream found for $videoPageUrl",
-                    )
-                }
-                return@withContext streamUrl
+                loadPlayableStreamUrl(videoPageUrl, preferredQuality, preferVideoOnly)
             } catch (exception: AgeRestrictedContentException) {
+                Timber.tag(TAG).d("Age-restricted stream rejected: %s", videoPageUrl)
                 throw exception
             } catch (exception: GeographicRestrictionException) {
+                Timber.tag(TAG).d("Geo-blocked stream rejected: %s", videoPageUrl)
                 throw exception
             } catch (exception: ContentNotAvailableException) {
+                Timber.tag(TAG).d("Unavailable stream rejected: %s", videoPageUrl)
                 throw exception
             } catch (exception: ExtractionException) {
+                Timber.tag(TAG).w(exception, "NewPipe extraction failed for %s", videoPageUrl)
                 throw exception
             } catch (exception: YouTubeExtractionException) {
                 throw exception
-            } catch (throwable: Throwable) {
+            } catch (exception: Exception) {
+                Timber.tag(TAG).w(exception, "Unexpected stream extraction failure for %s", videoPageUrl)
                 throw YouTubeExtractionException(
                     "Failed to extract a playable stream for $videoPageUrl",
-                    throwable,
+                    exception,
                 )
             }
         }
+
+    private fun loadSearchInfo(query: String): SearchInfo {
+        val service = NewPipe.getService("YouTube")
+        val searchUrl = buildSearchUrl(query, YoutubeSearchQueryHandlerFactory.VIDEOS)
+        return SearchInfo.getInfo(
+            service,
+            SearchQueryHandler(
+                searchUrl,
+                searchUrl,
+                query,
+                listOf(YoutubeSearchQueryHandlerFactory.VIDEOS),
+                "",
+            ),
+        )
+    }
+
+    private fun buildSearchCandidates(
+        searchInfo: SearchInfo,
+        requiredMinDurationSeconds: Int,
+    ): List<StreamInfoItem> =
+        searchInfo.relatedItems
+            .asSequence()
+            .filterIsInstance<StreamInfoItem>()
+            .filter(::hasUsableMetadata)
+            .filter { item -> item.getDuration() >= requiredMinDurationSeconds }
+            .filterNot(::isFilteredCandidate)
+            .filter(::isRecentEnough)
+            .toList()
+
+    private fun selectSearchResults(
+        query: String,
+        baseCandidates: List<StreamInfoItem>,
+    ): List<StreamInfoItem> {
+        val queryLower = query.lowercase(Locale.US)
+        val queryMatchedCandidates =
+            baseCandidates.filter { candidate ->
+                matchesQueryIntent(
+                    queryLower = queryLower,
+                    titleLower = candidate.getName().lowercase(Locale.US),
+                )
+            }.ifEnoughOrElse(MIN_QUERY_MATCH_RESULTS) { baseCandidates }
+
+        val preferredCandidates =
+            queryMatchedCandidates.filter { candidate ->
+                hasPreferredContentSignal(candidate.getName().lowercase(Locale.US))
+            }
+
+        return preferredCandidates
+            .ifEnoughOrElse(MIN_PREFERRED_RESULTS_PER_QUERY) { queryMatchedCandidates }
+            .asSequence()
+            .distinctBy { extractVideoId(it.getUrl()) ?: it.getUrl() }
+            .distinctBy {
+                val fallbackKey = extractVideoId(it.getUrl()) ?: it.getUrl()
+                normalizeTitleFingerprint(it.getName()).ifBlank { fallbackKey }
+            }
+            .take(MAX_RESULTS_PER_QUERY)
+            .toList()
+    }
+
+    private fun hasUsableMetadata(item: StreamInfoItem): Boolean =
+        item.getUrl().isNotBlank() && item.getName().isNotBlank()
+
+    private fun isFilteredCandidate(item: StreamInfoItem): Boolean {
+        val titleLower = item.getName().lowercase(Locale.US)
+        return isLikelyAI(item) ||
+            isBumperOrVlogTitle(titleLower) ||
+            isLikelySyntheticWallpaperTitle(titleLower)
+    }
+
+    private fun loadPlayableStreamUrl(
+        videoPageUrl: String,
+        preferredQuality: String,
+        preferVideoOnly: Boolean,
+    ): String {
+        val service = NewPipe.getService("YouTube")
+        val videoId =
+            extractVideoId(videoPageUrl)
+                ?: throw YouTubeExtractionException("Could not extract a video ID from $videoPageUrl")
+        val streamExtractor =
+            service.getStreamExtractor(
+                LinkHandler(
+                    videoPageUrl,
+                    videoPageUrl,
+                    videoId,
+                ),
+            )
+        streamExtractor.fetchPage()
+
+        return selectBestStreamUrl(
+            progressiveStreams = streamExtractor.videoStreams,
+            videoOnlyStreams = streamExtractor.videoOnlyStreams,
+            dashUrl = streamExtractor.dashMpdUrl,
+            hlsUrl = streamExtractor.hlsUrl,
+            preferredQuality = preferredQuality,
+            preferVideoOnly = preferVideoOnly,
+        )?.takeIf(String::isNotBlank)
+            ?: throw YouTubeExtractionException("No playable stream found for $videoPageUrl")
+    }
 
     private fun selectBestStreamUrl(
         progressiveStreams: List<VideoStream>,
@@ -223,26 +238,22 @@ object NewPipeHelper {
         val primaryStreams = if (preferVideoOnly) playableVideoOnlyStreams else playableProgressiveStreams
         val secondaryStreams = if (preferVideoOnly) playableProgressiveStreams else playableVideoOnlyStreams
 
-        selectBestVideoStream(primaryStreams, preferredHeight, minimumAcceptableHeight)?.let { stream ->
-            logSelectedStream(stream)
-            return stream.getContent()
-        }
+        return selectStreamContent(primaryStreams, preferredHeight, minimumAcceptableHeight)
+            ?: selectStreamContent(secondaryStreams, preferredHeight, minimumAcceptableHeight)
+            ?: playableDashUrl
+            ?: playableHlsUrl
+            ?: selectStreamContent(primaryStreams + secondaryStreams, preferredHeight, null)
+    }
 
-        selectBestVideoStream(secondaryStreams, preferredHeight, minimumAcceptableHeight)?.let { stream ->
-            logSelectedStream(stream)
-            return stream.getContent()
-        }
-
-        playableDashUrl?.let { return it }
-        if (playableHlsUrl != null) {
-            return playableHlsUrl
-        }
-
-        return selectBestVideoStream(primaryStreams + secondaryStreams, preferredHeight, null)?.let { stream ->
+    private fun selectStreamContent(
+        streams: List<VideoStream>,
+        preferredHeight: Int?,
+        minimumAcceptableHeight: Int?,
+    ): String? =
+        selectBestVideoStream(streams, preferredHeight, minimumAcceptableHeight)?.let { stream ->
             logSelectedStream(stream)
             stream.getContent()
         }
-    }
 
     private fun selectBestVideoStream(
         streams: List<VideoStream>,
@@ -386,7 +397,7 @@ object NewPipeHelper {
         }
 
     private fun logSelectedStream(stream: VideoStream) {
-        Timber.d(
+        Timber.tag(TAG).d(
             "Selected YouTube stream: %sp codec=%s bitrate=%s itag=%s support=%s",
             streamHeight(stream),
             stream.getCodec(),
@@ -480,51 +491,56 @@ object NewPipeHelper {
             decoderSupportCache[cacheKey]?.let { return it }
         }
 
-        val support =
-            runCatching {
-                val decoders =
-                    MediaCodecList(MediaCodecList.ALL_CODECS)
-                        .codecInfos
-                        .asSequence()
-                        .filterNot { it.isEncoder }
-                        .filter { codecInfo ->
-                            codecInfo.supportedTypes.any { it.equals(mimeType, ignoreCase = true) }
-                        }.toList()
-
-                if (decoders.isEmpty()) {
-                    DecoderSupport.UNSUPPORTED
-                } else {
-                    val isSupported =
-                        decoders.any { codecInfo ->
-                            val supportedType =
-                                codecInfo.supportedTypes.firstOrNull { it.equals(mimeType, ignoreCase = true) }
-                                    ?: return@any false
-                            val capabilities = codecInfo.getCapabilitiesForType(supportedType)
-                            val videoCapabilities = capabilities.videoCapabilities ?: return@any true
-                            videoCapabilities.isSizeSupported(streamSize.first, streamSize.second) ||
-                                videoCapabilities.isSizeSupported(streamSize.second, streamSize.first)
-                        }
-                    if (isSupported) {
-                        DecoderSupport.SUPPORTED
-                    } else {
-                        DecoderSupport.UNSUPPORTED
-                    }
-                }
-            }.getOrElse { exception ->
-                Timber.w(
-                    exception,
-                    "Failed to inspect decoder support for %s at %sx%s",
-                    mimeType,
-                    streamSize.first,
-                    streamSize.second,
-                )
-                DecoderSupport.UNKNOWN
-            }
+        val support = inspectDecoderSupport(mimeType, streamSize)
 
         synchronized(decoderSupportCache) {
             decoderSupportCache[cacheKey] = support
         }
         return support
+    }
+
+    private fun inspectDecoderSupport(
+        mimeType: String,
+        streamSize: Pair<Int, Int>,
+    ): DecoderSupport =
+        runCatching {
+            val decoders =
+                MediaCodecList(MediaCodecList.ALL_CODECS)
+                    .codecInfos
+                    .asSequence()
+                    .filterNot { it.isEncoder }
+                    .filter { codecInfo ->
+                        codecInfo.supportedTypes.any { it.equals(mimeType, ignoreCase = true) }
+                    }.toList()
+
+            when {
+                decoders.isEmpty() -> DecoderSupport.UNSUPPORTED
+                decoders.any { codecInfo -> codecSupportsSize(codecInfo, mimeType, streamSize) } -> DecoderSupport.SUPPORTED
+                else -> DecoderSupport.UNSUPPORTED
+            }
+        }.getOrElse { exception ->
+            Timber.tag(TAG).w(
+                exception,
+                "Failed to inspect decoder support for %s at %sx%s",
+                mimeType,
+                streamSize.first,
+                streamSize.second,
+            )
+            DecoderSupport.UNKNOWN
+        }
+
+    private fun codecSupportsSize(
+        codecInfo: android.media.MediaCodecInfo,
+        mimeType: String,
+        streamSize: Pair<Int, Int>,
+    ): Boolean {
+        val supportedType =
+            codecInfo.supportedTypes.firstOrNull { it.equals(mimeType, ignoreCase = true) }
+                ?: return false
+        val capabilities = codecInfo.getCapabilitiesForType(supportedType)
+        val videoCapabilities = capabilities.videoCapabilities ?: return true
+        return videoCapabilities.isSizeSupported(streamSize.first, streamSize.second) ||
+            videoCapabilities.isSizeSupported(streamSize.second, streamSize.first)
     }
 
     private fun decoderAvailability(mimeType: String): DecoderSupport {
@@ -548,7 +564,7 @@ object NewPipeHelper {
                     DecoderSupport.UNSUPPORTED
                 }
             }.getOrElse { exception ->
-                Timber.w(exception, "Failed to inspect decoder availability for %s", mimeType)
+                Timber.tag(TAG).w(exception, "Failed to inspect decoder availability for %s", mimeType)
                 DecoderSupport.UNKNOWN
             }
 
@@ -596,35 +612,7 @@ object NewPipeHelper {
         private val client: OkHttpClient,
     ) : Downloader() {
         override fun execute(request: Request): Response {
-            val requestBuilder =
-                Builder()
-                    .url(request.url())
-                    .header("User-Agent", USER_AGENT)
-                    .header("Referer", REFERER)
-                    .header("Origin", ORIGIN)
-
-            request.headers().forEach { (name, values) ->
-                if (name.isBlank()) {
-                    return@forEach
-                }
-
-                requestBuilder.removeHeader(name)
-                values.forEach { value ->
-                    requestBuilder.addHeader(name, value)
-                }
-            }
-
-            val okHttpRequest =
-                when (request.httpMethod()) {
-                    "POST" -> {
-                        val mediaType = request.getHeader("Content-Type")?.toMediaTypeOrNull()
-                        val body = (request.dataToSend() ?: ByteArray(0)).toRequestBody(mediaType)
-                        requestBuilder.post(body).build()
-                    }
-
-                    "HEAD" -> requestBuilder.head().build()
-                    else -> requestBuilder.get().build()
-                }
+            val okHttpRequest = buildOkHttpRequest(request)
 
             client.newCall(okHttpRequest).execute().use { response ->
                 return Response(
@@ -637,6 +625,39 @@ object NewPipeHelper {
             }
         }
 
+        private fun buildOkHttpRequest(request: Request) =
+            requestBuilder(request).let { requestBuilder ->
+                when (request.httpMethod()) {
+                    "POST" -> {
+                        val mediaType = request.getHeader("Content-Type")?.toMediaTypeOrNull()
+                        val body = (request.dataToSend() ?: ByteArray(0)).toRequestBody(mediaType)
+                        requestBuilder.post(body).build()
+                    }
+
+                    "HEAD" -> requestBuilder.head().build()
+                    else -> requestBuilder.get().build()
+                }
+            }
+
+        private fun requestBuilder(request: Request): Builder =
+            Builder()
+                .url(request.url())
+                .header("User-Agent", USER_AGENT)
+                .header("Referer", REFERER)
+                .header("Origin", ORIGIN)
+                .also { requestBuilder ->
+                    request.headers().forEach { (name, values) ->
+                        if (name.isBlank()) {
+                            return@forEach
+                        }
+
+                        requestBuilder.removeHeader(name)
+                        values.forEach { value ->
+                            requestBuilder.addHeader(name, value)
+                        }
+                    }
+                }
+
         private fun Request.getHeader(name: String): String? =
             headers()[name]?.firstOrNull()
     }
@@ -645,6 +666,7 @@ object NewPipeHelper {
         get() = getRelatedItems()
 
     private const val MIN_SEARCH_DURATION_SECONDS = 480
+    private const val MAX_RESULTS_PER_QUERY = 20
     private const val MIN_QUERY_MATCH_RESULTS = 4
     private const val MIN_PREFERRED_RESULTS_PER_QUERY = 6
     private val AI_WORD_REGEX = Regex("\\bai\\b", RegexOption.IGNORE_CASE)
@@ -805,6 +827,11 @@ object NewPipeHelper {
             "Referer" to REFERER,
             "Origin" to ORIGIN,
         )
+
+    private inline fun <T> List<T>.ifEnoughOrElse(
+        minimumSize: Int,
+        fallback: () -> List<T>,
+    ): List<T> = if (size >= minimumSize) this else fallback()
 
     private data class DecoderSupportKey(
         val mimeType: String,

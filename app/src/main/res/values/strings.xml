@@ -222,7 +222,7 @@
     <string name="youtube_category_weather_summary">Storms, clouds, rain, lightning</string>
     <string name="youtube_category_winter_title">Winter and Arctic</string>
     <string name="youtube_category_winter_summary">Snow, ice, frozen landscapes</string>
-    <string name="youtube_categories_changed_notice">Tap Refresh Now to update your video library with the new categories</string>
+    <string name="youtube_categories_changed_notice">Updating your video library in the background with the new categories</string>
     <string name="youtube_playlist_category_title">Quality &amp; playback</string>
     <string name="youtube_quality_title">Video Quality</string>
     <string name="youtube_mix_weight_title">YouTube Playlist Weight</string>
@@ -233,6 +233,7 @@
     <string name="youtube_shuffle_title">Shuffle Playback</string>
     <string name="youtube_refresh_now_title">Refresh Now</string>
     <string name="youtube_refresh_now_summary">Rebuild the rotating YouTube search pool immediately and update the local cache</string>
+    <string name="youtube_refresh_background_started">Refreshing YouTube library in the background</string>
     <string name="youtube_refresh_success">Refreshed %1$d videos</string>
     <string name="youtube_refresh_failed">Refresh failed</string>
 

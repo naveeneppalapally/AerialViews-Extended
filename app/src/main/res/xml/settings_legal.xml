@@ -4,8 +4,8 @@
 
     <PreferenceCategory app:title="This Application">
         <Preference
-            app:title="AerialViews Extended"
-            app:summary="A fork of AerialViews by Neil McAlister.\nModified by naveeneppalally.\nSource: github.com/naveeneppalally/AerialViews-Extended"
+            app:title="AerialViews+"
+            app:summary="A fork of AerialViews by Neil McAlister.\nModified by naveeneppalapally.\nSource: github.com/naveeneppalapally/AerialViews-Plus"
             app:selectable="false" />
         <Preference
             app:title="License"

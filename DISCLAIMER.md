@@ -1,6 +1,6 @@
 # Disclaimer
 
-AerialViews Extended is not affiliated with YouTube, Google, or Apple.
+AerialViews+ is not affiliated with YouTube, Google, or Apple.
 
 This app uses NewPipe Extractor for on-device YouTube stream extraction.
 NewPipe Extractor is a community-maintained open source library licensed

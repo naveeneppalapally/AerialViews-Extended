@@ -1,8 +1,8 @@
-# AerialViews Extended
+# AerialViews+
 
-[![Latest GitHub release](https://img.shields.io/github/v/release/naveeneppalapally/AerialViews-Extended.svg?logo=github&label=GitHub&cacheSeconds=3600)](https://github.com/naveeneppalapally/AerialViews-Extended/releases/latest)
-[![GitHub Downloads](https://img.shields.io/github/downloads/naveeneppalapally/AerialViews-Extended/total?color=blue&label=Downloads&logo=github)](https://github.com/naveeneppalapally/AerialViews-Extended/releases/latest)
-[![License](https://img.shields.io/:license-gpl%20v3-lightgrey.svg?style=flat)](https://raw.githubusercontent.com/naveeneppalapally/AerialViews-Extended/main/LICENSE)
+[![Latest GitHub release](https://img.shields.io/github/v/release/naveeneppalapally/AerialViews-Plus.svg?logo=github&label=GitHub&cacheSeconds=3600)](https://github.com/naveeneppalapally/AerialViews-Plus/releases/latest)
+[![GitHub Downloads](https://img.shields.io/github/downloads/naveeneppalapally/AerialViews-Plus/total?color=blue&label=Downloads&logo=github)](https://github.com/naveeneppalapally/AerialViews-Plus/releases/latest)
+[![License](https://img.shields.io/:license-gpl%20v3-lightgrey.svg?style=flat)](https://raw.githubusercontent.com/naveeneppalapally/AerialViews-Plus/main/LICENSE)
 [![API](https://img.shields.io/badge/API-23%2B-lightgrey.svg?style=flat)](https://android-arsenal.com/api?level=23)
 
 A fork of AerialViews that adds YouTube as a native video source.  
@@ -30,7 +30,7 @@ Plays fresh 4K nature, aerial, and ambient videos from YouTube directly on your 
 
 ## How to Get It
 
-Download the APK from the [Releases tab](https://github.com/naveeneppalapally/AerialViews-Extended/releases/latest) and install it manually.  
+Download the APK from the [Releases tab](https://github.com/naveeneppalapally/AerialViews-Plus/releases/latest) and install it manually.  
 Sideloading is required — this fork is not on the Play Store.
 
 1. Download the APK from the Releases tab
@@ -38,10 +38,10 @@ Sideloading is required — this fork is not on the Play Store.
 3. Install via a file manager, or use ADB:
 
 ```sh
-adb install -r app-github-nonMinifiedRelease.apk
+adb install -r AerialViews-Plus-v1.0.0.apk
 ```
 
-## How to set AerialViews Extended as the default screensaver
+## How to set AerialViews+ as the default screensaver
 
 > These setup instructions are taken directly from the original 
 > [AerialViews](https://github.com/theothernt/AerialViews) by 
@@ -61,7 +61,7 @@ But it can be done manually. Here is an overview of the steps...
 1. Enable Developer mode, enable USB debugging, then find the IP address of your device
 2. Use a Mac, iPhone, PC or Android phone with the required software or app
 3. Connect to your Android/Google/Fire TV device
-4. Run two ADB commands, one to set Aerial Views as the default screensaver, the other to set how long it takes the screensaver to start
+4. Run two ADB commands, one to set AerialViews+ as the default screensaver, the other to set how long it takes the screensaver to start
 
 The full instructions are below, please click or tap to expand each step.
 
@@ -104,33 +104,33 @@ Next, find the IP address of your device and make a note of it. Navigate to the 
 <summary>Allow Auto Launch on TCL TVs</summary>
 &nbsp;
 
-If you have a TCL TV with Google TV, you need to allow the Auto Launch permission so that Aerial Views can be launched from the background when the screensaver starts.
+If you have a TCL TV with Google TV, you need to allow the Auto Launch permission so that AerialViews+ can be launched from the background when the screensaver starts.
 
-Otherwise, the screensaver cannot be started, either automatically, or manually via the Screensaver menu shortcut, unless the Aerial Views app has been recently opened (see [#191](https://github.com/theothernt/AerialViews/issues/191) for details).
+Otherwise, the screensaver cannot be started, either automatically, or manually via the Screensaver menu shortcut, unless the AerialViews+ app has been recently opened (see [#191](https://github.com/theothernt/AerialViews/issues/191) for details).
 
 1. Open the __Safety Guard__ app on your TV
 2. Navigate to `Permission Shield > Auto Launch Permission`
 3. Change the `Auto manager` at the top to `Closed` - this allows you to manually select which apps can auto-launch instead of the system deciding automatically
-4. Scroll to __Aerial Views__ and change it to `Opened`
+4. Scroll to __AerialViews+__ and change it to `Opened`
 
 Not all TCL TVs have the same software and features. If the above __Safety Guard__ app does not exist on your TV, the following ADB command might help…
 
 Android <v14:
 
 ```sh
-appops set com.neilturner.aerialviews APP_AUTO_START allow
+appops set com.naveeneppalapally.aerialviewsplus APP_AUTO_START allow
 ```
 
 Androind >=v14
 
 ```sh
-appops set com.neilturner.aerialviews AUTO_START allow
+appops set com.naveeneppalapally.aerialviewsplus AUTO_START allow
 ```
 
 You can confirm the available options:
 
 ```sh
-appops get com.neilturner.aerialviews
+appops get com.naveeneppalapally.aerialviewsplus
 
 # Returns
 WAKE_LOCK: allow; time=+5m55s466ms ago; duration=+2s889ms
@@ -275,7 +275,7 @@ You should be connected to your CCwGTV device with ADB. Now you can run `adb she
 </details>
 
 <details>
-<summary>ADB command - set Aerial Views as the default screensaver</summary>
+<summary>ADB command - set AerialViews+ as the default screensaver</summary>
 &nbsp;
 
 Connect to your Android TV device and start a command shell...
@@ -292,10 +292,10 @@ adb shell
 
 :information_source: *The first time you connect to your Android TV device, you will probably see a confirmation dialogue asking to "allow" the connection*
 
-Next, set Aerial Views as the default screensaver with this command…
+Next, set AerialViews+ as the default screensaver with this command…
 
 ```sh
-settings put secure screensaver_components com.neilturner.aerialviews/.ui.screensaver.DreamActivity
+settings put secure screensaver_components com.naveeneppalapally.aerialviewsplus/.ui.screensaver.DreamActivity
 ```
 
 Optional: Confirm that the command was run successfully, as there is no confirmation when the command above is run.
@@ -307,7 +307,7 @@ settings get secure screensaver_components
 If set correctly, you should see... 
 
 ```sh
-com.neilturner.aerialviews/.ui.screensaver.DreamActivity
+com.naveeneppalapally.aerialviewsplus/.ui.screensaver.DreamActivity
 ```
 
 </details>
@@ -316,12 +316,12 @@ com.neilturner.aerialviews/.ui.screensaver.DreamActivity
 <summary>ADB command - extra command for Fire TV + Fire OS 7.6.x.x</summary>
 &nbsp;
 
-Recent updates to Fire OS mean extra commands are required for Aerial Views to function properly as the default screensaver.
+Recent updates to Fire OS mean extra commands are required for AerialViews+ to function properly as the default screensaver.
 
 Like with previous ADB commands, connect to your Android TV device and start a command shell. Then run the following commands...
 
 ```sh
-settings put secure screensaver_default_component com.neilturner.aerialviews/.ui.screensaver.DreamActivity
+settings put secure screensaver_default_component com.naveeneppalapally.aerialviewsplus/.ui.screensaver.DreamActivity
 settings put secure contextual_screen_off_timeout 300000 
 settings put secure screensaver_enabled 1
 ```
@@ -332,7 +332,7 @@ settings put secure screensaver_enabled 1
 <summary>ADB command - extra command for Fire TV + Fire OS 8.1.x.x</summary>
 &nbsp;
 
-Fire OS 8.x introduces a new Ambient Experience screensaver. This must also be disabled for a 3rd party screensaver, like Aerial Views, to run normally.
+Fire OS 8.x introduces a new Ambient Experience screensaver. This must also be disabled for a 3rd party screensaver, like AerialViews+, to run normally.
 
 To disable the Ambient Experience, run this ADB command...
 
@@ -365,7 +365,7 @@ settings put system screen_off_timeout 600000
 <summary>How to revert back to the default screensaver</summary>
 &nbsp;
 
-For whatever reason, if you would like to stop using Aerial Views and revert back to the original screensaver, there are two options…
+For whatever reason, if you would like to stop using AerialViews+ and revert back to the original screensaver, there are two options…
 
 * Reset your device. Doing so will also reset the screensaver preference
 * Use an ADB commands to enable the default screensaver, depending on your device
@@ -472,7 +472,7 @@ Videos may be skipped due to age restrictions, regional blocks, deleted uploads,
 <summary>Can I use this on Nvidia Shield?</summary>
 &nbsp;
 
-Yes. Go to `Settings > Device Preferences > Screen saver` and select AerialViews Extended.
+Yes. Go to `Settings > Device Preferences > Screen saver` and select AerialViews+.
 </details>
 
 <details>
@@ -513,7 +513,7 @@ Please open an issue before submitting a pull request for larger changes.
 
 ## About
 
-AerialViews Extended is based on [AerialViews](https://github.com/theothernt/AerialViews) by Neil McAlister, which itself is based on [Aerial Dream](https://github.com/cachapa/AerialDream) by Daniel Cachapa, created in late 2015. This fork was created to add YouTube as a video source without requiring any external server or API key.
+AerialViews+ is based on [AerialViews](https://github.com/theothernt/AerialViews) by Neil McAlister, which itself is based on [Aerial Dream](https://github.com/cachapa/AerialDream) by Daniel Cachapa, created in late 2015. This fork was created to add YouTube as a video source without requiring any external server or API key.
 
 ## Credits
 

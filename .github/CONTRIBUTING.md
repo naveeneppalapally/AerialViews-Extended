@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for contributing to AerialViews-Extended.
+Thanks for contributing to AerialViews+.
 
 ## Workflow
 

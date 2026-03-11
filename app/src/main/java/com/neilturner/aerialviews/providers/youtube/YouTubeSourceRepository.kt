@@ -70,6 +70,13 @@ class YouTubeSourceRepository(
             cacheDao.getAll().size
         }
 
+    fun playbackUrl(entry: YouTubeCacheEntity): String =
+        if (hasFreshStreamUrl(entry)) {
+            entry.streamUrl
+        } else {
+            entry.videoPageUrl
+        }
+
     fun preWarmInBackground() {
         scheduleBackgroundWarmCache(forceSearchRefresh = true)
     }
@@ -709,6 +716,9 @@ class YouTubeSourceRepository(
 
     private fun hasExpiringStreams(cachedEntries: List<YouTubeCacheEntity>): Boolean =
         cachedEntries.any(::isStreamUrlExpiringSoon)
+
+    private fun hasFreshStreamUrl(entry: YouTubeCacheEntity): Boolean =
+        entry.streamUrl.isNotBlank() && !isStreamUrlExpiringSoon(entry)
 
     private fun isStreamUrlExpiringSoon(entry: YouTubeCacheEntity): Boolean =
         entry.streamUrlExpiresAt < System.currentTimeMillis() + STREAM_REEXTRACT_BUFFER_MS

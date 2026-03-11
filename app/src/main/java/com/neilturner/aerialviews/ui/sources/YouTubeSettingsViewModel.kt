@@ -30,7 +30,7 @@ class YouTubeSettingsViewModel(
         viewModelScope.launch {
             val cacheSize = repository.getCacheSize()
             if (cacheSize <= 0) {
-                forceRefresh()
+                refreshInBackground()
             }
         }
     }

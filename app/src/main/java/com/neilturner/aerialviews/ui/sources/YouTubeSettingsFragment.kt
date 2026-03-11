@@ -105,7 +105,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             if (newValue == true) {
                 YouTubeVideoPrefs.count = "-1"
                 updateVideoCount()
-                viewModel.forceRefresh()
+                viewModel.refreshInBackground()
             } else {
                 progressDialog?.dismiss()
                 progressDialog = null

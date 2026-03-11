@@ -35,8 +35,8 @@ class YouTubeMediaProvider(
             }
 
             repository.getCachedVideos().also { entries ->
-                if (entries.isNotEmpty()) {
-                    repository.preResolveNext(providerScope)
+                entries.firstOrNull()?.let { firstEntry ->
+                    repository.preResolveVideo(firstEntry.videoPageUrl, providerScope)
                 }
             }.map(::toAerialMedia)
         } catch (exception: Exception) {

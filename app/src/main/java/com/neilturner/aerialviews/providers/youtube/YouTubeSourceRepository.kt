@@ -105,6 +105,39 @@ class YouTubeSourceRepository(
             }
     }
 
+    fun preResolveVideo(
+        videoPageUrl: String,
+        scope: CoroutineScope,
+    ) {
+        preResolvingJob?.cancel()
+        preResolvingJob =
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val entry =
+                        cacheDao.getByVideoPageUrl(videoPageUrl)
+                            ?: buildDirectCacheEntry(
+                                videoPageUrl = videoPageUrl,
+                                cachedAt = System.currentTimeMillis(),
+                                preferredQuality = preferredQuality(),
+                            )
+                            ?: return@launch
+                    val resolvedAt = System.currentTimeMillis()
+                    val resolvedUrl = resolveEntryStreamUrl(entry, recordPlayback = false)
+                    cachePreResolvedEntry(
+                        buildResolvedEntry(
+                            entry = entry,
+                            resolvedUrl = resolvedUrl,
+                            resolvedAt = resolvedAt,
+                        ),
+                    )
+                    Timber.tag(TAG).d("Pre-resolved requested YouTube video: %s", entry.title)
+                } catch (exception: Exception) {
+                    clearPreResolvedEntry()
+                    Timber.tag(TAG).w(exception, "Failed to pre-resolve requested YouTube video")
+                }
+            }
+    }
+
     suspend fun preloadVideoUrl(videoPageUrl: String): String? =
         withContext(Dispatchers.IO) {
             peekPreResolvedEntry(videoPageUrl)?.streamUrl?.let { return@withContext it }

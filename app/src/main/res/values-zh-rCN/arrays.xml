@@ -220,6 +220,7 @@
     <item>Amazon 视频</item>
     <item>Jetson Creative 视频</item>
     <item>Robin Fourcade 视频</item>
+    <item>YouTube Videos</item>
   </string-array>
   <string-array name="seek_interval_entries">
     <item>10 秒</item>

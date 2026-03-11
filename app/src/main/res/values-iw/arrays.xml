@@ -220,6 +220,7 @@
     <item>סרטוני אמזון</item>
     <item>סרטוני ג׳טסון קריאטיב</item>
     <item>סרטוני רובין פורקייד</item>
+    <item>YouTube Videos</item>
   </string-array>
   <string-array name="seek_interval_entries">
     <item>10 שניות</item>

@@ -236,6 +236,7 @@
     <item>Видео Amazon</item>
     <item>Видео от Jetson Creative</item>
     <item>Видео Робина Фуркада</item>
+    <item>YouTube Videos</item>
   </string-array>
   <string-array name="seek_interval_entries">
     <item>10 секунд</item>

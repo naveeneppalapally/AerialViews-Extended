@@ -5,8 +5,8 @@
 [![License](https://img.shields.io/:license-gpl%20v3-lightgrey.svg?style=flat)](https://raw.githubusercontent.com/naveeneppalapally/AerialViews-Plus/main/LICENSE)
 [![API](https://img.shields.io/badge/API-23%2B-lightgrey.svg?style=flat)](https://android-arsenal.com/api?level=23)
 
-A fork of AerialViews that adds YouTube as a native video source.  
-Plays fresh 4K nature, aerial, and ambient videos from YouTube directly on your Android TV — no API key, no server, no login required.
+A fork of AerialViews that adds YouTube as a native video source.
+Plays fresh 4K nature, aerial, and ambient videos from YouTube directly on your Android TV, no API key, no server, no login required.
 
 ## Everything from AerialViews
 
@@ -27,19 +27,6 @@ Plays fresh 4K nature, aerial, and ambient videos from YouTube directly on your 
 * Stream URL auto-renewal before YouTube links expire
 * YouTube mixed with built-in sources in the same playlist
 * Background refresh via WorkManager
-
-## How to Get It
-
-Download the APK from the [Releases tab](https://github.com/naveeneppalapally/AerialViews-Plus/releases/latest) and install it manually.  
-Sideloading is required — this fork is not on the Play Store.
-
-1. Download the APK from the Releases tab
-2. Enable `Install unknown apps` on your Android TV
-3. Install via a file manager, or use ADB:
-
-```sh
-adb install -r AerialViews-Plus-v1.0.0.apk
-```
 
 ## How to set AerialViews+ as the default screensaver
 
@@ -164,7 +151,7 @@ After pressing return, you should see something like this
 
 ```sh
 Android Debug Bridge version 1.0.41
-Version  31.0.0p1-android-tools
+Version 31.0.0p1-android-tools
 ```
 
 Now you can execute ADB commands.
@@ -193,7 +180,7 @@ After pressing return, you should see something like this
 
 ```sh
 Android Debug Bridge version 1.0.41
-Version  34.0.0p1-android-tools
+Version 34.0.0p1-android-tools
 ```
 
 Now you can execute ADB commands.
@@ -218,7 +205,7 @@ After pressing return, you should see something like this
 
 ```sh
 Android Debug Bridge version 1.0.41
-Version  35.0.0-11411520
+Version 35.0.0-11411520
 ```
 
 Now you can execute ADB commands.
@@ -244,7 +231,7 @@ After pressing return, you should see something like this
 
 ```sh
 Android Debug Bridge version 1.0.41
-Version  35.0.0-11411520
+Version 35.0.0-11411520
 ```
 
 </details>
@@ -407,16 +394,16 @@ Please make sure to enable **Developer Mode** and **USB/Networking Debugging**. 
 
 ## How YouTube Works
 
-When YouTube is enabled as a source, the app builds a rotating set of search queries on-device and uses NewPipe Extractor to find and resolve playable video streams — no Google account needed, no API key, nothing sent to a custom server.
+When YouTube is enabled as a source, the app builds a rotating set of search queries on-device and uses NewPipe Extractor to find and resolve playable video streams, with no Google account needed, no API key, and nothing sent to a custom server.
 
 Results are cached locally for about 24 hours. Stream URLs are refreshed automatically before they expire, and a background job keeps the cache warm overnight. If a refresh fails, the app falls back to the last working cache so playback never stops.
 
 ## About the YouTube Videos
 
-Unlike the built-in Apple and Amazon videos in AerialViews — which are 
-a fixed, hand-picked collection — the YouTube source in this fork pulls 
-fresh content automatically. This is intentional, but it comes with a 
-different experience worth understanding.
+Unlike the built-in Apple and Amazon videos in AerialViews, which are
+a fixed, hand-picked collection, the YouTube source in this fork pulls
+fresh content automatically. It is a different experience, and it helps
+to know what to expect.
 
 **What you will see:**
 - New videos appear regularly as the cache refreshes daily
@@ -424,24 +411,18 @@ different experience worth understanding.
 - A wide variety of locations, seasons, and subjects over time
 
 **What keeps it feeling consistent:**
-- Only videos longer than 8 minutes are included — no short clips
-- Keywords like "ambient", "no music", and "no talking" filter out 
-  videos with narration, intros, or background music
-- AI-generated videos are filtered out by title, channel name, 
-  and duration patterns
-- Channel caps (max 3 videos per channel) prevent any single 
-  creator from dominating the playlist
-- Location diversity caps prevent the same place appearing 
-  back to back
-- Play history tracking means you will not see the same video 
-  twice in a short period
+- Only videos longer than 8 minutes are included, with no short clips
+- Keywords like "ambient", "no music", and "no talking" filter out videos with narration, intros, or background music
+- AI-generated videos are filtered out by title, channel name, and duration patterns
+- Channel caps (max 3 videos per channel) prevent any single creator from dominating the playlist
+- Location diversity caps prevent the same place appearing back to back
+- Play history tracking means you will not see the same video twice in a short period
 
-**The honest tradeoff:**
-The original AerialViews videos are carefully curated and always 
-look cinematic and consistent. The YouTube source trades that 
-stability for variety and freshness — you get new content every 
-day instead of the same 250 videos forever. Some videos will be 
-better than others. If a video looks out of place, the app moves 
+The original AerialViews videos are carefully curated and always
+look cinematic and consistent. The YouTube source trades that
+stability for variety and freshness, so you get new content every
+day instead of the same 250 videos forever. Some videos will be
+better than others. If a video looks out of place, the app moves
 on automatically after it finishes.
 
 If you want the stable, curated experience, enable Apple or 
@@ -458,7 +439,7 @@ Please click or tap to expand each item below...
 
 NewPipe Extractor occasionally breaks when YouTube updates its internal API. This is fixed by updating the NewPipe version.
 
-Check [github.com/TeamNewPipe/NewPipeExtractor/releases](https://github.com/TeamNewPipe/NewPipeExtractor/releases) for the latest version and open an issue on this repo — it is usually fixed within a few days.
+Check [github.com/TeamNewPipe/NewPipeExtractor/releases](https://github.com/TeamNewPipe/NewPipeExtractor/releases) for the latest version and open an issue on this repo. It is usually fixed within a few days.
 </details>
 
 <details>
@@ -486,7 +467,7 @@ The original AerialViews license prohibits any fork from being uploaded to the P
 <summary>Does this replace AerialViews or work alongside it?</summary>
 &nbsp;
 
-It replaces it — install one or the other, not both. All original features are included in this fork.
+It replaces it. Install one or the other, not both. All original features are included in this fork.
 </details>
 
 ## Building from Source
@@ -521,7 +502,7 @@ See [CREDITS.md](./CREDITS.md) for full attribution.
 
 ## License
 
-GPL v3 — see [LICENSE](./LICENSE).
+GPL v3, see [LICENSE](./LICENSE).
 
 ## Disclaimer
 

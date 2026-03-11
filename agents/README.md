@@ -1,11 +1,10 @@
 # AerialViews+ Agent Routing
 
 This folder is a repo-local playbook for choosing the right agent strategy
-for work in AerialViews+. It is not an automatic Codex config file.
+for work in AerialViews+.
 
-If you want Codex to auto-load repo instructions, `AGENTS.md` is the native
-mechanism. Since this repo should avoid that, use this folder as the manual
-routing reference.
+The machine-readable source of truth is `/multiagents.json`.
+These Markdown files are optional human-readable explanations of the same roles.
 
 ## Available Agent Types In This Environment
 
@@ -15,6 +14,19 @@ routing reference.
   locating wiring points, and answering focused repo questions quickly.
 - `worker`: implementation agent. Best for bounded edits with a clear write
   scope and a short verification target.
+
+## Repo-Level Roles In This Folder
+
+- `agents/orchestrator.md`
+  Human-readable playbook for multi-slice coordination work
+- `agents/reviewer.md`
+  Human-readable playbook for review and release-readiness checks
+- `agents/providers-and-youtube.md`
+  Provider, cache, query, and Projectivy routing
+- `agents/playback-and-ui.md`
+  Player, screen control, and settings/runtime UI routing
+- `agents/release-and-ops.md`
+  Build, signing, release, docs, and repo metadata routing
 
 ## Best Agent For Common Tasks
 
@@ -96,4 +108,3 @@ For a releasable APK:
 For TV validation:
 
 - `adb install -r app/build/outputs/apk/github/nonMinifiedRelease/app-github-nonMinifiedRelease.apk`
-

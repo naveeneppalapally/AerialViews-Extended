@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "project": "AerialViews+",
+  "source_of_truth": "multiagents.json",
+  "default_orchestrator": "orchestrator",
+  "roles": {
+    "orchestrator": {
+      "agent_type": "default",
+      "purpose": "Coordinate multi-slice Android TV work, delegate bounded subtasks, and own final integration.",
+      "preferred_for": [
+        "youtube plus settings plus playback changes",
+        "provider integration plus Projectivy wiring",
+        "build plus release plus TV verification",
+        "large bugfixes spanning multiple directories"
+      ],
+      "high_risk_paths": [
+        "app/src/main/java/com/neilturner/aerialviews/services/MediaService.kt",
+        "app/src/main/java/com/neilturner/aerialviews/ui/core/VideoPlayerHelper.kt",
+        "app/src/main/java/com/neilturner/aerialviews/ui/core/VideoPlayerView.kt",
+        "app/src/main/java/com/neilturner/aerialviews/providers/youtube",
+        "app/src/main/java/com/neilturner/aerialviews/ui/sources",
+        "app/build.gradle.kts"
+      ],
+      "verify": [
+        ":app:compileBetaDebugKotlin",
+        ":app:testBetaDebugUnitTest",
+        ":app:assembleGithubNonMinifiedRelease",
+        "adb install -r app/build/outputs/apk/github/nonMinifiedRelease/app-github-nonMinifiedRelease.apk"
+      ]
+    },
+    "reviewer": {
+      "agent_type": "default",
+      "purpose": "Review for regressions, runtime risks, stale wiring, release-readiness, and missing verification.",
+      "preferred_for": [
+        "pre-release review",
+        "bug-risk review on provider or playback changes",
+        "build and signing review",
+        "README and release verification"
+      ],
+      "review_priorities": [
+        "behavior regressions",
+        "runtime failures and startup delays",
+        "stale cache or state bugs",
+        "missing settings and resource wiring",
+        "release and signing mistakes",
+        "maintainability"
+      ],
+      "verify": [
+        ":app:compileBetaDebugKotlin",
+        ":app:testBetaDebugUnitTest",
+        "git status",
+        "git log origin/main..HEAD --oneline"
+      ]
+    },
+    "explorer": {
+      "agent_type": "explorer",
+      "purpose": "Trace wiring quickly without editing code.",
+      "preferred_for": [
+        "locate provider registration",
+        "trace settings wiring",
+        "identify playback path",
+        "find release or signing configuration"
+      ],
+      "write_scope": []
+    },
+    "youtube_worker": {
+      "agent_type": "worker",
+      "purpose": "Implement YouTube provider, cache, NewPipe, Projectivy, and settings changes.",
+      "write_scope": [
+        "app/src/main/java/com/neilturner/aerialviews/providers/youtube",
+        "app/src/main/java/com/neilturner/aerialviews/ui/sources",
+        "app/src/main/res/xml/sources_youtube_settings.xml",
+        "app/src/main/res/values/strings.xml",
+        "app/src/test/java/com/neilturner/aerialviews/providers/youtube"
+      ],
+      "verify": [
+        ":app:compileBetaDebugKotlin",
+        ":app:testBetaDebugUnitTest --tests \"com.neilturner.aerialviews.providers.youtube.*\""
+      ]
+    },
+    "playback_worker": {
+      "agent_type": "worker",
+      "purpose": "Implement player, subtitle, buffering, aspect ratio, and screensaver behavior fixes.",
+      "write_scope": [
+        "app/src/main/java/com/neilturner/aerialviews/ui/core",
+        "app/src/main/java/com/neilturner/aerialviews/services",
+        "app/src/main/java/com/neilturner/aerialviews/models"
+      ],
+      "verify": [
+        ":app:compileBetaDebugKotlin",
+        ":app:testBetaDebugUnitTest"
+      ]
+    },
+    "release_worker": {
+      "agent_type": "worker",
+      "purpose": "Handle signing, workflow, release, documentation, and repository metadata changes.",
+      "write_scope": [
+        ".github/workflows",
+        "README.md",
+        "CREDITS.md",
+        "DISCLAIMER.md",
+        "app/build.gradle.kts",
+        "gradle/libs.versions.toml"
+      ],
+      "verify": [
+        ":app:compileBetaDebugKotlin",
+        ":app:assembleGithubNonMinifiedRelease",
+        "gh release list --repo naveeneppalapally/AerialViews-Plus"
+      ]
+    }
+  },
+  "routing": [
+    {
+      "match_any": [
+        "youtube",
+        "newpipe",
+        "query",
+        "cache",
+        "projectivy"
+      ],
+      "lead_role": "youtube_worker"
+    },
+    {
+      "match_any": [
+        "subtitle",
+        "caption",
+        "buffer",
+        "player",
+        "screensaver"
+      ],
+      "lead_role": "playback_worker"
+    },
+    {
+      "match_any": [
+        "release",
+        "signing",
+        "workflow",
+        "github",
+        "readme"
+      ],
+      "lead_role": "release_worker"
+    },
+    {
+      "match_any": [
+        "review",
+        "regression",
+        "release check",
+        "pre-release"
+      ],
+      "lead_role": "reviewer"
+    }
+  ],
+  "execution_patterns": {
+    "new_source_integration": {
+      "lead": "orchestrator",
+      "assist": [
+        "explorer",
+        "youtube_worker",
+        "playback_worker"
+      ]
+    },
+    "playback_bug": {
+      "lead": "orchestrator",
+      "assist": [
+        "explorer",
+        "playback_worker"
+      ]
+    },
+    "release_flow": {
+      "lead": "orchestrator",
+      "assist": [
+        "release_worker",
+        "reviewer"
+      ]
+    }
+  }
+}

@@ -1,7 +1,6 @@
 package com.neilturner.aerialviews.providers.youtube
 
 import android.media.MediaCodecList
-import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request.Builder
@@ -161,19 +160,13 @@ object NewPipeHelper {
                 )
             }.ifEnoughOrElse(MIN_QUERY_MATCH_RESULTS) { baseCandidates }
 
-        val rankedCandidates =
-            queryMatchedCandidates.sortedWith(
-                compareByDescending<StreamInfoItem> { preferredSignalScore(it) }
-                    .thenByDescending { it.getDuration() },
-            )
-
         val preferredCandidates =
-            rankedCandidates.filter { candidate ->
-                preferredSignalScore(candidate) > 0
+            queryMatchedCandidates.filter { candidate ->
+                hasPreferredContentSignal(candidate.getName().lowercase(Locale.US))
             }
 
         return preferredCandidates
-            .ifEnoughOrElse(MIN_PREFERRED_RESULTS_PER_QUERY) { rankedCandidates }
+            .ifEnoughOrElse(MIN_PREFERRED_RESULTS_PER_QUERY) { queryMatchedCandidates }
             .asSequence()
             .distinctBy { extractVideoId(it.getUrl()) ?: it.getUrl() }
             .distinctBy {
@@ -419,46 +412,24 @@ object NewPipeHelper {
             return true
         }
 
-        return QueryFormulaEngine.aiTitleBlacklist.any { blacklisted ->
+        return QueryFormulaEngine.aiVideoBlacklist.any { blacklisted ->
             titleLower.contains(blacklisted.lowercase(Locale.US))
         }
     }
 
     private fun isLikelyAI(item: StreamInfoItem): Boolean {
-        if (!YouTubeVideoPrefs.filterAiVideos) {
-            return false
-        }
-
         val titleLower = item.getName().lowercase(Locale.US)
         val uploaderLower = item.getUploaderName().orEmpty().lowercase(Locale.US)
-        val duration = item.getDuration()
+        val duration = item.getDuration().toInt()
 
-        if (isLikelyAiTitle(titleLower)) {
-            Timber.tag(TAG).d("Rejected AI title: %s", item.getName())
-            return true
-        }
+        val titleMatch = isLikelyAiTitle(titleLower)
+        val channelMatch =
+            AI_CHANNEL_PATTERNS.any { pattern ->
+                uploaderLower.contains(pattern)
+            }
+        val durationMatch = duration in SUSPICIOUS_EXACT_DURATIONS
 
-        if (QueryFormulaEngine.aiChannelBlacklist.any { pattern -> uploaderLower.contains(pattern) }) {
-            Timber.tag(TAG).d("Rejected AI channel: %s", item.getUploaderName())
-            return true
-        }
-
-        if (duration in SUSPICIOUS_EXACT_DURATIONS) {
-            Timber.tag(TAG).d("Rejected suspicious exact duration: %ss - %s", duration, item.getName())
-            return true
-        }
-
-        if (duration >= MIN_ROUND_DURATION_SECONDS && duration % ROUND_DURATION_INTERVAL_SECONDS == 0L) {
-            Timber.tag(TAG).d("Rejected suspicious round duration: %ss - %s", duration, item.getName())
-            return true
-        }
-
-        if (isSuspiciousViewCount(item)) {
-            Timber.tag(TAG).d("Rejected suspicious view-count pattern: %s (%s views)", item.getName(), item.getViewCount())
-            return true
-        }
-
-        return false
+        return titleMatch || channelMatch || durationMatch
     }
 
     private fun isBumperOrVlogTitle(titleLower: String): Boolean =
@@ -496,37 +467,10 @@ object NewPipeHelper {
             titleLower.contains(signal)
         }
 
-    private fun preferredSignalScore(item: StreamInfoItem): Int {
-        val titleLower = item.getName().lowercase(Locale.US)
-        var score = 0
-        if (hasPreferredContentSignal(titleLower)) {
-            score += PREFERRED_CONTENT_SCORE
-        }
-        if (QueryFormulaEngine.realVideoSignals.any { signal -> titleLower.contains(signal.lowercase(Locale.US)) }) {
-            score += REAL_VIDEO_SIGNAL_BONUS
-        }
-        return score
-    }
-
     private fun isLikelySyntheticWallpaperTitle(titleLower: String): Boolean =
         SYNTHETIC_WALLPAPER_BLACKLIST.any { token ->
             titleLower.contains(token)
         }
-
-    private fun isSuspiciousViewCount(item: StreamInfoItem): Boolean {
-        val viewCount = item.getViewCount()
-        if (viewCount <= 0L) {
-            return false
-        }
-
-        if (viewCount > MAX_REASONABLE_VIEW_COUNT) {
-            return true
-        }
-
-        val uploadInstant = item.getUploadDate()?.getInstant() ?: return false
-        val isVeryNew = uploadInstant.isAfter(ZonedDateTime.now().minusDays(LOW_VIEW_COUNT_WINDOW_DAYS).toInstant())
-        return isVeryNew && viewCount < MIN_REASONABLE_NEW_VIDEO_VIEW_COUNT
-    }
 
     private fun normalizeTitleFingerprint(title: String): String =
         title
@@ -823,26 +767,22 @@ object NewPipeHelper {
             "travel wallpaper",
             "nature wallpaper",
         )
-    private const val PREFERRED_CONTENT_SCORE = 1
-    private const val REAL_VIDEO_SIGNAL_BONUS = 2
-    private const val MIN_REASONABLE_NEW_VIDEO_VIEW_COUNT = 100L
-    private const val MAX_REASONABLE_VIEW_COUNT = 50_000_000L
-    private const val LOW_VIEW_COUNT_WINDOW_DAYS = 30L
-    private const val MIN_ROUND_DURATION_SECONDS = 3_600L
-    private const val ROUND_DURATION_INTERVAL_SECONDS = 600L
-    private val SUSPICIOUS_EXACT_DURATIONS =
-        setOf(
-            1_800L,
-            3_600L,
-            7_200L,
-            10_800L,
-            14_400L,
-            18_000L,
-            21_600L,
-            28_800L,
-            36_000L,
-            43_200L,
+    private val AI_CHANNEL_PATTERNS =
+        listOf(
+            "ai art",
+            "ai video",
+            "ai film",
+            "ai nature",
+            "ai generated",
+            "sora clips",
+            "runway clips",
+            "synthwave",
+            "neural",
+            "diffusion studio",
+            "ai cinema",
+            "artificial",
         )
+    private val SUSPICIOUS_EXACT_DURATIONS = setOf(3600, 7200, 10800, 14400, 21600)
     private val REJECTED_LOW_QUALITY_ITAGS = setOf(18, 133, 160)
     private val RESOLUTION_REGEX = Regex("(\\d{3,4})p")
     private val RESOLUTION_PAIR_REGEX = Regex("(\\d{3,4})\\s*[xX]\\s*(\\d{3,4})")

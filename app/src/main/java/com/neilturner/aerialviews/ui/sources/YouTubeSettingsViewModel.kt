@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,6 +18,7 @@ class YouTubeSettingsViewModel(
     private val repository = YouTubeFeature.repository(application)
     private val _refreshState = MutableStateFlow<RefreshState>(RefreshState.Idle)
     private val _cacheSize = MutableStateFlow(-1)
+    private var backgroundRefreshJob: Job? = null
 
     val refreshState: StateFlow<RefreshState> = _refreshState.asStateFlow()
     val cacheSize: StateFlow<Int> = _cacheSize.asStateFlow()
@@ -59,6 +62,17 @@ class YouTubeSettingsViewModel(
 
     fun refreshInBackground() {
         YouTubeFeature.requestImmediateRefresh(getApplication(), forceSearchRefresh = true)
+    }
+
+    fun scheduleBackgroundRefresh(delayMs: Long = 750L) {
+        backgroundRefreshJob?.cancel()
+        backgroundRefreshJob =
+            viewModelScope.launch {
+                if (delayMs > 0) {
+                    delay(delayMs)
+                }
+                refreshInBackground()
+            }
     }
 
     fun refreshCacheSize() {

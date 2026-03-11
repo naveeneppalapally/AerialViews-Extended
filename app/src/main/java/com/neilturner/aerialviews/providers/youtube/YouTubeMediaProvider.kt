@@ -36,7 +36,11 @@ class YouTubeMediaProvider(
 
             repository.getCachedVideos().also { entries ->
                 entries.firstOrNull()?.let { firstEntry ->
-                    repository.preResolveVideo(firstEntry.videoPageUrl, providerScope)
+                    if (repository.playbackUrl(firstEntry) == firstEntry.videoPageUrl) {
+                        repository.preResolveVideo(firstEntry.videoPageUrl, providerScope)
+                    } else {
+                        repository.preResolveNext(providerScope)
+                    }
                 }
             }.map(::toAerialMedia)
         } catch (exception: Exception) {
@@ -59,7 +63,7 @@ class YouTubeMediaProvider(
 
     private fun toAerialMedia(entry: YouTubeCacheEntity): AerialMedia =
         AerialMedia(
-            uri = entry.videoPageUrl.toUri(),
+            uri = repository.playbackUrl(entry).toUri(),
             type = AerialMediaType.VIDEO,
             source = AerialMediaSource.YOUTUBE,
             metadata =

@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.preference.PreferenceManager
 import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.SeekBarPreference
@@ -25,6 +26,12 @@ import java.text.NumberFormat
 class YouTubeSettingsFragment : MenuStateFragment() {
     private val viewModel by viewModels<YouTubeSettingsViewModel>()
     private var progressDialog: AlertDialog? = null
+    private val sharedPreferenceListener =
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == YouTubeSourceRepository.KEY_COUNT || key == YouTubeSourceRepository.KEY_ENABLED) {
+                updateVideoCount()
+            }
+        }
 
     override fun onCreatePreferences(
         savedInstanceState: Bundle?,
@@ -33,6 +40,9 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         setPreferencesFromResource(R.xml.sources_youtube_settings, rootKey)
         setupPreferences()
         updateVideoCount()
+        if (YouTubeVideoPrefs.enabled && isCountPending()) {
+            viewModel.refreshIfCachePending()
+        }
     }
 
     override fun onViewCreated(
@@ -51,6 +61,23 @@ class YouTubeSettingsFragment : MenuStateFragment() {
     override fun onResume() {
         super.onResume()
         updateVideoCount()
+        if (YouTubeVideoPrefs.enabled && isCountPending()) {
+            viewModel.refreshIfCachePending()
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        PreferenceManager
+            .getDefaultSharedPreferences(requireContext())
+            .registerOnSharedPreferenceChangeListener(sharedPreferenceListener)
+    }
+
+    override fun onStop() {
+        PreferenceManager
+            .getDefaultSharedPreferences(requireContext())
+            .unregisterOnSharedPreferenceChangeListener(sharedPreferenceListener)
+        super.onStop()
     }
 
     override fun onDestroyView() {
@@ -76,9 +103,9 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
         findPreference<SwitchPreference>("yt_enabled")?.setOnPreferenceChangeListener { _, newValue ->
             if (newValue == true) {
-                viewModel.refreshInBackground()
                 YouTubeVideoPrefs.count = "-1"
                 updateVideoCount()
+                viewModel.forceRefresh()
             } else {
                 progressDialog?.dismiss()
                 progressDialog = null
@@ -167,4 +194,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                 getString(R.string.youtube_count_pending_summary)
             }
     }
+
+    private fun isCountPending(): Boolean =
+        YouTubeVideoPrefs.count.toIntOrNull()?.let { it < 0 } ?: true
 }

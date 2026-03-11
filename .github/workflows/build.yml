@@ -42,7 +42,7 @@ jobs:
             -keyalg RSA \
             -keysize 2048 \
             -validity 3650 \
-            -dname "CN=AerialViews+, OU=CI, O=GitHub, L=NA, S=NA, C=US"
+            -dname "CN=AerialViews Plus, OU=CI, O=GitHub, L=NA, S=NA, C=US"
           cat > signing/legacy.properties <<'EOF'
           storeFile=signing/legacy.jks
           storePassword=android

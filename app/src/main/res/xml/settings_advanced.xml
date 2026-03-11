@@ -74,4 +74,10 @@
                     app:title="@string/advanced_locale_screensaver_title"
                     app:useSimpleSummaryProvider="true" />
         </PreferenceCategory>
+
+        <Preference
+            app:key="legal_notices"
+            app:title="Legal Notices"
+            app:summary="Open source licenses and copyright information"
+            app:fragment="com.neilturner.aerialviews.ui.settings.LegalNoticesFragment" />
 </PreferenceScreen>

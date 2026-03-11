@@ -411,6 +411,43 @@ When YouTube is enabled as a source, the app builds a rotating set of search que
 
 Results are cached locally for about 24 hours. Stream URLs are refreshed automatically before they expire, and a background job keeps the cache warm overnight. If a refresh fails, the app falls back to the last working cache so playback never stops.
 
+## About the YouTube Videos
+
+Unlike the built-in Apple and Amazon videos in AerialViews — which are 
+a fixed, hand-picked collection — the YouTube source in this fork pulls 
+fresh content automatically. This is intentional, but it comes with a 
+different experience worth understanding.
+
+**What you will see:**
+- New videos appear regularly as the cache refreshes daily
+- Content changes week to week as search results rotate
+- A wide variety of locations, seasons, and subjects over time
+
+**What keeps it feeling consistent:**
+- Only videos longer than 8 minutes are included — no short clips
+- Keywords like "ambient", "no music", and "no talking" filter out 
+  videos with narration, intros, or background music
+- AI-generated videos are filtered out by title, channel name, 
+  and duration patterns
+- Channel caps (max 3 videos per channel) prevent any single 
+  creator from dominating the playlist
+- Location diversity caps prevent the same place appearing 
+  back to back
+- Play history tracking means you will not see the same video 
+  twice in a short period
+
+**The honest tradeoff:**
+The original AerialViews videos are carefully curated and always 
+look cinematic and consistent. The YouTube source trades that 
+stability for variety and freshness — you get new content every 
+day instead of the same 250 videos forever. Some videos will be 
+better than others. If a video looks out of place, the app moves 
+on automatically after it finishes.
+
+If you want the stable, curated experience, enable Apple or 
+Amazon sources alongside YouTube or instead of it. All sources 
+can be mixed in the same playlist.
+
 ## FAQ
 
 Please click or tap to expand each item below...

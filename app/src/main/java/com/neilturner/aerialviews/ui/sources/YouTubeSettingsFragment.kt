@@ -111,10 +111,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
         findPreference<SwitchPreference>("yt_enabled")?.setOnPreferenceChangeListener { _, newValue ->
             if (newValue == true) {
-                YouTubeVideoPrefs.count = "-1"
-                updateVideoCount()
-                viewModel.refreshCacheSize()
-                viewModel.refreshInBackground()
+                queueBackgroundRefresh(R.string.youtube_refresh_background_started)
             } else {
                 progressDialog?.dismiss()
                 progressDialog = null
@@ -125,15 +122,13 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         }
 
         findPreference<Preference>("yt_refresh_now")?.setOnPreferenceClickListener {
-            viewModel.forceRefresh()
+            queueBackgroundRefresh(R.string.youtube_refresh_background_started)
             true
         }
 
         CATEGORY_PREFERENCE_KEYS.forEach { key ->
             findPreference<SwitchPreference>(key)?.setOnPreferenceChangeListener { _, _ ->
-                viewLifecycleOwner.lifecycleScope.launch {
-                    ToastHelper.show(requireContext(), R.string.youtube_categories_changed_notice, Toast.LENGTH_SHORT)
-                }
+                queueBackgroundRefresh(R.string.youtube_categories_changed_notice)
                 true
             }
         }
@@ -232,6 +227,16 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
     private fun isCountPending(): Boolean =
         YouTubeVideoPrefs.count.toIntOrNull()?.let { it < 0 } ?: true
+
+    private fun queueBackgroundRefresh(messageResId: Int) {
+        YouTubeVideoPrefs.count = "-1"
+        updateVideoCount()
+        viewModel.refreshCacheSize()
+        viewModel.refreshInBackground()
+        viewLifecycleOwner.lifecycleScope.launch {
+            ToastHelper.show(requireContext(), messageResId, Toast.LENGTH_SHORT)
+        }
+    }
 
     companion object {
         private val CATEGORY_PREFERENCE_KEYS =

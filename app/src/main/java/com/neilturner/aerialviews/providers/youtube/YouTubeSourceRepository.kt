@@ -244,18 +244,21 @@ class YouTubeSourceRepository(
 
             val refreshedEntries =
                 when {
-                    cachedEntries.isEmpty() -> loadFreshSearchResults()
+                    cachedEntries.isEmpty() -> loadFreshSearchResults(replaceExistingCache = true)
                     forceSearchRefresh ||
                         isSearchCacheExpired() ||
                         isCacheVersionStale() ||
                         isCacheSignatureStale() ||
                         isCacheUndersized(cachedEntries) -> {
-                        runCatching { loadFreshSearchResults() }
-                            .getOrElse { exception ->
-                                Timber.tag(TAG).w(exception, "Using cached YouTube entries after warm refresh failure")
-                                updateCachedCount(cachedEntries.size)
-                                cachedEntries
-                            }
+                        runCatching {
+                            loadFreshSearchResults(
+                                replaceExistingCache = forceSearchRefresh || isCacheSignatureStale(),
+                            )
+                        }.getOrElse { exception ->
+                            Timber.tag(TAG).w(exception, "Using cached YouTube entries after warm refresh failure")
+                            updateCachedCount(cachedEntries.size)
+                            cachedEntries
+                        }
                     }
 
                     else -> refreshExpiringStreamUrls(cachedEntries)
@@ -269,7 +272,7 @@ class YouTubeSourceRepository(
         val cachedEntries = cacheDao.getAll().filterNot { it.isBad }
         if (cachedEntries.isEmpty()) {
             return try {
-                loadFreshSearchResults()
+                loadFreshSearchResults(replaceExistingCache = true)
             } catch (exception: Exception) {
                 throw when (exception) {
                     is YouTubeSourceException -> exception
@@ -279,7 +282,9 @@ class YouTubeSourceRepository(
         }
 
         if (isCacheVersionStale() || isCacheSignatureStale()) {
-            return runCatching { loadFreshSearchResults() }
+            return runCatching {
+                loadFreshSearchResults(replaceExistingCache = true)
+            }
                 .getOrElse { exception ->
                     Timber.tag(TAG).w(exception, "Using cached YouTube entries after synchronous cache refresh failure")
                     updateCachedCount(cachedEntries.size)
@@ -297,22 +302,26 @@ class YouTubeSourceRepository(
         return cachedEntries
     }
 
-    suspend fun refreshSearchResults(): List<YouTubeCacheEntity> =
+    suspend fun refreshSearchResults(
+        replaceExistingCache: Boolean = true,
+    ): List<YouTubeCacheEntity> =
         withContext(Dispatchers.IO) {
-            loadFreshSearchResults()
+            loadFreshSearchResults(replaceExistingCache)
         }
 
     suspend fun forceRefresh(): Int =
         withContext(Dispatchers.IO) {
-            refreshSearchResults().size
+            refreshSearchResults(replaceExistingCache = true).size
         }
 
-    private suspend fun loadFreshSearchResults(): List<YouTubeCacheEntity> =
+    private suspend fun loadFreshSearchResults(
+        replaceExistingCache: Boolean = false,
+    ): List<YouTubeCacheEntity> =
         runCatching {
             val refreshPlan = buildRefreshPlan()
             val searchResults = searchRefreshCandidates(refreshPlan)
             val extractedEntries = extractRefreshEntries(refreshPlan, searchResults)
-            val entries = mergeRefreshedEntries(refreshPlan, extractedEntries)
+            val entries = mergeRefreshedEntries(refreshPlan, extractedEntries, replaceExistingCache)
             persistFreshEntries(refreshPlan, entries)
             entries
         }.getOrElse { exception ->
@@ -375,14 +384,19 @@ class YouTubeSourceRepository(
     private fun mergeRefreshedEntries(
         refreshPlan: RefreshPlan,
         extractedEntries: List<YouTubeCacheEntity>,
+        replaceExistingCache: Boolean,
     ): List<YouTubeCacheEntity> {
         val entries =
-            replenishEntriesFromExistingCache(
-                extractedEntries = extractedEntries,
-                existingEntries = refreshPlan.existingEntries,
-                entropySeed = refreshPlan.entropySeed,
-                recentRefreshIds = refreshPlan.recentRefreshIds,
-            ).let { applyEntryDiversityCaps(it, TARGET_CACHE_SIZE) }
+            if (replaceExistingCache) {
+                applyEntryDiversityCaps(extractedEntries, TARGET_CACHE_SIZE)
+            } else {
+                replenishEntriesFromExistingCache(
+                    extractedEntries = extractedEntries,
+                    existingEntries = refreshPlan.existingEntries,
+                    entropySeed = refreshPlan.entropySeed,
+                    recentRefreshIds = refreshPlan.recentRefreshIds,
+                ).let { applyEntryDiversityCaps(it, TARGET_CACHE_SIZE) }
+            }
 
         if (entries.isEmpty()) {
             throw YouTubeSourceException("No videos available")

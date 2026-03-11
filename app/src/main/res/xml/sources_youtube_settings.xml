@@ -3,11 +3,25 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:android="http://schemas.android.com/apk/res/android">
 
+        <Preference
+            app:key="yt_cache_warning"
+            app:title="@string/youtube_cache_empty_title"
+            app:summary="@string/youtube_cache_empty_summary"
+            app:selectable="false"
+            app:isPreferenceVisible="false" />
+
         <PreferenceCategory app:title="@string/category_video_source">
                 <SwitchPreference
                     app:defaultValue="true"
                     app:key="yt_enabled"
                     app:title="@string/youtube_enabled_title" />
+
+                <Preference
+                    app:dependency="yt_enabled"
+                    app:disableDependentsState="false"
+                    app:key="yt_refresh_now"
+                    app:title="@string/youtube_refresh_now_title"
+                    app:summary="@string/youtube_refresh_now_summary" />
         </PreferenceCategory>
 
         <PreferenceCategory app:title="@string/youtube_search_category_title">

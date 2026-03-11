@@ -5,13 +5,15 @@ import androidx.core.net.toUri
 import com.neilturner.aerialviews.models.enums.AerialMediaSource
 import com.neilturner.aerialviews.models.enums.AerialMediaType
 import com.neilturner.aerialviews.models.enums.ProviderSourceType
+import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.models.videos.AerialMedia
 import com.neilturner.aerialviews.models.videos.AerialMediaMetadata
-import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.providers.MediaProvider
+import com.neilturner.aerialviews.utils.NetworkHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 class YouTubeMediaProvider(
@@ -26,25 +28,15 @@ class YouTubeMediaProvider(
         get() = YouTubeVideoPrefs.enabled
 
     override suspend fun fetchMedia(): List<AerialMedia> {
-        return try {
-            val cacheSize = repository.getCacheSize()
-            if (cacheSize < COLD_CACHE_THRESHOLD) {
-                Timber.tag(TAG).d("Cache cold (%s videos), skipping YouTube for this rotation", cacheSize)
-                repository.preWarmInBackground()
-                return emptyList()
-            }
+        val cacheSize = repository.getCacheSize()
+        if (cacheSize == 0) {
+            return fetchInitialMedia()
+        }
 
-            repository.getCachedVideos().also { entries ->
-                entries.firstOrNull()?.let { firstEntry ->
-                    if (repository.playbackUrl(firstEntry) == firstEntry.videoPageUrl) {
-                        repository.preResolveVideo(firstEntry.videoPageUrl, providerScope)
-                    } else {
-                        repository.preResolveNext(providerScope)
-                    }
-                }
-            }.map(::toAerialMedia)
-        } catch (exception: Exception) {
-            Timber.tag(TAG).e(exception, "Failed to fetch YouTube media")
+        return withTimeoutOrNull(NORMAL_FETCH_TIMEOUT_MS) {
+            fetchCachedMedia()
+        } ?: run {
+            Timber.tag(TAG).w("fetchMedia timed out after %sms, skipping YouTube slot", NORMAL_FETCH_TIMEOUT_MS)
             emptyList()
         }
     }
@@ -61,6 +53,60 @@ class YouTubeMediaProvider(
 
     override suspend fun fetchMetadata(): MutableMap<String, Pair<String, Map<Int, String>>> = mutableMapOf()
 
+    private suspend fun fetchInitialMedia(): List<AerialMedia> {
+        if (!YouTubeFeature.isOnlyYouTubeSourceEnabled()) {
+            Timber.tag(TAG).d("Cache empty, warming YouTube in background while other sources play")
+            repository.preWarmInBackground()
+            return emptyList()
+        }
+
+        if (!NetworkHelper.isInternetAvailable(context)) {
+            Timber.tag(TAG).w("Cache empty and network unavailable for first-run YouTube fetch")
+            return emptyList()
+        }
+
+        Timber.tag(TAG).d("Cache empty on first run, bootstrapping YouTube cache")
+        val refreshedEntries =
+            withTimeoutOrNull(INITIAL_FETCH_TIMEOUT_MS) {
+                runCatching { repository.refreshSearchResults() }
+                    .onFailure { exception ->
+                        Timber.tag(TAG).w(exception, "Initial YouTube refresh failed")
+                    }.getOrDefault(emptyList())
+            }
+
+        if (refreshedEntries == null) {
+            Timber.tag(TAG).w("Initial YouTube fetch timed out after %sms", INITIAL_FETCH_TIMEOUT_MS)
+            repository.preWarmInBackground()
+        }
+
+        return fetchCachedMedia()
+    }
+
+    private suspend fun fetchCachedMedia(): List<AerialMedia> {
+        return try {
+            repository.getLocalCachedVideos().toAerialMedia()
+        } catch (exception: Exception) {
+            Timber.tag(TAG).w(exception, "fetchMedia failed")
+            emptyList()
+        }
+    }
+
+    private fun List<YouTubeCacheEntity>.toAerialMedia(): List<AerialMedia> {
+        if (isEmpty()) {
+            return emptyList()
+        }
+
+        firstOrNull()?.let { firstEntry ->
+            if (repository.playbackUrl(firstEntry) == firstEntry.videoPageUrl) {
+                repository.preResolveVideo(firstEntry.videoPageUrl, providerScope)
+            } else {
+                repository.preResolveNext(providerScope)
+            }
+        }
+
+        return map(::toAerialMedia)
+    }
+
     private fun toAerialMedia(entry: YouTubeCacheEntity): AerialMedia =
         AerialMedia(
             uri = repository.playbackUrl(entry).toUri(),
@@ -73,7 +119,8 @@ class YouTubeMediaProvider(
         )
 
     companion object {
-        private const val COLD_CACHE_THRESHOLD = 5
+        private const val INITIAL_FETCH_TIMEOUT_MS = 30_000L
+        private const val NORMAL_FETCH_TIMEOUT_MS = 3_000L
         private const val TAG = "YouTubeMedia"
     }
 }

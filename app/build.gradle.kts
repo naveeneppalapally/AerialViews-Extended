@@ -108,11 +108,13 @@ android {
 
     signingConfigs {
         create("release") {
-            val releaseProps = loadProperties("signing/release.properties")
-            storeFile = releaseProps["storeFile"]?.let { file(it) }
-            storePassword = releaseProps["storePassword"] as String?
-            keyAlias = releaseProps["keyAlias"] as String?
-            keyPassword = releaseProps["keyPassword"] as String?
+            storeFile = file(
+                System.getenv("KEYSTORE_PATH")
+                    ?: "${System.getProperty("user.home")}/.android/aerialviews-plus-release.jks",
+            )
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
+            keyAlias = System.getenv("KEY_ALIAS") ?: "aerialviewsplus"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: ""
         }
         create("legacy") {
             val releaseProps = loadProperties("signing/legacy.properties")
@@ -126,7 +128,7 @@ android {
     flavorDimensions += "version"
     productFlavors {
         create("github") {
-            signingConfig = signingConfigs.getByName("legacy")
+            signingConfig = signingConfigs.getByName("release")
             dimension = "version"
         }
         create("beta") {

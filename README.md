@@ -472,17 +472,12 @@ It replaces it. Install one or the other, not both. All original features are in
 
 ## Building from Source
 
-Requires JDK 21.
+Clone the repo and open it in Android Studio.
+The project requires JDK 21 and Android Studio Hedgehog or newer.
 
-```sh
-./gradlew :app:assembleGithubNonMinifiedRelease
-```
-
-Output:
-
-```text
-app/build/outputs/apk/github/nonMinifiedRelease/
-```
+The GitHub Actions workflow builds the APK automatically
+when a release is triggered. If you just want the APK,
+download it from the Releases tab instead.
 
 ## Contributing
 

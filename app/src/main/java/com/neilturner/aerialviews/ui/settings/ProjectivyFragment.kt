@@ -44,8 +44,14 @@ class ProjectivyFragment :
             selectedProviders.contains("COMM1")
         findPreference<Preference>("projectivy_comm2_videos_options")?.isVisible =
             selectedProviders.contains("COMM2")
+        findPreference<Preference>("projectivy_youtube_videos_options")?.isVisible =
+            selectedProviders.contains(PROJECTIVY_YOUTUBE_PROVIDER)
 
         findPreference<Preference>("projectivy_local_videos_options")?.isVisible =
             selectedProviders.contains("LOCAL")
+    }
+
+    private companion object {
+        const val PROJECTIVY_YOUTUBE_PROVIDER = "youtube"
     }
 }

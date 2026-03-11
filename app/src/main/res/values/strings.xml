@@ -416,6 +416,7 @@
 
     <string name="projectivy_select_videos_title">Select video sources</string>
     <string name="projectivy_select_videos_summary">Choose which video providers to share with Projectivy launcher</string>
+    <string name="projectivy_youtube_videos">YouTube Videos</string>
 
     <string name="settings_capabilities_title">Device Capabilities</string>
     <string name="settings_capabilities_summary">View video codecs, resolution support, and other capabilities</string>
@@ -434,6 +435,8 @@
     <string name="projectivy_amazon_videos_options_title">Amazon video options</string>
     <string name="projectivy_comm1_videos_options_title">Jetson Creative video options</string>
     <string name="projectivy_comm2_videos_options_title">Robin Fourcade video options</string>
+    <string name="projectivy_youtube_videos_options_title">YouTube video options</string>
+    <string name="projectivy_youtube_videos_options_summary">Configure YouTube search and playback settings</string>
 
     <!-- Main / Settings / Overlays -->
     <string name="appearance_top_row_title">Top Row</string>

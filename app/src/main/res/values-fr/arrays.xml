@@ -220,6 +220,7 @@
     <item>Vidéos Amazon</item>
     <item>Vidéos créatives Jetson</item>
     <item>Vidéos de Robin Fourcade</item>
+    <item>YouTube Videos</item>
   </string-array>
   <string-array name="seek_interval_entries">
     <item>10 secondes</item>

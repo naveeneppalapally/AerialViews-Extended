@@ -219,6 +219,7 @@
     <item>Amazon Videoları</item>
     <item>Jetson Yaratıcı Videoları</item>
     <item>Robin Fourcade Videoları</item>
+    <item>YouTube Videos</item>
   </string-array>
   <string-array name="seek_interval_entries">
     <item>10 saniye</item>

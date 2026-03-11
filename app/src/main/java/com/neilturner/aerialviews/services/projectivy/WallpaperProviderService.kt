@@ -10,12 +10,14 @@ import com.neilturner.aerialviews.models.prefs.ProjectivyComm1Prefs
 import com.neilturner.aerialviews.models.prefs.ProjectivyComm2Prefs
 import com.neilturner.aerialviews.models.prefs.ProjectivyLocalMediaPrefs
 import com.neilturner.aerialviews.models.prefs.ProjectivyPrefs
+import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.providers.AmazonMediaProvider
 import com.neilturner.aerialviews.providers.AppleMediaProvider
 import com.neilturner.aerialviews.providers.Comm1MediaProvider
 import com.neilturner.aerialviews.providers.Comm2MediaProvider
 import com.neilturner.aerialviews.providers.LocalMediaProvider
 import com.neilturner.aerialviews.providers.MediaProvider
+import com.neilturner.aerialviews.providers.youtube.YouTubeMediaProvider
 import kotlinx.coroutines.runBlocking
 import timber.log.Timber
 import tv.projectivy.plugin.wallpaperprovider.api.Event
@@ -91,5 +93,12 @@ class WallpaperProviderService : Service() {
             add(Comm2MediaProvider(applicationContext, ProjectivyComm2Prefs))
             add(AmazonMediaProvider(applicationContext, ProjectivyAmazonPrefs))
             add(LocalMediaProvider(applicationContext, ProjectivyLocalMediaPrefs))
+            if (YouTubeVideoPrefs.enabled && ProjectivyPrefs.sharedProviders.contains(PROJECTIVY_YOUTUBE_PROVIDER)) {
+                add(YouTubeMediaProvider(applicationContext))
+            }
         }
+
+    private companion object {
+        const val PROJECTIVY_YOUTUBE_PROVIDER = "youtube"
+    }
 }

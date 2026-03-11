@@ -48,6 +48,13 @@
                     app:isPreferenceVisible="false"/>
 
                 <Preference
+                    app:key="projectivy_youtube_videos_options"
+                    app:title="@string/projectivy_youtube_videos_options_title"
+                    app:summary="@string/projectivy_youtube_videos_options_summary"
+                    app:fragment="com.neilturner.aerialviews.ui.sources.YouTubeSettingsFragment"
+                    app:isPreferenceVisible="false"/>
+
+                <Preference
                     app:key="projectivy_local_videos_options"
                     app:title="@string/projectivy_local_videos_options_title"
                     app:summary="@string/projectivy_local_videos_options_summary"

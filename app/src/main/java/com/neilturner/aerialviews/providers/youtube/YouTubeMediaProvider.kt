@@ -105,12 +105,25 @@ class YouTubeMediaProvider(
             }
         }
 
-        return map(::toAerialMedia)
+        return mapIndexed { index, entry ->
+            toAerialMedia(
+                entry = entry,
+                useDirectPlaybackUrl = index == 0,
+            )
+        }
     }
 
-    private fun toAerialMedia(entry: YouTubeCacheEntity): AerialMedia =
+    private fun toAerialMedia(
+        entry: YouTubeCacheEntity,
+        useDirectPlaybackUrl: Boolean,
+    ): AerialMedia =
         AerialMedia(
-            uri = repository.playbackUrl(entry).toUri(),
+            uri =
+                if (useDirectPlaybackUrl) {
+                    repository.playbackUrl(entry).toUri()
+                } else {
+                    entry.videoPageUrl.toUri()
+                },
             type = AerialMediaType.VIDEO,
             source = AerialMediaSource.YOUTUBE,
             metadata =

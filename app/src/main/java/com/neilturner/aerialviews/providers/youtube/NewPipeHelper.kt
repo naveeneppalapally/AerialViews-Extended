@@ -225,6 +225,7 @@ object NewPipeHelper {
             dashUrl = streamExtractor.dashMpdUrl,
             hlsUrl = streamExtractor.hlsUrl,
             preferredQuality = preferredQuality,
+            preferVideoOnly = preferVideoOnly,
         )?.takeIf(String::isNotBlank)
             ?: throw YouTubeExtractionException("No playable stream found for $videoPageUrl")
     }
@@ -235,6 +236,7 @@ object NewPipeHelper {
         dashUrl: String?,
         hlsUrl: String?,
         preferredQuality: String,
+        preferVideoOnly: Boolean,
     ): String? {
         val normalizedPreference = preferredQuality.trim().lowercase()
         val playableProgressiveStreams =
@@ -244,11 +246,14 @@ object NewPipeHelper {
         val playableDashUrl = dashUrl?.takeIf { it.isNotBlank() }
         val playableHlsUrl = hlsUrl?.takeIf { it.isNotBlank() }
 
-        return selectStreamContent(playableVideoOnlyStreams, normalizedPreference)
-            ?: selectStreamContent(playableProgressiveStreams, normalizedPreference)
+        val primaryStreams = if (preferVideoOnly) playableVideoOnlyStreams else playableProgressiveStreams
+        val secondaryStreams = if (preferVideoOnly) playableProgressiveStreams else playableVideoOnlyStreams
+
+        return selectStreamContent(primaryStreams, normalizedPreference)
+            ?: selectStreamContent(secondaryStreams, normalizedPreference)
             ?: playableDashUrl
             ?: playableHlsUrl
-            ?: selectStreamContent(playableVideoOnlyStreams + playableProgressiveStreams, normalizedPreference)
+            ?: selectStreamContent(primaryStreams + secondaryStreams, normalizedPreference)
     }
 
     private fun selectStreamContent(

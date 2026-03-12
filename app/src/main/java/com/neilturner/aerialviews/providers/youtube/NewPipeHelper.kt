@@ -225,7 +225,6 @@ object NewPipeHelper {
             dashUrl = streamExtractor.dashMpdUrl,
             hlsUrl = streamExtractor.hlsUrl,
             preferredQuality = preferredQuality,
-            preferVideoOnly = preferVideoOnly,
         )?.takeIf(String::isNotBlank)
             ?: throw YouTubeExtractionException("No playable stream found for $videoPageUrl")
     }
@@ -236,7 +235,6 @@ object NewPipeHelper {
         dashUrl: String?,
         hlsUrl: String?,
         preferredQuality: String,
-        preferVideoOnly: Boolean,
     ): String? {
         val normalizedPreference = preferredQuality.trim().lowercase()
         val playableProgressiveStreams =
@@ -246,14 +244,11 @@ object NewPipeHelper {
         val playableDashUrl = dashUrl?.takeIf { it.isNotBlank() }
         val playableHlsUrl = hlsUrl?.takeIf { it.isNotBlank() }
 
-        val primaryStreams = if (preferVideoOnly) playableVideoOnlyStreams else playableProgressiveStreams
-        val secondaryStreams = if (preferVideoOnly) playableProgressiveStreams else playableVideoOnlyStreams
-
-        return selectStreamContent(primaryStreams, normalizedPreference)
-            ?: selectStreamContent(secondaryStreams, normalizedPreference)
+        return selectStreamContent(playableVideoOnlyStreams, normalizedPreference)
+            ?: selectStreamContent(playableProgressiveStreams, normalizedPreference)
             ?: playableDashUrl
             ?: playableHlsUrl
-            ?: selectStreamContent(primaryStreams + secondaryStreams, normalizedPreference)
+            ?: selectStreamContent(playableVideoOnlyStreams + playableProgressiveStreams, normalizedPreference)
     }
 
     private fun selectStreamContent(
@@ -390,11 +385,12 @@ object NewPipeHelper {
 
     private fun logSelectedStream(stream: VideoStream) {
         Timber.tag(TAG).d(
-            "Selected YouTube stream: %sp codec=%s bitrate=%s itag=%s support=%s",
+            "Stream selected: %sp %s family=%s itag=%s bitrate=%s support=%s",
             streamHeight(stream),
             stream.getCodec(),
-            stream.getBitrate(),
+            if (stream.isVideoOnly()) "video-only" else "progressive",
             stream.getItag(),
+            stream.getBitrate(),
             decoderSupport(codecFamily(stream), stream),
         )
     }

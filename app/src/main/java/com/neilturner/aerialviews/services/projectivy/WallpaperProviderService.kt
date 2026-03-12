@@ -27,29 +27,13 @@ import tv.projectivy.plugin.wallpaperprovider.api.WallpaperDisplayMode
 import tv.projectivy.plugin.wallpaperprovider.api.WallpaperType
 
 class WallpaperProviderService : Service() {
-    @Volatile
-    private var cachedWallpapers: List<Wallpaper> = emptyList()
-
-    @Volatile
-    private var cachedWallpapersAt: Long = 0L
-
     override fun onBind(intent: Intent): IBinder = binder
 
     private val binder =
         object : IWallpaperProviderService.Stub() {
             override fun getWallpapers(event: Event?): List<Wallpaper> =
                 when (event) {
-                    is Event.TimeElapsed -> {
-                        cachedWallpapers
-                            .takeIf { it.isNotEmpty() && System.currentTimeMillis() - cachedWallpapersAt < WALLPAPER_REUSE_WINDOW_MS }
-                            ?.also {
-                                Timber.i("Reusing cached Projectivy wallpapers: %s", it.size)
-                            }
-                            ?: buildWallpapers().also { wallpapers ->
-                                cachedWallpapers = wallpapers
-                                cachedWallpapersAt = System.currentTimeMillis()
-                            }
-                    }
+                    is Event.TimeElapsed -> buildWallpapers()
 
                     else -> {
                         emptyList()
@@ -76,7 +60,6 @@ class WallpaperProviderService : Service() {
 
     private companion object {
         const val PROJECTIVY_YOUTUBE_PROVIDER = "youtube"
-        const val WALLPAPER_REUSE_WINDOW_MS = 30_000L
     }
 
     private fun buildWallpapers(): List<Wallpaper> {

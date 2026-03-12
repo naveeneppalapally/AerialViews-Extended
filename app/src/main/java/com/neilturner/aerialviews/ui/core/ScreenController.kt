@@ -96,6 +96,7 @@ class ScreenController(
     private var sleepTimerJob: Job? = null
     private var preloadJob: Job? = null
     private var playlistRefreshJob: Job? = null
+    private var initialPlaylistRetryJob: Job? = null
     private val metadataJobs = mutableMapOf<OverlayType, Job>()
     private var currentMedia: AerialMedia? = null
     private var preloadedNextMedia: AerialMedia? = null
@@ -578,13 +579,21 @@ class ScreenController(
     }
 
     private fun showLoadingError() {
+        val showYouTubeLoadingMessage = shouldShowYouTubeLoadingMessage()
         val messageResId =
-            if (shouldShowYouTubeLoadingMessage()) {
+            if (showYouTubeLoadingMessage) {
                 R.string.youtube_loading_error
             } else {
                 R.string.loading_error
             }
         loadingText.text = resources.getString(messageResId)
+
+        if (showYouTubeLoadingMessage) {
+            scheduleYouTubePlaylistRetry()
+        } else {
+            initialPlaylistRetryJob?.cancel()
+            initialPlaylistRetryJob = null
+        }
     }
 
     private fun shouldShowYouTubeLoadingMessage(): Boolean {
@@ -594,6 +603,39 @@ class ScreenController(
 
         val cachedCount = YouTubeVideoPrefs.count.toIntOrNull()
         return cachedCount == null || cachedCount <= 0
+    }
+
+    private fun scheduleYouTubePlaylistRetry() {
+        if (initialPlaylistRetryJob != null || !YouTubeFeature.isOnlyYouTubeSourceEnabled()) {
+            return
+        }
+
+        initialPlaylistRetryJob =
+            mainScope.launch {
+                delay(YOUTUBE_PLAYLIST_RETRY_DELAY_MS)
+
+                val refreshedPlaylist =
+                    withContext(Dispatchers.IO) {
+                        runCatching { MediaService(context).fetchMedia() }
+                            .onFailure { exception ->
+                                Timber.w(exception, "Failed to retry YouTube-only playlist fetch")
+                            }.getOrNull()
+                    }
+
+                if (refreshedPlaylist != null && refreshedPlaylist.size > 0) {
+                    playlist = refreshedPlaylist
+                    loadItem(playlist.nextItem())
+                    scheduleSleepTimer()
+                } else if (shouldShowYouTubeLoadingMessage()) {
+                    showLoadingError()
+                }
+            }.also { job ->
+                job.invokeOnCompletion {
+                    if (initialPlaylistRetryJob === job) {
+                        initialPlaylistRetryJob = null
+                    }
+                }
+            }
     }
 
     private fun hideOverlays(delay: Long = 0L) {
@@ -703,6 +745,7 @@ class ScreenController(
         sleepTimerJob?.cancel()
         preloadJob?.cancel()
         playlistRefreshJob?.cancel()
+        initialPlaylistRetryJob?.cancel()
         metadataJobs.values.forEach { it.cancel() }
         metadataJobs.clear()
         mainScope.cancel()
@@ -996,6 +1039,7 @@ class ScreenController(
     companion object {
         const val PLAYLIST_PREBUILD_MIN_SIZE: Int = 8
         const val PLAYLIST_PREBUILD_REMAINING_ITEMS: Int = 11
+        const val YOUTUBE_PLAYLIST_RETRY_DELAY_MS: Long = 5_000
         const val LOADING_FADE_OUT: Long = 300 // Fade out loading text
         const val LOADING_DELAY: Long = 400 // Delay before fading out loading view
         const val ERROR_DELAY: Long = 2000 // Delay before loading next item, after error

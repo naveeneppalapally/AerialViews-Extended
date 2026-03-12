@@ -55,6 +55,8 @@ class YouTubeMediaProvider(
     override suspend fun fetchMetadata(): MutableMap<String, Pair<String, Map<Int, String>>> = mutableMapOf()
 
     private suspend fun fetchInitialMedia(): List<AerialMedia> {
+        YouTubeFeature.markCountPending()
+
         if (!YouTubeFeature.isOnlyYouTubeSourceEnabled()) {
             Timber.tag(TAG).d("Cache empty, warming YouTube in background while other sources play")
             repository.preWarmInBackground()

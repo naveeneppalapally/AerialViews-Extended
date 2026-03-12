@@ -99,6 +99,8 @@ object YouTubeFeature {
         context: Context,
         forceSearchRefresh: Boolean = true,
     ) {
+        markCountPending()
+
         val constraints =
             Constraints
                 .Builder()
@@ -121,6 +123,10 @@ object YouTubeFeature {
                 ExistingWorkPolicy.REPLACE,
                 request,
             )
+    }
+
+    fun markCountPending() {
+        YouTubeVideoPrefs.count = PENDING_CACHE_COUNT
     }
 
     fun markQualitySelectionExplicit(context: Context) {
@@ -262,6 +268,7 @@ object YouTubeFeature {
     private const val INITIAL_PREWARM_DELAY_MS = 10_000L
     private const val KEY_QUALITY_INITIALIZED = "yt_quality_initialized"
     private const val KEY_QUALITY_USER_SELECTED = "yt_quality_user_selected"
+    private const val PENDING_CACHE_COUNT = "-1"
     private const val TAG = "YouTubeFeature"
     private const val UHD_QUALITY = "2160p"
     private const val UHD_WIDTH = 3840

@@ -528,7 +528,8 @@ object QueryFormulaEngine {
                 count = count,
             )
 
-        val finalPool = selectedQueries.ifEmpty { SAFE_FALLBACK_QUERIES.take(count) }
+        val expandedQueries = expandQueriesForNarrowCategorySelection(selectedQueries, count)
+        val finalPool = expandedQueries.ifEmpty { SAFE_FALLBACK_QUERIES.take(count) }
         Timber.tag(TAG).d("Generated %s YouTube search variants across %s categories", finalPool.size, enabledPools.size)
         return finalPool
     }
@@ -663,6 +664,36 @@ object QueryFormulaEngine {
         return selected.distinct().take(count)
     }
 
+    private fun expandQueriesForNarrowCategorySelection(
+        baseQueries: List<String>,
+        count: Int,
+    ): List<String> {
+        if (baseQueries.isEmpty()) {
+            return emptyList()
+        }
+        if (baseQueries.size >= count) {
+            return baseQueries.take(count)
+        }
+
+        val expandedQueries = LinkedHashSet(baseQueries)
+
+        QUERY_VARIATION_SUFFIXES.forEach { suffix ->
+            baseQueries.forEach { query ->
+                val suffixToken = suffix.trim()
+                if (query.contains(suffixToken, ignoreCase = true)) {
+                    return@forEach
+                }
+
+                expandedQueries += "$query $suffixToken"
+                if (expandedQueries.size >= count) {
+                    return expandedQueries.take(count)
+                }
+            }
+        }
+
+        return expandedQueries.take(count)
+    }
+
     private fun seedForCategory(
         category: ContentCategory,
         entropySeed: Long,
@@ -701,6 +732,15 @@ object QueryFormulaEngine {
             "4k national park landscape documentary",
             "4k ocean waves real footage no music",
             "4k drone aerial landscape no music",
+        )
+    private val QUERY_VARIATION_SUFFIXES =
+        listOf(
+            "real footage",
+            "no talking",
+            "no music",
+            "cinematic",
+            "documentary",
+            "timelapse",
         )
 
     private fun buildSafeFallbackQueries(baseQuery: String): List<String> {

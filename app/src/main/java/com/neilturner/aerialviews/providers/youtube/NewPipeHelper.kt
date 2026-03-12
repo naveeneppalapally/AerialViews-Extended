@@ -247,8 +247,12 @@ object NewPipeHelper {
         val playableDashUrl = dashUrl?.takeIf { it.isNotBlank() }
         val playableHlsUrl = hlsUrl?.takeIf { it.isNotBlank() }
 
-        val primaryStreams = if (preferVideoOnly) playableVideoOnlyStreams else playableProgressiveStreams
-        val secondaryStreams = if (preferVideoOnly) playableProgressiveStreams else playableVideoOnlyStreams
+        val primaryStreams = playableVideoOnlyStreams
+        val secondaryStreams = playableProgressiveStreams
+
+        if (!preferVideoOnly) {
+            Timber.tag(TAG).d("Ignoring muxed-first preference, trying video-only YouTube streams first for quality")
+        }
 
         return selectStreamContent(primaryStreams, normalizedPreference, allowUnsupportedFallback = false)
             ?: selectStreamContent(secondaryStreams, normalizedPreference, allowUnsupportedFallback = false)

@@ -1382,15 +1382,10 @@ class YouTubeSourceRepository(
     private fun shouldShuffle(): Boolean =
         sharedPreferences.getBoolean(KEY_SHUFFLE, DEFAULT_SHUFFLE)
 
-    private fun shouldPreferVideoOnly(): Boolean =
-        sharedPreferences.getBoolean(KEY_MUTE_VIDEOS, DEFAULT_MUTE_VIDEOS)
+    private fun shouldPreferVideoOnly(): Boolean = true
 
     private fun streamMode(): String =
-        if (shouldPreferVideoOnly()) {
-            "video_only"
-        } else {
-            "muxed"
-        }
+        "video_only_preferred"
 
     private fun updateCachedCount(count: Int) {
         sharedPreferences.edit {
@@ -1923,7 +1918,7 @@ class YouTubeSourceRepository(
         private const val RECENT_PLAYBACK_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L
         private const val MAX_PLAYBACK_RESOLVE_ATTEMPTS = 5
         private const val BAD_ENTRY_REFRESH_THRESHOLD = 10
-        private const val CURRENT_CACHE_VERSION = 24
+        private const val CURRENT_CACHE_VERSION = 25
         private const val HISTORY_SEPARATOR = "|"
         private const val DEFAULT_CATEGORY_KEY = "__uncategorized__"
         private const val MIN_MAIN_SEARCH_UNIQUE_VIDEOS = 60

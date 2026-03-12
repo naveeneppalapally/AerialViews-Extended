@@ -1,6 +1,7 @@
 package com.neilturner.aerialviews.providers.youtube
 
 import android.media.MediaCodecList
+import android.os.Build
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request.Builder
@@ -249,18 +250,27 @@ object NewPipeHelper {
         val primaryStreams = if (preferVideoOnly) playableVideoOnlyStreams else playableProgressiveStreams
         val secondaryStreams = if (preferVideoOnly) playableProgressiveStreams else playableVideoOnlyStreams
 
-        return selectStreamContent(primaryStreams, normalizedPreference)
-            ?: selectStreamContent(secondaryStreams, normalizedPreference)
+        return selectStreamContent(primaryStreams, normalizedPreference, allowUnsupportedFallback = false)
+            ?: selectStreamContent(secondaryStreams, normalizedPreference, allowUnsupportedFallback = false)
             ?: playableDashUrl
             ?: playableHlsUrl
-            ?: selectStreamContent(primaryStreams + secondaryStreams, normalizedPreference)
+            ?: selectStreamContent(
+                primaryStreams + secondaryStreams,
+                normalizedPreference,
+                allowUnsupportedFallback = true,
+            )
+            ?: run {
+                Timber.tag(TAG).w("No playable YouTube stream found for preference=%s", preferredQuality)
+                null
+            }
     }
 
     private fun selectStreamContent(
         streams: List<VideoStream>,
         preferredQuality: String,
+        allowUnsupportedFallback: Boolean,
     ): String? =
-        selectBestVideoStream(streams, preferredQuality)?.let { stream ->
+        selectBestVideoStream(streams, preferredQuality, allowUnsupportedFallback)?.let { stream ->
             logSelectedStream(stream)
             stream.getContent()
         }
@@ -268,6 +278,7 @@ object NewPipeHelper {
     private fun selectBestVideoStream(
         streams: List<VideoStream>,
         preferredQuality: String,
+        allowUnsupportedFallback: Boolean = false,
     ): VideoStream? {
         val candidates =
             streams
@@ -278,20 +289,46 @@ object NewPipeHelper {
         }
 
         val preferredHeight = qualityToHeight(preferredQuality)
-        if (preferredHeight != null) {
-            val exactMatch = selectBestStreamAtResolution(candidates, preferredHeight)
-            if (exactMatch != null) {
-                return exactMatch
+        val supportPriority =
+            buildList {
+                add(DecoderSupport.SUPPORTED)
+                add(DecoderSupport.UNKNOWN)
+                if (allowUnsupportedFallback) {
+                    add(DecoderSupport.UNSUPPORTED)
+                }
             }
+
+        supportPriority.forEach { support ->
+            val supportCandidates =
+                candidates.filter { candidate ->
+                    decoderSupport(codecFamily(candidate), candidate) == support
+                }
+            if (supportCandidates.isEmpty()) {
+                return@forEach
+            }
+
+            selectBestVideoStreamFromTier(supportCandidates, preferredHeight)?.let { return it }
+        }
+
+        return null
+    }
+
+    private fun selectBestVideoStreamFromTier(
+        streams: List<VideoStream>,
+        preferredHeight: Int?,
+    ): VideoStream? {
+        if (preferredHeight != null) {
+            selectBestStreamAtResolution(streams, preferredHeight)?.let { return it }
         }
 
         RESOLUTION_PRIORITY.forEach { resolution ->
-            selectBestStreamAtResolution(candidates, resolution)?.let { return it }
+            selectBestStreamAtResolution(streams, resolution)?.let { return it }
         }
 
         Timber.tag(TAG).w("No preferred YouTube stream quality found, using best available fallback")
-        return candidates.maxWithOrNull(
+        return streams.maxWithOrNull(
             compareByDescending<VideoStream> { streamHeight(it) }
+                .thenBy { codecPenalty(it) }
                 .thenBy { codecPriorityIndex(it) }
                 .thenByDescending { it.getBitrate() },
         )
@@ -323,12 +360,16 @@ object NewPipeHelper {
             atResolution
                 .filter { stream ->
                     stream.getCodec().orEmpty().lowercase(Locale.US).contains(codec)
-                }.maxByOrNull { stream ->
-                    stream.getBitrate()
-                }?.let { return it }
+                }.minWithOrNull(
+                    compareBy<VideoStream> { codecPenalty(it) }
+                        .thenByDescending { it.getBitrate() },
+                )?.let { return it }
         }
 
-        return atResolution.maxByOrNull { it.getBitrate() }
+        return atResolution.minWithOrNull(
+            compareBy<VideoStream> { codecPenalty(it) }
+                .thenByDescending { it.getBitrate() },
+        )
     }
 
     private fun streamHeight(stream: VideoStream): Int {
@@ -482,6 +523,10 @@ object NewPipeHelper {
         codecFamily: CodecFamily,
         stream: VideoStream,
     ): DecoderSupport {
+        if (isKnownUnsupportedTvCodecPath(codecFamily, stream)) {
+            return DecoderSupport.UNSUPPORTED
+        }
+
         val mimeType = codecFamily.mimeType ?: return DecoderSupport.UNKNOWN
         val streamSize = streamSize(stream) ?: return decoderAvailability(mimeType)
         val cacheKey = DecoderSupportKey(mimeType, streamSize.first, streamSize.second)
@@ -602,6 +647,34 @@ object NewPipeHelper {
         return Pair(width, height)
     }
 
+    private fun isKnownUnsupportedTvCodecPath(
+        codecFamily: CodecFamily,
+        stream: VideoStream,
+    ): Boolean {
+        val height = streamHeight(stream)
+        if (height < 2160) {
+            return false
+        }
+
+        val isAmlogicDevice =
+            DEVICE_FINGERPRINT.contains("amlogic") ||
+                DEVICE_FINGERPRINT.contains("t5d")
+
+        val usesProblematicCodec =
+            codecFamily == CodecFamily.VP9 || codecFamily == CodecFamily.AV1
+
+        if (isAmlogicDevice && usesProblematicCodec) {
+            Timber.tag(TAG).w(
+                "Treating %sp %s as unsupported on this device due to Amlogic 4K decoder compatibility",
+                height,
+                stream.getCodec(),
+            )
+            return true
+        }
+
+        return false
+    }
+
     private fun isRecentEnough(item: StreamInfoItem): Boolean {
         val uploadInstant = item.getUploadDate()?.getInstant() ?: return true
         return uploadInstant.isAfter(ZonedDateTime.now().minusMonths(6).toInstant())
@@ -671,6 +744,16 @@ object NewPipeHelper {
     private val AI_WORD_REGEX = Regex("\\bai\\b", RegexOption.IGNORE_CASE)
     private val AI_PUNCT_WORD_REGEX = Regex("\\ba\\W*i\\b", RegexOption.IGNORE_CASE)
     private val QUERY_TOKEN_SPLIT_REGEX = Regex("[^a-z0-9']+")
+    private val DEVICE_FINGERPRINT =
+        listOf(
+            Build.HARDWARE,
+            Build.BOARD,
+            Build.DEVICE,
+            Build.MANUFACTURER,
+            Build.MODEL,
+        ).joinToString(" ") { value ->
+            value.orEmpty()
+        }.lowercase(Locale.US)
     private val AERIAL_QUERY_REGEX = Regex("(aerial|drone|flyover|flythrough|bird's eye|hyperlapse)", RegexOption.IGNORE_CASE)
     private val AERIAL_TITLE_REGEX = Regex("(aerial|drone|flyover|flythrough|fpv|bird's eye|uav)", RegexOption.IGNORE_CASE)
     private val GENERIC_QUERY_TOKENS =

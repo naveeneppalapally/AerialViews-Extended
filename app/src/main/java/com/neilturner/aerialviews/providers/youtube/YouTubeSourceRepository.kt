@@ -1382,10 +1382,15 @@ class YouTubeSourceRepository(
     private fun shouldShuffle(): Boolean =
         sharedPreferences.getBoolean(KEY_SHUFFLE, DEFAULT_SHUFFLE)
 
-    private fun shouldPreferVideoOnly(): Boolean = true
+    private fun shouldPreferVideoOnly(): Boolean =
+        sharedPreferences.getBoolean(KEY_MUTE_VIDEOS, DEFAULT_MUTE_VIDEOS)
 
     private fun streamMode(): String =
-        "video_only_preferred"
+        if (shouldPreferVideoOnly()) {
+            "video_only"
+        } else {
+            "muxed"
+        }
 
     private fun updateCachedCount(count: Int) {
         sharedPreferences.edit {

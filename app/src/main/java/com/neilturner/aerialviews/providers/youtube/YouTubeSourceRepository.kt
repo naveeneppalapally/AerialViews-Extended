@@ -84,6 +84,19 @@ class YouTubeSourceRepository(
 
     suspend fun getLocalCachedVideos(): List<YouTubeCacheEntity> =
         withContext(Dispatchers.IO) {
+            if (isCacheVersionStale() || isCacheSignatureStale()) {
+                return@withContext runCatching { ensureSearchCache() }
+                    .getOrElse { exception ->
+                        Timber.tag(TAG).w(exception, "Using locally cached YouTube entries after stale-cache refresh failure")
+                        cacheDao.getAll().filterNot { it.isBad }
+                    }.let { refreshedEntries ->
+                        prunePlayHistory(refreshedEntries)
+                        buildPlaylistEntries(refreshedEntries).also { entries ->
+                            updateCachedCount(entries.size)
+                        }
+                    }
+            }
+
             val cachedEntries = cacheDao.getAll().filterNot { it.isBad }
             if (cachedEntries.isEmpty()) {
                 updateCachedCount(0)
@@ -1910,7 +1923,7 @@ class YouTubeSourceRepository(
         private const val RECENT_PLAYBACK_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L
         private const val MAX_PLAYBACK_RESOLVE_ATTEMPTS = 5
         private const val BAD_ENTRY_REFRESH_THRESHOLD = 10
-        private const val CURRENT_CACHE_VERSION = 22
+        private const val CURRENT_CACHE_VERSION = 24
         private const val HISTORY_SEPARATOR = "|"
         private const val DEFAULT_CATEGORY_KEY = "__uncategorized__"
         private const val MIN_MAIN_SEARCH_UNIQUE_VIDEOS = 60

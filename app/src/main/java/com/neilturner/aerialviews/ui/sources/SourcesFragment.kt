@@ -93,6 +93,7 @@ class SourcesFragment : MenuStateFragment() {
         }
 
         if (YouTubeVideoPrefs.enabled) {
+            YouTubeFeature.markCountPending()
             YouTubeFeature.requestImmediateRefresh(requireContext(), forceSearchRefresh = true)
         }
     }

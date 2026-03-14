@@ -11,6 +11,12 @@ interface YouTubeCacheDao {
     @Query("SELECT * FROM youtube_cache ORDER BY title COLLATE NOCASE ASC")
     fun getAll(): List<YouTubeCacheEntity>
 
+    @Query("SELECT * FROM youtube_cache WHERE isBad = 0 ORDER BY title COLLATE NOCASE ASC")
+    fun getAllGood(): List<YouTubeCacheEntity>
+
+    @Query("SELECT COUNT(*) FROM youtube_cache WHERE isBad = 0")
+    fun countGoodEntries(): Int
+
     @Query("SELECT * FROM youtube_cache WHERE isBad = 0 AND streamUrlExpiresAt > :now ORDER BY title COLLATE NOCASE ASC")
     fun getValidEntries(now: Long): List<YouTubeCacheEntity>
 
@@ -19,6 +25,9 @@ interface YouTubeCacheDao {
 
     @Query("DELETE FROM youtube_cache")
     fun clearAll()
+
+    @Query("DELETE FROM youtube_cache WHERE isBad = 0")
+    fun clearAllGood()
 
     @Transaction
     fun clearAndInsert(entries: List<YouTubeCacheEntity>) {
@@ -53,6 +62,16 @@ interface YouTubeCacheDao {
 
     @Query("UPDATE youtube_cache SET lastPlayedAt = 0")
     fun resetPlayHistory()
+
+    @Query(
+        "DELETE FROM youtube_cache WHERE isBad = 0 AND durationSeconds > 0 AND durationSeconds < :minDurationSeconds",
+    )
+    fun deleteByDuration(minDurationSeconds: Int): Int
+
+    @Query(
+        "DELETE FROM youtube_cache WHERE isBad = 0 AND (categoryKey = '' OR categoryKey NOT IN (:allowedCategoryKeys))",
+    )
+    fun deleteOutsideCategories(allowedCategoryKeys: List<String>): Int
 
     @Query(
         "SELECT * FROM youtube_cache " +

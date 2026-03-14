@@ -18,7 +18,12 @@ import com.neilturner.aerialviews.providers.Comm2MediaProvider
 import com.neilturner.aerialviews.providers.LocalMediaProvider
 import com.neilturner.aerialviews.providers.MediaProvider
 import com.neilturner.aerialviews.providers.youtube.YouTubeMediaProvider
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import tv.projectivy.plugin.wallpaperprovider.api.Event
 import tv.projectivy.plugin.wallpaperprovider.api.IWallpaperProviderService
@@ -27,18 +32,51 @@ import tv.projectivy.plugin.wallpaperprovider.api.WallpaperDisplayMode
 import tv.projectivy.plugin.wallpaperprovider.api.WallpaperType
 
 class WallpaperProviderService : Service() {
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile
+    private var cachedWallpapers: List<Wallpaper> = emptyList()
+
+    @Volatile
+    private var lastWallpaperBuildAt: Long = 0L
+
+    @Volatile
+    private var refreshJob: Job? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        scheduleWallpaperRefresh(force = true)
+    }
+
+    override fun onDestroy() {
+        serviceScope.cancel()
+        super.onDestroy()
+    }
+
     override fun onBind(intent: Intent): IBinder = binder
 
     private val binder =
         object : IWallpaperProviderService.Stub() {
-            override fun getWallpapers(event: Event?): List<Wallpaper> =
+            override fun getWallpapers(event: Event?): List<Wallpaper> {
                 when (event) {
-                    is Event.TimeElapsed -> buildWallpapers()
-
+                    is Event.TimeElapsed -> {
+                        if (shouldRefreshWallpapers()) {
+                            scheduleWallpaperRefresh(force = true)
+                        }
+                    }
+                    is Event.LauncherIdleModeChanged -> {
+                        if (event.isIdle && cachedWallpapers.isEmpty()) {
+                            scheduleWallpaperRefresh(force = true)
+                        }
+                    }
                     else -> {
-                        emptyList()
-                    } // Returning an empty list won't change the currently displayed wallpaper
+                        if (cachedWallpapers.isEmpty()) {
+                            scheduleWallpaperRefresh(force = false)
+                        }
+                    }
                 }
+                return cachedWallpapers
+            }
 
             override fun getPreferences(): String? = null
 
@@ -58,34 +96,58 @@ class WallpaperProviderService : Service() {
             }
         }
 
-    private companion object {
-        const val PROJECTIVY_YOUTUBE_PROVIDER = "youtube"
+    private fun shouldRefreshWallpapers(now: Long = System.currentTimeMillis()): Boolean =
+        cachedWallpapers.isEmpty() || now - lastWallpaperBuildAt >= WALLPAPER_REUSE_WINDOW_MS
+
+    private fun scheduleWallpaperRefresh(force: Boolean) {
+        val activeJob = refreshJob
+        if (activeJob?.isActive == true) {
+            return
+        }
+        if (!force && !shouldRefreshWallpapers()) {
+            return
+        }
+
+        refreshJob =
+            serviceScope.launch {
+                val freshWallpapers = buildWallpapers()
+                if (freshWallpapers.isNotEmpty()) {
+                    cachedWallpapers = freshWallpapers
+                    lastWallpaperBuildAt = System.currentTimeMillis()
+                    Timber.i("Updated cached Projectivy wallpapers: %s", freshWallpapers.size)
+                } else {
+                    Timber.w("Projectivy wallpaper refresh produced no items; keeping existing cache")
+                }
+            }
     }
 
-    private fun buildWallpapers(): List<Wallpaper> {
+    private companion object {
+        const val PROJECTIVY_YOUTUBE_PROVIDER = "youtube"
+        const val WALLPAPER_REUSE_WINDOW_MS = 90_000L
+    }
+
+    private suspend fun buildWallpapers(): List<Wallpaper> {
         val enabledProviders = getEnabledProviders()
         Timber.i("Enabled providers: %s", enabledProviders.size)
 
         val aerialMediaList =
-            runBlocking {
-                enabledProviders
-                    .filter { it.enabled }
-                    .flatMap { provider ->
-                        try {
-                            provider.fetchMedia()
-                        } catch (exception: Exception) {
-                            Timber.w(exception, "Projectivy provider failed: %s", provider.javaClass.simpleName)
-                            emptyList()
-                        }
+            enabledProviders
+                .filter { it.enabled }
+                .flatMap { provider ->
+                    try {
+                        provider.fetchMedia()
+                    } catch (exception: Exception) {
+                        Timber.w(exception, "Projectivy provider failed: %s", provider.javaClass.simpleName)
+                        emptyList()
                     }
-            }.let { mediaList ->
-                Timber.log(2, "Wallpaper media items: %s", mediaList.size)
-                if (ProjectivyPrefs.shuffleVideos) {
-                    mediaList.shuffled()
-                } else {
-                    mediaList
+                }.let { mediaList ->
+                    Timber.log(2, "Wallpaper media items: %s", mediaList.size)
+                    if (ProjectivyPrefs.shuffleVideos) {
+                        mediaList.shuffled()
+                    } else {
+                        mediaList
+                    }
                 }
-            }
 
         return aerialMediaList.map { media ->
             val wallpaperType =

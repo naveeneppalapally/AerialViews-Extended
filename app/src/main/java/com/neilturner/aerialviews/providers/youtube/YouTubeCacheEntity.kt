@@ -11,6 +11,8 @@ data class YouTubeCacheEntity(
     val streamUrl: String,
     val title: String,
     val uploaderName: String = "",
+    val durationSeconds: Int = 0,
+    val categoryKey: String = "",
     val streamUrlExpiresAt: Long,
     val searchCachedAt: Long,
     val searchQuery: String? = null,

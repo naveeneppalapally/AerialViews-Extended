@@ -5,10 +5,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -25,6 +25,11 @@ class YouTubeSettingsViewModel(
 
     init {
         YouTubeFeature.preWarmIfNeeded(viewModelScope)
+        viewModelScope.launch {
+            repository.cacheCount.collect { count ->
+                _cacheSize.value = count
+            }
+        }
         refreshCacheSize()
     }
 
@@ -34,8 +39,7 @@ class YouTubeSettingsViewModel(
         }
 
         viewModelScope.launch {
-            val cacheSize = repository.getCacheSize()
-            if (cacheSize <= 0) {
+            if (repository.getCacheSize() <= 0) {
                 refreshInBackground()
             }
         }
@@ -50,9 +54,7 @@ class YouTubeSettingsViewModel(
             _refreshState.value = RefreshState.Loading
             _refreshState.value =
                 try {
-                    repository.forceRefresh().also { refreshedCount ->
-                        _cacheSize.value = refreshedCount
-                    }.let(RefreshState::Success)
+                    repository.forceRefresh().let(RefreshState::Success)
                 } catch (exception: Exception) {
                     Timber.e(exception, "YouTube refresh failed")
                     RefreshState.Error
@@ -64,12 +66,20 @@ class YouTubeSettingsViewModel(
         YouTubeFeature.requestImmediateRefresh(getApplication(), forceSearchRefresh = true)
     }
 
+    fun onCategoryChanged() {
+        applyFiltersThenScheduleRefresh()
+    }
+
+    fun onMinimumDurationChanged() {
+        applyFiltersThenScheduleRefresh()
+    }
+
     fun scheduleBackgroundRefresh(delayMs: Long = 750L) {
         backgroundRefreshJob?.cancel()
         backgroundRefreshJob =
             viewModelScope.launch {
                 if (delayMs > 0) {
-                    delay(delayMs)
+                    kotlinx.coroutines.delay(delayMs)
                 }
                 refreshInBackground()
             }
@@ -83,6 +93,19 @@ class YouTubeSettingsViewModel(
 
     fun clearRefreshState() {
         _refreshState.value = RefreshState.Idle
+    }
+
+    private fun applyFiltersThenScheduleRefresh() {
+        backgroundRefreshJob?.cancel()
+        backgroundRefreshJob =
+            viewModelScope.launch {
+                runCatching {
+                    repository.applyCurrentFilters()
+                }.onFailure { exception ->
+                    Timber.e(exception, "Failed to apply YouTube cache filters")
+                }
+                refreshInBackground()
+            }
     }
 }
 

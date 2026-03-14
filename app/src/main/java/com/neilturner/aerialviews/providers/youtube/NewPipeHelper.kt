@@ -2,7 +2,6 @@ package com.neilturner.aerialviews.providers.youtube
 
 import android.media.MediaCodecList
 import android.os.Build
-import com.neilturner.aerialviews.BuildConfig
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request.Builder
@@ -100,19 +99,13 @@ object NewPipeHelper {
             try {
                 loadPlayableStreamUrl(videoPageUrl, preferredQuality, preferVideoOnly)
             } catch (exception: AgeRestrictedContentException) {
-                if (BuildConfig.ENABLE_YOUTUBE_LOGS) {
-                    Timber.tag(TAG).d("Age-restricted stream rejected: %s", videoPageUrl)
-                }
+                Timber.tag(TAG).d("Age-restricted stream rejected: %s", videoPageUrl)
                 throw exception
             } catch (exception: GeographicRestrictionException) {
-                if (BuildConfig.ENABLE_YOUTUBE_LOGS) {
-                    Timber.tag(TAG).d("Geo-blocked stream rejected: %s", videoPageUrl)
-                }
+                Timber.tag(TAG).d("Geo-blocked stream rejected: %s", videoPageUrl)
                 throw exception
             } catch (exception: ContentNotAvailableException) {
-                if (BuildConfig.ENABLE_YOUTUBE_LOGS) {
-                    Timber.tag(TAG).d("Unavailable stream rejected: %s", videoPageUrl)
-                }
+                Timber.tag(TAG).d("Unavailable stream rejected: %s", videoPageUrl)
                 throw exception
             } catch (exception: ExtractionException) {
                 Timber.tag(TAG).w(exception, "NewPipe extraction failed for %s", videoPageUrl)
@@ -249,25 +242,23 @@ object NewPipeHelper {
         val normalizedPreference = preferredQuality.trim().lowercase()
         val playableProgressiveStreams =
             progressiveStreams.filter { !it.isVideoOnly() && it.isUrl() && it.getContent().isNotBlank() }
-        val playableVideoOnlyStreams =
-            videoOnlyStreams.filter { it.isUrl() && it.getContent().isNotBlank() }
-        val playableDashUrl = dashUrl?.takeIf { it.isNotBlank() }
-        val playableHlsUrl = hlsUrl?.takeIf { it.isNotBlank() }
-
-        val primaryStreams = if (preferVideoOnly) playableVideoOnlyStreams else playableProgressiveStreams
-        val secondaryStreams = if (preferVideoOnly) playableProgressiveStreams else playableVideoOnlyStreams
-
-        return selectStreamContent(primaryStreams, normalizedPreference, allowUnsupportedFallback = false)
-            ?: selectStreamContent(secondaryStreams, normalizedPreference, allowUnsupportedFallback = false)
-            ?: playableDashUrl
-            ?: playableHlsUrl
-            ?: selectStreamContent(
-                primaryStreams + secondaryStreams,
-                normalizedPreference,
-                allowUnsupportedFallback = true,
-            )
+        Timber.tag(TAG).i(
+            "Evaluating YouTube progressive streams (preferred=%s, playable=%s, available=%s)",
+            preferredQuality,
+            playableProgressiveStreams.size,
+            playableProgressiveStreams.joinToString { stream -> describeStream(stream) },
+        )
+        return selectStreamContent(playableProgressiveStreams, normalizedPreference, allowUnsupportedFallback = false)
+            ?: selectStreamContent(playableProgressiveStreams, normalizedPreference, allowUnsupportedFallback = true)
             ?: run {
-                Timber.tag(TAG).w("No playable YouTube stream found for preference=%s", preferredQuality)
+                Timber.tag(TAG).w(
+                    "No playable progressive YouTube stream found for preference=%s (videoOnly=%s dash=%s hls=%s preferVideoOnly=%s)",
+                    preferredQuality,
+                    videoOnlyStreams.size,
+                    !dashUrl.isNullOrBlank(),
+                    !hlsUrl.isNullOrBlank(),
+                    preferVideoOnly,
+                )
                 null
             }
     }
@@ -290,9 +281,14 @@ object NewPipeHelper {
         val candidates =
             streams
                 .filterNot { it.getItag() in REJECTED_LOW_QUALITY_ITAGS }
-                .filter { streamHeight(it) > 0 }
+                .filter { streamHeight(it) >= MIN_PROGRESSIVE_HEIGHT }
         if (candidates.isEmpty()) {
-            return streams.firstOrNull()
+            Timber.tag(TAG).w(
+                "Rejecting YouTube progressive streams below %sp (available=%s)",
+                MIN_PROGRESSIVE_HEIGHT,
+                streams.map { stream -> "${streamHeight(stream)}p/itag=${stream.getItag()}" },
+            )
+            return null
         }
 
         val preferredHeight = qualityToHeight(preferredQuality)
@@ -437,17 +433,11 @@ object NewPipeHelper {
     }
 
     private fun logSelectedStream(stream: VideoStream) {
-        if (BuildConfig.ENABLE_YOUTUBE_LOGS) {
-            Timber.tag(TAG).d(
-                "Selected YouTube progressive stream: %sp codec=%s itag=%s bitrate=%s support=%s",
-                streamHeight(stream),
-                stream.getCodec(),
-                stream.getItag(),
-                stream.getBitrate(),
-                decoderSupport(codecFamily(stream), stream),
-            )
-        }
+        Timber.tag(TAG).i("Selected YouTube progressive stream: %s", describeStream(stream))
     }
+
+    private fun describeStream(stream: VideoStream): String =
+        "${streamHeight(stream)}p codec=${stream.getCodec()} itag=${stream.getItag()} bitrate=${stream.getBitrate()} support=${decoderSupport(codecFamily(stream), stream)}"
 
     private fun isLikelyAiTitle(titleLower: String): Boolean {
         if (AI_WORD_REGEX.containsMatchIn(titleLower) || AI_PUNCT_WORD_REGEX.containsMatchIn(titleLower)) {

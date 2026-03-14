@@ -102,6 +102,8 @@ class ScreenController(
     private var preloadedNextMedia: AerialMedia? = null
     private var preloadedNextSourceUri: String? = null
     private var pendingPlaylist: MediaPlaylist? = null
+    private var waitingForTransitionBlackout = false
+    private var pendingFadeInAfterTransition = false
 
     private val videoViewBinding: VideoViewBinding
     private val imageViewBinding: ImageViewBinding
@@ -357,12 +359,22 @@ class ScreenController(
     private fun consumePreloadedMedia(media: AerialMedia): AerialMedia? {
         val requestedUri = media.uri.toString()
         if (preloadedNextSourceUri != requestedUri) {
+            if (media.source == AerialMediaSource.YOUTUBE && media.type == AerialMediaType.VIDEO) {
+                Timber.i(
+                    "YouTube preload miss for next transition (requested=%s, cached=%s)",
+                    requestedUri,
+                    preloadedNextSourceUri,
+                )
+            }
             return null
         }
 
         val preloaded = preloadedNextMedia
         preloadedNextMedia = null
         preloadedNextSourceUri = null
+        if (preloaded != null && media.source == AerialMediaSource.YOUTUBE && media.type == AerialMediaType.VIDEO) {
+            Timber.i("Using preloaded YouTube media for next transition: %s", requestedUri)
+        }
         return preloaded
     }
 
@@ -387,16 +399,34 @@ class ScreenController(
         }
 
         val sourceUri = upcomingMedia.uri.toString()
+        if (!isYouTubePageUrl(sourceUri)) {
+            preloadedNextSourceUri = sourceUri
+            preloadedNextMedia = upcomingMedia
+            Timber.i("Next YouTube media already has direct playback URL: %s", sourceUri)
+            return
+        }
+
         preloadJob =
             mainScope.launch {
                 val resolvedUrl =
                     withContext(Dispatchers.IO) {
                         YouTubeFeature.repository(context).preloadVideoUrl(sourceUri)
-                    } ?: return@launch
+                    }
+
+                if (resolvedUrl == null) {
+                    Timber.w("Failed to preload next YouTube media URL before transition: %s", sourceUri)
+                    return@launch
+                }
 
                 preloadedNextSourceUri = sourceUri
                 preloadedNextMedia = upcomingMedia.copy(uri = resolvedUrl.toUri())
+                Timber.i("Preloaded next YouTube media URL for seamless transition: %s", sourceUri)
             }
+    }
+
+    private fun isYouTubePageUrl(url: String): Boolean {
+        val normalizedUrl = url.lowercase()
+        return normalizedUrl.contains("youtube.com/") || normalizedUrl.contains("youtu.be/")
     }
 
     private fun prebuildUpcomingPlaylist() {
@@ -542,6 +572,16 @@ class ScreenController(
             it.isFadingOutMedia = true
         }
 
+        val nextMedia =
+            if (!previousItem) {
+                nextPlaylistItem()
+            } else {
+                playlist.previousItem()
+            }
+        previousItem = false
+        waitingForTransitionBlackout = true
+        pendingFadeInAfterTransition = false
+
         // Fade in LoadView (ie. black screen)
         loadingView
             .animate()
@@ -551,29 +591,26 @@ class ScreenController(
             .withStartAction {
                 loadingView.visibility = View.VISIBLE
                 loadingView.alpha = 0f
-            }.withEndAction {
-                // Hide content views after faded out
-                videoViewBinding.root.visibility = View.INVISIBLE
-                videoViewBinding.videoPlayer.stop()
-
-                imageViewBinding.root.visibility = View.INVISIBLE
-                imageViewBinding.imagePlayer.stop()
-
-                // Reset pause state when transitioning between items
-                isPaused = false
-                pauseStartTime = 0
-
-                // Pick next/previous video
-                val media =
-                    if (!previousItem) {
-                        nextPlaylistItem()
-                    } else {
-                        playlist.previousItem()
-                    }
-                previousItem = false
 
                 if (!blackOutMode) {
-                    loadItem(media)
+                    Timber.i("Preparing next media during fade-out: %s", nextMedia.uri)
+                    videoViewBinding.videoPlayer.stop()
+                    imageViewBinding.imagePlayer.stop()
+
+                    // Reset pause state when transitioning between items
+                    isPaused = false
+                    pauseStartTime = 0
+
+                    loadItem(nextMedia)
+                }
+            }.withEndAction {
+                loadingView.alpha = 1f
+                val shouldFadeInNow = pendingFadeInAfterTransition
+                pendingFadeInAfterTransition = false
+                waitingForTransitionBlackout = false
+
+                if (shouldFadeInNow) {
+                    fadeInNextItem()
                 }
             }.start()
     }
@@ -929,7 +966,15 @@ class ScreenController(
 
     override fun onVideoAlmostFinished() = fadeOutCurrentItem()
 
-    override fun onVideoPrepared() = fadeInNextItem()
+    override fun onVideoPrepared() {
+        if (waitingForTransitionBlackout) {
+            pendingFadeInAfterTransition = true
+            Timber.i("Deferring fade-in until blackout finishes for prepared video")
+            return
+        }
+
+        fadeInNextItem()
+    }
 
     override fun onVideoError() = handleError()
 

@@ -2,7 +2,6 @@ package com.neilturner.aerialviews.providers.youtube
 
 import android.content.SharedPreferences
 import androidx.core.content.edit
-import com.neilturner.aerialviews.BuildConfig
 import java.util.ArrayDeque
 import java.util.LinkedHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -183,9 +182,7 @@ class YouTubeSourceRepository(
                             resolvedAt = resolvedAt,
                         ),
                     )
-                    if (BuildConfig.ENABLE_YOUTUBE_LOGS) {
-                        Timber.tag(TAG).d("Pre-resolved YouTube video: %s", nextEntry.title)
-                    }
+                    Timber.tag(TAG).d("Pre-resolved YouTube video: %s", nextEntry.title)
                 } catch (exception: Exception) {
                     clearPreResolvedEntry()
                     Timber.tag(TAG).w(exception, "Failed to pre-resolve next YouTube video")
@@ -224,9 +221,7 @@ class YouTubeSourceRepository(
                             resolvedAt = resolvedAt,
                         ),
                     )
-                    if (BuildConfig.ENABLE_YOUTUBE_LOGS) {
-                        Timber.tag(TAG).d("Pre-resolved requested YouTube video: %s", entry.title)
-                    }
+                    Timber.tag(TAG).d("Pre-resolved requested YouTube video: %s", entry.title)
                 } catch (exception: Exception) {
                     clearPreResolvedEntry()
                     Timber.tag(TAG).w(exception, "Failed to pre-resolve requested YouTube video")
@@ -427,7 +422,39 @@ class YouTubeSourceRepository(
                 minDurationSeconds = refreshPlan.minimumDurationSeconds,
             )
         val expandedResults = maybeExpandWithLongTail(mainSearchResults, refreshPlan.minimumDurationSeconds)
-        return ensureHealthyCandidatePool(refreshPlan.query, expandedResults)
+        val healthyResults = ensureHealthyCandidatePool(refreshPlan.query, expandedResults)
+        val healthyUniqueCount = uniqueCandidateCount(healthyResults)
+        val finalResults =
+            if (healthyUniqueCount >= MIN_HEALTHY_CACHE_SIZE) {
+                healthyResults
+            } else {
+                val supplementalQueries =
+                    QueryFormulaEngine.generateFallbackQueryPool(
+                        baseQuery = refreshPlan.query,
+                        count = SUPPLEMENTAL_QUERY_POOL_SIZE,
+                        entropySeed = refreshPlan.entropySeed xor healthyUniqueCount.toLong(),
+                        prefs = categoryPreferences(),
+                    )
+                val supplementalResults = searchCandidateVideos(supplementalQueries, refreshPlan.minimumDurationSeconds)
+                val supplementedResults = mergeCandidatePools(healthyResults, supplementalResults)
+                Timber.tag(TAG).i(
+                    "Supplemented YouTube candidate pool with %s queries (%s -> %s unique candidates)",
+                    supplementalQueries.size,
+                    healthyUniqueCount,
+                    uniqueCandidateCount(supplementedResults),
+                )
+                supplementedResults
+            }
+
+        Timber.tag(TAG).i(
+            "Prepared YouTube candidate pool (queries=%s, main=%s/%s unique, final=%s/%s unique)",
+            refreshPlan.queryPool.size,
+            mainSearchResults.size,
+            uniqueCandidateCount(mainSearchResults),
+            finalResults.size,
+            uniqueCandidateCount(finalResults),
+        )
+        return finalResults
     }
 
     private suspend fun extractRefreshEntries(
@@ -443,13 +470,23 @@ class YouTubeSourceRepository(
                 .let(::deduplicateCandidatesByTitle)
                 .let { applyCandidateDiversityCaps(it, EXTRACTION_TARGET_SIZE) }
 
-        return extractEntries(
+        val extractedEntries =
+            extractEntries(
             items = rankedCandidates,
             cachedAt = refreshPlan.cachedAt,
             preferredQuality = refreshPlan.preferredQuality,
             limit = EXTRACTION_TARGET_SIZE,
             publishMinimumCache = refreshPlan.existingEntries.size < COLD_CACHE_SKIP_THRESHOLD,
         )
+
+        Timber.tag(TAG).i(
+            "Extracted YouTube refresh entries (search=%s, filtered=%s, ranked=%s, extracted=%s)",
+            searchResults.size,
+            filteredCandidates.size,
+            rankedCandidates.size,
+            extractedEntries.size,
+        )
+        return extractedEntries
     }
 
     private fun mergeRefreshedEntries(
@@ -500,10 +537,11 @@ class YouTubeSourceRepository(
         recordRefreshHistory(entries)
         markSearchCacheFresh(entries.size)
         Timber.tag(TAG).i(
-            "Cached %s YouTube videos for query \"%s\" across %s searches",
+            "Cached %s YouTube videos for query \"%s\" across %s searches (categories=%s)",
             entries.size,
             refreshPlan.query,
             refreshPlan.queryPool.size,
+            entries.groupingBy { it.categoryKey.ifBlank { "unknown" } }.eachCount(),
         )
     }
 
@@ -1987,6 +2025,7 @@ class YouTubeSourceRepository(
         private const val QUERY_SEARCH_BATCH_SIZE = 5
         private const val QUERY_POOL_SIZE = 50
         private const val FALLBACK_QUERY_POOL_SIZE = 16
+        private const val SUPPLEMENTAL_QUERY_POOL_SIZE = 24
         private const val MAX_PLAY_HISTORY = 320
         private const val MIN_PLAY_HISTORY_SIZE = 24
         private const val MAX_PLAY_HISTORY_FACTOR_PER_CACHE = 0.70

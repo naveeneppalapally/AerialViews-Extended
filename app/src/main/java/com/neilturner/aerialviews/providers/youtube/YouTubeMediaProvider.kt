@@ -107,10 +107,21 @@ class YouTubeMediaProvider(
             }
         }
 
+        val directPlaybackCount =
+            count { entry ->
+                repository.playbackUrl(entry) != entry.videoPageUrl
+            }
+        Timber.tag(TAG).i(
+            "Preparing %s cached YouTube playlist items (freshDirect=%s, directWindow=%s)",
+            size,
+            directPlaybackCount,
+            DIRECT_PLAYBACK_WINDOW,
+        )
+
         return mapIndexed { index, entry ->
             toAerialMedia(
                 entry = entry,
-                useDirectPlaybackUrl = index == 0,
+                useDirectPlaybackUrl = index < DIRECT_PLAYBACK_WINDOW,
             )
         }
     }
@@ -141,6 +152,7 @@ class YouTubeMediaProvider(
     companion object {
         private const val INITIAL_FETCH_TIMEOUT_MS = 30_000L
         private const val NORMAL_FETCH_TIMEOUT_MS = 3_000L
+        private const val DIRECT_PLAYBACK_WINDOW = 12
         private const val TAG = "YouTubeMedia"
     }
 }

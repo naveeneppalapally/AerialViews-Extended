@@ -69,9 +69,10 @@ interface YouTubeCacheDao {
     fun deleteByDuration(minDurationSeconds: Int): Int
 
     @Query(
-        "DELETE FROM youtube_cache WHERE isBad = 0 AND (categoryKey = '' OR categoryKey NOT IN (:allowedCategoryKeys))",
+        "DELETE FROM youtube_cache " +
+            "WHERE isBad = 0 AND categoryKey IS NOT NULL AND categoryKey != '' AND categoryKey NOT IN (:allowedCategoryKeys)",
     )
-    fun deleteOutsideCategories(allowedCategoryKeys: List<String>): Int
+    fun deleteByNotInCategories(allowedCategoryKeys: List<String>): Int
 
     @Query(
         "SELECT * FROM youtube_cache " +

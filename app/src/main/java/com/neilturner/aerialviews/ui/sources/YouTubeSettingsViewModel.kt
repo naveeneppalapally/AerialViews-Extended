@@ -67,11 +67,29 @@ class YouTubeSettingsViewModel(
     }
 
     fun onCategoryChanged() {
-        applyFiltersThenScheduleRefresh()
+        backgroundRefreshJob?.cancel()
+        backgroundRefreshJob =
+            viewModelScope.launch {
+                runCatching {
+                    repository.applyCurrentCategoryFilter()
+                }.onFailure { exception ->
+                    Timber.e(exception, "Failed to apply YouTube category filter")
+                }
+                refreshInBackground()
+            }
     }
 
-    fun onMinimumDurationChanged() {
-        applyFiltersThenScheduleRefresh()
+    fun onMinimumDurationChanged(minSeconds: Int) {
+        backgroundRefreshJob?.cancel()
+        backgroundRefreshJob =
+            viewModelScope.launch {
+                runCatching {
+                    repository.applyDurationFilter(minSeconds)
+                }.onFailure { exception ->
+                    Timber.e(exception, "Failed to apply YouTube duration filter")
+                }
+                refreshInBackground()
+            }
     }
 
     fun scheduleBackgroundRefresh(delayMs: Long = 750L) {

@@ -2,6 +2,7 @@ package com.neilturner.aerialviews.providers.youtube
 
 import android.media.MediaCodecList
 import android.os.Build
+import android.util.Log
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request.Builder
@@ -139,15 +140,36 @@ object NewPipeHelper {
     private fun buildSearchCandidates(
         searchInfo: SearchInfo,
         requiredMinDurationSeconds: Int,
-    ): List<StreamInfoItem> =
-        searchInfo.relatedItems
-            .asSequence()
-            .filterIsInstance<StreamInfoItem>()
-            .filter(::hasUsableMetadata)
-            .filter { item -> item.getDuration() >= requiredMinDurationSeconds }
-            .filterNot(::isFilteredCandidate)
-            .filter(::isRecentEnough)
-            .toList()
+    ): List<StreamInfoItem> {
+        val rawCandidates = searchInfo.relatedItems.filterIsInstance<StreamInfoItem>()
+        val withMetadata = rawCandidates.filter(::hasUsableMetadata)
+        Log.i(TAG, "YouTube search candidates: raw=${rawCandidates.size} metadata=${withMetadata.size}")
+
+        val afterDuration = withMetadata.filter { item -> item.getDuration() >= requiredMinDurationSeconds }
+        Log.i(TAG, "After duration filter: ${afterDuration.size} passed")
+
+        val afterAiFilter = afterDuration.filterNot(::isLikelyAI)
+        Log.i(TAG, "After AI filter: ${afterAiFilter.size} passed")
+
+        val afterHumanFilter =
+            afterAiFilter.filterNot { item ->
+                isHumanContent(
+                    title = item.getName(),
+                    uploader = item.getUploaderName().orEmpty(),
+                )
+            }
+        Log.i(TAG, "After human filter: ${afterHumanFilter.size} passed")
+
+        val afterSyntheticFilter =
+            afterHumanFilter.filterNot { item ->
+                isLikelySyntheticWallpaperTitle(item.getName().lowercase(Locale.US))
+            }
+        Log.i(TAG, "After synthetic filter: ${afterSyntheticFilter.size} passed")
+
+        val afterRecency = afterSyntheticFilter.filter(::isRecentEnough)
+        Log.i(TAG, "After recency filter: ${afterRecency.size} passed")
+        return afterRecency
+    }
 
     private fun selectSearchResults(
         query: String,
@@ -197,7 +219,7 @@ object NewPipeHelper {
     private fun isFilteredCandidate(item: StreamInfoItem): Boolean {
         val titleLower = item.getName().lowercase(Locale.US)
         return isLikelyAI(item) ||
-            isBumperOrVlogTitle(titleLower) ||
+            isHumanContent(item.getName(), item.getUploaderName().orEmpty()) ||
             isLikelySyntheticWallpaperTitle(titleLower)
     }
 
@@ -281,15 +303,16 @@ object NewPipeHelper {
         val candidates =
             streams
                 .filterNot { it.getItag() in REJECTED_LOW_QUALITY_ITAGS }
-                .filter { streamHeight(it) >= MIN_PROGRESSIVE_HEIGHT }
         if (candidates.isEmpty()) {
             Timber.tag(TAG).w(
-                "Rejecting YouTube progressive streams below %sp (available=%s)",
-                MIN_PROGRESSIVE_HEIGHT,
+                "Rejecting YouTube progressive streams because no non-rejected candidates were available (available=%s)",
                 streams.map { stream -> "${streamHeight(stream)}p/itag=${stream.getItag()}" },
             )
             return null
         }
+
+        val preferredCandidates = candidates.filter { streamHeight(it) >= MIN_PREFERRED_PROGRESSIVE_HEIGHT }
+        val rankedCandidates = preferredCandidates.ifEmpty { candidates }
 
         val preferredHeight = qualityToHeight(preferredQuality)
         val supportPriority =
@@ -303,7 +326,7 @@ object NewPipeHelper {
 
         supportPriority.forEach { support ->
             val supportCandidates =
-                candidates.filter { candidate ->
+                rankedCandidates.filter { candidate ->
                     decoderSupport(codecFamily(candidate), candidate) == support
                 }
             if (supportCandidates.isEmpty()) {
@@ -329,12 +352,7 @@ object NewPipeHelper {
         }
 
         Timber.tag(TAG).w("No preferred YouTube stream quality found, using best available fallback")
-        return streams.maxWithOrNull(
-            compareByDescending<VideoStream> { streamHeight(it) }
-                .thenBy { codecPenalty(it) }
-                .thenBy { codecPriorityIndex(it) }
-                .thenByDescending { it.getBitrate() },
-        )
+        return streams.sortedWith(streamQualityComparator()).firstOrNull()
     }
 
     private fun qualityToHeight(quality: String): Int? =
@@ -363,16 +381,12 @@ object NewPipeHelper {
             atResolution
                 .filter { stream ->
                     stream.getCodec().orEmpty().lowercase(Locale.US).contains(codec)
-                }.minWithOrNull(
-                    compareBy<VideoStream> { codecPenalty(it) }
-                        .thenByDescending { it.getBitrate() },
-                )?.let { return it }
+                }.sortedWith(streamQualityComparator())
+                    .firstOrNull()
+                    ?.let { return it }
         }
 
-        return atResolution.minWithOrNull(
-            compareBy<VideoStream> { codecPenalty(it) }
-                .thenByDescending { it.getBitrate() },
-        )
+        return atResolution.sortedWith(streamQualityComparator()).firstOrNull()
     }
 
     private fun streamHeight(stream: VideoStream): Int {
@@ -433,7 +447,7 @@ object NewPipeHelper {
     }
 
     private fun logSelectedStream(stream: VideoStream) {
-        Timber.tag(TAG).i("Selected YouTube progressive stream: %s", describeStream(stream))
+        Log.i(TAG, "STREAM PICKED: ${describeStream(stream)}")
     }
 
     private fun describeStream(stream: VideoStream): String =
@@ -468,6 +482,18 @@ object NewPipeHelper {
         QueryFormulaEngine.bumperTitleBlacklist.any { blacklisted ->
             titleLower.contains(blacklisted.lowercase(Locale.US))
         }
+
+    private fun isHumanContent(
+        title: String,
+        uploader: String,
+    ): Boolean {
+        val titleLower = title.lowercase(Locale.US)
+        val uploaderLower = uploader.lowercase(Locale.US)
+        return isBumperOrVlogTitle(titleLower) ||
+            HUMAN_TITLE_BLACKLIST.any(titleLower::contains) ||
+            HUMAN_CHANNEL_BLACKLIST.any(uploaderLower::contains) ||
+            PERSONAL_VLOG_TITLE_REGEX.containsMatchIn(title)
+    }
 
     private fun matchesQueryIntent(
         queryLower: String,
@@ -504,6 +530,12 @@ object NewPipeHelper {
 
     private fun preferredContentScore(titleLower: String): Int =
         PREFERRED_CONTENT_SIGNALS.count(titleLower::contains)
+
+    private fun streamQualityComparator(): Comparator<VideoStream> =
+        compareByDescending<VideoStream> { streamHeight(it) }
+            .thenBy { codecPenalty(it) }
+            .thenBy { codecPriorityIndex(it) }
+            .thenByDescending { it.getBitrate() }
 
     private fun isLikelySyntheticWallpaperTitle(titleLower: String): Boolean =
         SYNTHETIC_WALLPAPER_BLACKLIST.any { token ->
@@ -675,7 +707,7 @@ object NewPipeHelper {
 
     private fun isRecentEnough(item: StreamInfoItem): Boolean {
         val uploadInstant = item.getUploadDate()?.getInstant() ?: return true
-        return uploadInstant.isAfter(ZonedDateTime.now().minusMonths(6).toInstant())
+        return uploadInstant.isAfter(ZonedDateTime.now().minusYears(10).toInstant())
     }
 
     private class OkHttpDownloader(
@@ -874,10 +906,92 @@ object NewPipeHelper {
             "artificial",
         )
     private val SUSPICIOUS_EXACT_DURATIONS = setOf(3600, 7200, 10800, 14400, 21600)
-    private const val MIN_PROGRESSIVE_HEIGHT = 1080
-    private val RESOLUTION_PRIORITY = listOf(2160, 1440, 1080)
+    private const val MIN_PREFERRED_PROGRESSIVE_HEIGHT = 720
+    private val RESOLUTION_PRIORITY = listOf(2160, 1440, 1080, 720, 480)
     private val CODEC_PRIORITY = listOf("av01", "vp9", "vp09", "avc1", "avc")
     private val REJECTED_LOW_QUALITY_ITAGS = setOf(18, 133, 134, 135, 160)
+    private val HUMAN_TITLE_BLACKLIST =
+        listOf(
+            "vlog",
+            "day in my life",
+            "daily vlog",
+            "week in my life",
+            "come with me",
+            "grwm",
+            "get ready with me",
+            "storytime",
+            "story time",
+            "what i eat",
+            "tutorial",
+            "how to",
+            "tips",
+            "tricks",
+            "guide",
+            "review",
+            "unboxing",
+            "haul",
+            "try on",
+            "reaction",
+            "reacts",
+            "challenge",
+            "prank",
+            "comedy",
+            "funny",
+            "fails",
+            "compilation",
+            "my morning",
+            "my routine",
+            "my day",
+            "my life",
+            "i tried",
+            "i spent",
+            "i ate",
+            "we tried",
+            "interview",
+            "podcast",
+            "talk show",
+            "news",
+            "explained",
+            "analysis",
+            "opinion",
+            "gameplay",
+            "gaming",
+            "playthrough",
+            "let's play",
+            "recipe",
+            "cooking",
+            "mukbang",
+            "food review",
+            "music video",
+            "official video",
+            "lyric video",
+            "live performance",
+            "concert",
+        )
+    private val HUMAN_CHANNEL_BLACKLIST =
+        listOf(
+            "vlog",
+            "daily",
+            "family",
+            "kids",
+            "children",
+            "cooking",
+            "gaming",
+            "news",
+            "politics",
+            "comedy",
+            "funny",
+            "entertainment",
+            "reviews",
+            "tutorials",
+            "podcast",
+            "tv shows",
+            "official",
+        )
+    private val PERSONAL_VLOG_TITLE_REGEX =
+        Regex(
+            "^[A-Z][a-z]+(?:\\s+[A-Z][a-z]+){0,2}\\s+(vlog|storytime|tutorial|review|challenge|podcast|interview)\\b",
+        )
     private val RESOLUTION_REGEX = Regex("(\\d{3,4})p")
     private val RESOLUTION_PAIR_REGEX = Regex("(\\d{3,4})\\s*[xX]\\s*(\\d{3,4})")
     private val decoderSupportCache = mutableMapOf<DecoderSupportKey, DecoderSupport>()

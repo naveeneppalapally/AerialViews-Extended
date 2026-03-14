@@ -303,6 +303,7 @@ object NewPipeHelper {
         val candidates =
             streams
                 .filterNot { it.getItag() in REJECTED_LOW_QUALITY_ITAGS }
+                .let(::applyDeviceCodecRestrictions)
         if (candidates.isEmpty()) {
             Timber.tag(TAG).w(
                 "Rejecting YouTube progressive streams because no non-rejected candidates were available (available=%s)",
@@ -337,6 +338,30 @@ object NewPipeHelper {
         }
 
         return null
+    }
+
+    private fun applyDeviceCodecRestrictions(streams: List<VideoStream>): List<VideoStream> {
+        if (!isAmlogicDevice()) {
+            return streams
+        }
+
+        val avcOnlyCandidates =
+            streams.filter { stream ->
+                codecFamily(stream) == CodecFamily.AVC
+            }
+        if (avcOnlyCandidates.isNotEmpty()) {
+            Log.i(TAG, "Applying Amlogic safe codec restriction: AVC-only (${avcOnlyCandidates.size}/${streams.size} streams)")
+            return avcOnlyCandidates
+        }
+
+        val nonAv1Candidates =
+            streams.filter { stream ->
+                codecFamily(stream) != CodecFamily.AV1
+            }
+        if (nonAv1Candidates.size != streams.size) {
+            Log.i(TAG, "Applying Amlogic safe codec restriction: removing AV1 streams (${nonAv1Candidates.size}/${streams.size} streams remain)")
+        }
+        return nonAv1Candidates.ifEmpty { streams }
     }
 
     private fun selectBestVideoStreamFromTier(
@@ -682,18 +707,19 @@ object NewPipeHelper {
         stream: VideoStream,
     ): Boolean {
         val height = streamHeight(stream)
-        if (height < 2160) {
-            return false
+        if (isAmlogicDevice() && codecFamily == CodecFamily.AV1) {
+            Timber.tag(TAG).w(
+                "Treating %sp %s as unsupported on this device due to Amlogic AV1 decoder instability",
+                height,
+                stream.getCodec(),
+            )
+            return true
         }
 
-        val isAmlogicDevice =
-            DEVICE_FINGERPRINT.contains("amlogic") ||
-                DEVICE_FINGERPRINT.contains("t5d")
-
-        val usesProblematicCodec =
+        val usesProblematic4kCodec =
             codecFamily == CodecFamily.VP9 || codecFamily == CodecFamily.AV1
 
-        if (isAmlogicDevice && usesProblematicCodec) {
+        if (height >= 2160 && isAmlogicDevice() && usesProblematic4kCodec) {
             Timber.tag(TAG).w(
                 "Treating %sp %s as unsupported on this device due to Amlogic 4K decoder compatibility",
                 height,
@@ -704,6 +730,10 @@ object NewPipeHelper {
 
         return false
     }
+
+    private fun isAmlogicDevice(): Boolean =
+        DEVICE_FINGERPRINT.contains("amlogic") ||
+            DEVICE_FINGERPRINT.contains("t5d")
 
     private fun isRecentEnough(item: StreamInfoItem): Boolean {
         val uploadInstant = item.getUploadDate()?.getInstant() ?: return true

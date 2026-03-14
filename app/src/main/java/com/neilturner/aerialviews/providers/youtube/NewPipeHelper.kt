@@ -249,17 +249,25 @@ object NewPipeHelper {
         val normalizedPreference = preferredQuality.trim().lowercase()
         val playableProgressiveStreams =
             progressiveStreams.filter { !it.isVideoOnly() && it.isUrl() && it.getContent().isNotBlank() }
-        return selectStreamContent(playableProgressiveStreams, normalizedPreference, allowUnsupportedFallback = false)
-            ?: selectStreamContent(playableProgressiveStreams, normalizedPreference, allowUnsupportedFallback = true)
+        val playableVideoOnlyStreams =
+            videoOnlyStreams.filter { it.isUrl() && it.getContent().isNotBlank() }
+        val playableDashUrl = dashUrl?.takeIf { it.isNotBlank() }
+        val playableHlsUrl = hlsUrl?.takeIf { it.isNotBlank() }
+
+        val primaryStreams = if (preferVideoOnly) playableVideoOnlyStreams else playableProgressiveStreams
+        val secondaryStreams = if (preferVideoOnly) playableProgressiveStreams else playableVideoOnlyStreams
+
+        return selectStreamContent(primaryStreams, normalizedPreference, allowUnsupportedFallback = false)
+            ?: selectStreamContent(secondaryStreams, normalizedPreference, allowUnsupportedFallback = false)
+            ?: playableDashUrl
+            ?: playableHlsUrl
+            ?: selectStreamContent(
+                primaryStreams + secondaryStreams,
+                normalizedPreference,
+                allowUnsupportedFallback = true,
+            )
             ?: run {
-                Timber.tag(TAG).w(
-                    "No playable progressive YouTube stream found for preference=%s (videoOnly=%s dash=%s hls=%s preferVideoOnly=%s)",
-                    preferredQuality,
-                    videoOnlyStreams.size,
-                    !dashUrl.isNullOrBlank(),
-                    !hlsUrl.isNullOrBlank(),
-                    preferVideoOnly,
-                )
+                Timber.tag(TAG).w("No playable YouTube stream found for preference=%s", preferredQuality)
                 null
             }
     }
@@ -282,14 +290,9 @@ object NewPipeHelper {
         val candidates =
             streams
                 .filterNot { it.getItag() in REJECTED_LOW_QUALITY_ITAGS }
-                .filter { streamHeight(it) >= MIN_PROGRESSIVE_HEIGHT }
+                .filter { streamHeight(it) > 0 }
         if (candidates.isEmpty()) {
-            Timber.tag(TAG).w(
-                "Rejecting YouTube progressive streams below %sp (available=%s)",
-                MIN_PROGRESSIVE_HEIGHT,
-                streams.map { stream -> "${streamHeight(stream)}p/itag=${stream.getItag()}" },
-            )
-            return null
+            return streams.firstOrNull()
         }
 
         val preferredHeight = qualityToHeight(preferredQuality)

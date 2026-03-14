@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [YouTubeCacheEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class YouTubeCacheDatabase : RoomDatabase() {
@@ -44,6 +44,17 @@ abstract class YouTubeCacheDatabase : RoomDatabase() {
                     )
                 }
             }
+        private val MIGRATION_4_5 =
+            object : Migration(4, 5) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "ALTER TABLE youtube_cache ADD COLUMN durationSeconds INTEGER NOT NULL DEFAULT 0",
+                    )
+                    db.execSQL(
+                        "ALTER TABLE youtube_cache ADD COLUMN categoryKey TEXT NOT NULL DEFAULT ''",
+                    )
+                }
+            }
 
         @Volatile
         private var instance: YouTubeCacheDatabase? = null
@@ -57,7 +68,8 @@ abstract class YouTubeCacheDatabase : RoomDatabase() {
                                 context.applicationContext,
                                 YouTubeCacheDatabase::class.java,
                                 DATABASE_NAME,
-                            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                            .fallbackToDestructiveMigration()
                             .build()
                             .also { instance = it }
                 }

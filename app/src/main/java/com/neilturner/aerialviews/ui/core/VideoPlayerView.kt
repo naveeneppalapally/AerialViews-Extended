@@ -326,6 +326,7 @@ class VideoPlayerView
                     youtubeVideoId?.let { videoId ->
                         repository.markAsPlayed(videoId)
                     }
+                    repository.preResolveNext(mainScope)
                     return@withContext media
                 }
 
@@ -524,7 +525,7 @@ class VideoPlayerView
             const val CHANGE_PLAYBACK_SPEED_DELAY: Long = 2000
             const val CHANGE_PLAYBACK_START_END_DELAY: Long = 4000
             const val YOUTUBE_INTRO_SKIP_MIN_DURATION_MS: Long = 180_000
-            const val YOUTUBE_INTRO_SKIP_MS: Long = 15_000
+            const val YOUTUBE_INTRO_SKIP_MS: Long = 0
             const val YOUTUBE_INTRO_SKIP_END_GUARD_MS: Long = 90_000
         }
     }

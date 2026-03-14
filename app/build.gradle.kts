@@ -81,6 +81,7 @@ android {
             isDebuggable = false
             isMinifyEnabled = false
             isShrinkResources = false
+            buildConfigField("boolean", "ENABLE_YOUTUBE_LOGS", "true")
             matchingFallbacks += listOf("release")
         }
         release {

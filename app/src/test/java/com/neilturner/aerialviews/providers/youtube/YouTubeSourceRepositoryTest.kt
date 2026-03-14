@@ -219,6 +219,7 @@ internal class YouTubeSourceRepositoryTest {
         every { prefs.getString(YouTubeSourceRepository.KEY_QUERY, any()) } returns query
         every { prefs.getString(YouTubeSourceRepository.KEY_QUALITY, any()) } returns quality
         every { prefs.getString(YouTubeSourceRepository.KEY_CACHE_SIGNATURE, any()) } returns cacheSignature
+        every { prefs.getString(YouTubeSourceRepository.KEY_COUNT, any()) } returns "0"
         every { prefs.getString(YouTubeSourceRepository.KEY_PLAY_HISTORY, any()) } returns ""
         every { prefs.getString(YouTubeSourceRepository.KEY_LAST_CATEGORY, any()) } returns ""
         every { prefs.getString(YouTubeSourceRepository.KEY_THEME_HISTORY, any()) } returns ""
@@ -289,8 +290,13 @@ internal class YouTubeSourceRepositoryTest {
 
         override fun getAll(): List<YouTubeCacheEntity> = entries.values.toList()
 
+        override fun getAllGood(): List<YouTubeCacheEntity> =
+            entries.values.filterNot { it.isBad }
+
+        override fun countGoodEntries(): Int = entries.values.count { !it.isBad }
+
         override fun getValidEntries(now: Long): List<YouTubeCacheEntity> =
-            entries.values.filter { it.streamUrlExpiresAt > now }
+            entries.values.filter { !it.isBad && it.streamUrlExpiresAt > now }
 
         override fun insertAll(entries: List<YouTubeCacheEntity>) {
             entries.forEach { entry ->
@@ -300,6 +306,10 @@ internal class YouTubeSourceRepositoryTest {
 
         override fun clearAll() {
             entries.clear()
+        }
+
+        override fun clearAllGood() {
+            entries.entries.removeIf { !it.value.isBad }
         }
 
         override fun updateStreamUrl(
@@ -336,6 +346,23 @@ internal class YouTubeSourceRepositoryTest {
 
         override fun resetPlayHistory() {
             entries.replaceAll { _, entry -> entry.copy(lastPlayedAt = 0L) }
+        }
+
+        override fun deleteByDuration(minDurationSeconds: Int): Int {
+            val originalSize = entries.size
+            entries.entries.removeIf { (_, entry) ->
+                !entry.isBad && entry.durationSeconds > 0 && entry.durationSeconds < minDurationSeconds
+            }
+            return originalSize - entries.size
+        }
+
+        override fun deleteOutsideCategories(allowedCategoryKeys: List<String>): Int {
+            val originalSize = entries.size
+            val allowed = allowedCategoryKeys.toSet()
+            entries.entries.removeIf { (_, entry) ->
+                !entry.isBad && (entry.categoryKey.isBlank() || entry.categoryKey !in allowed)
+            }
+            return originalSize - entries.size
         }
 
         override fun getUnwatchedEntry(cutoff: Long): YouTubeCacheEntity? =

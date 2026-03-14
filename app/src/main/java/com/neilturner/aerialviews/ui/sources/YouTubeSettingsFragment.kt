@@ -104,7 +104,12 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                     getString(R.string.youtube_min_duration_summary_value, preference.value)
                 }
             setOnPreferenceChangeListener { _, _ ->
-                queueBackgroundRefresh(R.string.youtube_refresh_background_started)
+                YouTubeVideoPrefs.count = "-1"
+                updateVideoCount()
+                viewModel.onMinimumDurationChanged()
+                viewLifecycleOwner.lifecycleScope.launch {
+                    ToastHelper.show(requireContext(), R.string.youtube_refresh_background_started, Toast.LENGTH_SHORT)
+                }
                 true
             }
         }
@@ -128,7 +133,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
         CATEGORY_PREFERENCE_KEYS.forEach { key ->
             findPreference<SwitchPreference>(key)?.setOnPreferenceChangeListener { _, _ ->
-                queueBackgroundRefresh(R.string.youtube_categories_changed_notice)
+                queueCategoryRefresh()
                 true
             }
         }
@@ -154,6 +159,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
         qualityPreference.setOnPreferenceChangeListener { _, _ ->
             YouTubeFeature.markQualitySelectionExplicit(requireContext())
+            queueBackgroundRefresh(R.string.youtube_refresh_background_started, immediate = true)
             true
         }
         qualityPreference.summaryProvider = ListPreference.SimpleSummaryProvider.getInstance()
@@ -250,6 +256,17 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         }
         viewLifecycleOwner.lifecycleScope.launch {
             ToastHelper.show(requireContext(), messageResId, Toast.LENGTH_SHORT)
+        }
+    }
+
+    private fun queueCategoryRefresh() {
+        YouTubeVideoPrefs.count = "-1"
+        updateVideoCount()
+        viewModel.refreshCacheSize()
+        viewModel.onCategoryChanged()
+        updateVideoCount()
+        viewLifecycleOwner.lifecycleScope.launch {
+            ToastHelper.show(requireContext(), R.string.youtube_categories_changed_notice, Toast.LENGTH_SHORT)
         }
     }
 

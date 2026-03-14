@@ -37,6 +37,7 @@ android {
         val openWeather = keyProps.getProperty("openWeatherDebug", "")
         buildConfigField("String", "OPEN_WEATHER", "\"$openWeather\"")
         buildConfigField("String", "BUILD_TIME", "\"${System.currentTimeMillis()}\"")
+        buildConfigField("boolean", "ENABLE_YOUTUBE_LOGS", "false")
     }
 
     compileOptions {

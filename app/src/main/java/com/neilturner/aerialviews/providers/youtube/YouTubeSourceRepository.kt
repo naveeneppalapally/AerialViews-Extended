@@ -1,6 +1,7 @@
 package com.neilturner.aerialviews.providers.youtube
 
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.core.content.edit
 import java.util.ArrayDeque
 import java.util.LinkedHashMap
@@ -123,23 +124,45 @@ class YouTubeSourceRepository(
         withContext(Dispatchers.IO) {
             val initialCount = cacheDao.countGoodEntries()
             val removedByDuration = cacheDao.deleteByDuration(minimumDurationSeconds())
-            val enabledCategoryKeys = enabledCategoryKeys()
-            if (enabledCategoryKeys.isEmpty()) {
-                cacheDao.clearAllGood()
-            } else {
-                cacheDao.deleteOutsideCategories(enabledCategoryKeys)
-            }
-            val filteredCount = cacheDao.countGoodEntries()
-            if (filteredCount != initialCount || removedByDuration > 0) {
+            val removedByCategory = applyCurrentCategoryFilterInternal()
+            val filteredCount = currentFilteredCount()
+            if (filteredCount != initialCount || removedByDuration > 0 || removedByCategory > 0) {
                 clearPreResolvedEntry()
             }
             updateCachedCount(filteredCount)
-            Timber.tag(TAG).i(
-                "Applied YouTube cache filters instantly (minDuration=%ss, categories=%s, remaining=%s)",
-                minimumDurationSeconds(),
-                enabledCategoryKeys,
-                filteredCount,
+            Log.i(
+                TAG,
+                "Applied YouTube cache filters instantly (minDuration=${minimumDurationSeconds()}s, " +
+                    "categories=${enabledCategoryKeys()}, removedByDuration=$removedByDuration, " +
+                    "removedByCategory=$removedByCategory, remaining=$filteredCount)",
             )
+            filteredCount
+        }
+
+    suspend fun applyCurrentCategoryFilter(): Int =
+        withContext(Dispatchers.IO) {
+            val removed = applyCurrentCategoryFilterInternal()
+            val filteredCount = currentFilteredCount()
+            if (removed > 0) {
+                clearPreResolvedEntry()
+            }
+            updateCachedCount(filteredCount)
+            Log.i(
+                TAG,
+                "Applied YouTube category filter instantly (enabled=${enabledCategoryKeys()}, removed=$removed, remaining=$filteredCount)",
+            )
+            filteredCount
+        }
+
+    suspend fun applyDurationFilter(minSeconds: Int): Int =
+        withContext(Dispatchers.IO) {
+            val removed = cacheDao.deleteByDuration(minSeconds)
+            val filteredCount = currentFilteredCount()
+            if (removed > 0) {
+                clearPreResolvedEntry()
+            }
+            updateCachedCount(filteredCount)
+            Log.i(TAG, "Duration filter: removed $removed videos below ${minSeconds}s, remaining=$filteredCount")
             filteredCount
         }
 
@@ -368,10 +391,10 @@ class YouTubeSourceRepository(
         replaceExistingCache: Boolean = false,
     ): List<YouTubeCacheEntity> {
         if (enabledCategoryKeys().isEmpty()) {
-            cacheDao.clearAllGood()
             clearPreResolvedEntry()
+            updateCachedCount(0)
             markSearchCacheFresh(0)
-            return emptyList()
+            return filteredExistingEntries(cacheDao.getAllGood())
         }
 
         return runCatching {
@@ -536,12 +559,10 @@ class YouTubeSourceRepository(
         badCountThisSession = 0
         recordRefreshHistory(entries)
         markSearchCacheFresh(entries.size)
-        Timber.tag(TAG).i(
-            "Cached %s YouTube videos for query \"%s\" across %s searches (categories=%s)",
-            entries.size,
-            refreshPlan.query,
-            refreshPlan.queryPool.size,
-            entries.groupingBy { it.categoryKey.ifBlank { "unknown" } }.eachCount(),
+        Log.i(
+            TAG,
+            "Cached ${entries.size} YouTube videos for query \"${refreshPlan.query}\" across ${refreshPlan.queryPool.size} searches " +
+                "(categories=${entries.groupingBy { it.categoryKey.ifBlank { "unknown" } }.eachCount()})",
         )
     }
 
@@ -1466,6 +1487,18 @@ class YouTubeSourceRepository(
         QueryFormulaEngine.ContentCategory.entries.filter { category ->
             categoryPreferences().isEnabled(category)
         }.map { category -> category.key }
+
+    private fun currentFilteredCount(): Int =
+        filteredExistingEntries(cacheDao.getAllGood()).size
+
+    private fun applyCurrentCategoryFilterInternal(): Int {
+        val enabledCategoryKeys = enabledCategoryKeys()
+        if (enabledCategoryKeys.isEmpty()) {
+            Timber.tag(TAG).w("All YouTube categories disabled, preserving cache and reporting zero visible videos")
+            return 0
+        }
+        return cacheDao.deleteByNotInCategories(enabledCategoryKeys)
+    }
 
     private fun filteredExistingEntries(entries: List<YouTubeCacheEntity>): List<YouTubeCacheEntity> {
         if (entries.isEmpty()) {

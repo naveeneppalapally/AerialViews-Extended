@@ -103,12 +103,11 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                 Preference.SummaryProvider<SeekBarPreference> { preference ->
                     getString(R.string.youtube_min_duration_summary_value, preference.value)
                 }
-            setOnPreferenceChangeListener { _, _ ->
-                YouTubeVideoPrefs.count = "-1"
-                updateVideoCount()
-                viewModel.onMinimumDurationChanged()
+            setOnPreferenceChangeListener { _, newValue ->
+                val newMinSeconds = (newValue as Int) * 60
+                viewModel.onMinimumDurationChanged(newMinSeconds)
                 viewLifecycleOwner.lifecycleScope.launch {
-                    ToastHelper.show(requireContext(), R.string.youtube_refresh_background_started, Toast.LENGTH_SHORT)
+                    ToastHelper.show(requireContext(), R.string.youtube_duration_filter_updating, Toast.LENGTH_SHORT)
                 }
                 true
             }
@@ -133,7 +132,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
         CATEGORY_PREFERENCE_KEYS.forEach { key ->
             findPreference<SwitchPreference>(key)?.setOnPreferenceChangeListener { _, _ ->
-                queueCategoryRefresh()
+                view?.post { queueCategoryRefresh() } ?: queueCategoryRefresh()
                 true
             }
         }
@@ -260,13 +259,9 @@ class YouTubeSettingsFragment : MenuStateFragment() {
     }
 
     private fun queueCategoryRefresh() {
-        YouTubeVideoPrefs.count = "-1"
-        updateVideoCount()
-        viewModel.refreshCacheSize()
         viewModel.onCategoryChanged()
-        updateVideoCount()
         viewLifecycleOwner.lifecycleScope.launch {
-            ToastHelper.show(requireContext(), R.string.youtube_categories_changed_notice, Toast.LENGTH_SHORT)
+            ToastHelper.show(requireContext(), R.string.youtube_category_refresh_started, Toast.LENGTH_SHORT)
         }
     }
 

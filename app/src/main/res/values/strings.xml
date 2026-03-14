@@ -223,12 +223,14 @@
     <string name="youtube_category_winter_title">Winter and Arctic</string>
     <string name="youtube_category_winter_summary">Snow, ice, frozen landscapes</string>
     <string name="youtube_categories_changed_notice">Updating your video library in the background with the new categories</string>
+    <string name="youtube_category_refresh_started">Fetching videos for new categories…</string>
     <string name="youtube_playlist_category_title">Quality &amp; playback</string>
     <string name="youtube_quality_title">Video Quality</string>
     <string name="youtube_quality_summary">Always use Highest for best screensaver quality. Auto may reduce quality during busy network periods.</string>
     <string name="youtube_mix_weight_title">YouTube Playlist Weight</string>
     <string name="youtube_mix_weight_disabled_summary">Enable YouTube videos first to change playlist balance</string>
     <string name="youtube_count_pending_summary">Searching in background…</string>
+    <string name="youtube_duration_filter_updating">Updating video count for the new duration…</string>
     <string name="youtube_cache_empty_title">YouTube cache is empty</string>
     <string name="youtube_cache_empty_summary">YouTube is building its first video cache. Tap Refresh Now before starting the screensaver, or it may show No videos.</string>
     <string name="youtube_shuffle_title">Shuffle Playback</string>

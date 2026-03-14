@@ -356,11 +356,11 @@ internal class YouTubeSourceRepositoryTest {
             return originalSize - entries.size
         }
 
-        override fun deleteOutsideCategories(allowedCategoryKeys: List<String>): Int {
+        override fun deleteByNotInCategories(allowedCategoryKeys: List<String>): Int {
             val originalSize = entries.size
             val allowed = allowedCategoryKeys.toSet()
             entries.entries.removeIf { (_, entry) ->
-                !entry.isBad && (entry.categoryKey.isBlank() || entry.categoryKey !in allowed)
+                !entry.isBad && entry.categoryKey.isNotBlank() && entry.categoryKey !in allowed
             }
             return originalSize - entries.size
         }

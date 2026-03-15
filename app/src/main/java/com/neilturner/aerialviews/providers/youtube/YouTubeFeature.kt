@@ -89,6 +89,7 @@ object YouTubeFeature {
             ?: synchronized(this) {
                 repository
                     ?: YouTubeSourceRepository(
+                        context = appContext,
                         cacheDao = YouTubeCacheDatabase.getInstance(appContext).youtubeCacheDao(),
                         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(appContext),
                     ).also { repository = it }

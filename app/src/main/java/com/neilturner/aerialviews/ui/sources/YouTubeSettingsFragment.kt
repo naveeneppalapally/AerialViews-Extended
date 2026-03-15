@@ -9,7 +9,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import androidx.preference.ListPreference
 import androidx.preference.Preference
-import androidx.preference.SeekBarPreference
 import androidx.preference.SwitchPreference
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
@@ -25,11 +24,27 @@ import kotlinx.coroutines.launch
 class YouTubeSettingsFragment : MenuStateFragment() {
     private val viewModel by viewModels<YouTubeSettingsViewModel>()
     private var progressDialog: AlertDialog? = null
+    private var refreshInProgress = false
     private val sharedPreferenceListener =
         android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == YouTubeSourceRepository.KEY_COUNT || key == YouTubeSourceRepository.KEY_ENABLED) {
-                updateVideoCount()
-                viewModel.refreshCacheSize()
+            when (key) {
+                YouTubeSourceRepository.KEY_COUNT -> {
+                    val cacheCount = YouTubeVideoPrefs.count.toIntOrNull()
+                    updateVideoCount()
+                    updateCacheCountPreference(cacheCount)
+                    if (refreshInProgress && cacheCount != null && cacheCount >= 0) {
+                        markRefreshComplete(cacheCount)
+                    }
+                    viewModel.refreshCacheSize()
+                }
+                YouTubeSourceRepository.KEY_ENABLED -> {
+                    updateVideoCount()
+                    updateCacheCountPreference(YouTubeVideoPrefs.count.toIntOrNull())
+                    if (!YouTubeVideoPrefs.enabled) {
+                        refreshInProgress = false
+                    }
+                    viewModel.refreshCacheSize()
+                }
             }
         }
 
@@ -40,8 +55,10 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         setPreferencesFromResource(R.xml.sources_youtube_settings, rootKey)
         setupPreferences()
         updateVideoCount()
+        updateCacheCountPreference(YouTubeVideoPrefs.count.toIntOrNull())
         viewModel.refreshCacheSize()
         if (YouTubeVideoPrefs.enabled && isCountPending()) {
+            markRefreshInProgress()
             viewModel.refreshIfCachePending()
         }
     }
@@ -57,17 +74,15 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                 renderRefreshState(state)
             }
         }
-
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.cacheSize.collect(::renderCacheWarning)
-        }
     }
 
     override fun onResume() {
         super.onResume()
         updateVideoCount()
+        updateCacheCountPreference(YouTubeVideoPrefs.count.toIntOrNull())
         viewModel.refreshCacheSize()
         if (YouTubeVideoPrefs.enabled && isCountPending()) {
+            markRefreshInProgress()
             viewModel.refreshIfCachePending()
         }
     }
@@ -93,40 +108,24 @@ class YouTubeSettingsFragment : MenuStateFragment() {
     }
 
     private fun setupPreferences() {
-        val formulaInfoPreference = findPreference<Preference>("yt_formula_info")
-        formulaInfoPreference?.summary = getString(R.string.youtube_formula_info_summary)
-
         configureQualityPreference()
-
-        findPreference<SeekBarPreference>("yt_min_duration")?.apply {
-            summaryProvider =
-                Preference.SummaryProvider<SeekBarPreference> { preference ->
-                    getString(R.string.youtube_min_duration_summary_value, preference.value)
-                }
-            setOnPreferenceChangeListener { _, newValue ->
-                val newMinSeconds = (newValue as Int) * 60
-                viewModel.onMinimumDurationChanged(newMinSeconds)
-                viewLifecycleOwner.lifecycleScope.launch {
-                    ToastHelper.show(requireContext(), R.string.youtube_duration_filter_updating, Toast.LENGTH_SHORT)
-                }
-                true
-            }
-        }
 
         findPreference<SwitchPreference>("yt_enabled")?.setOnPreferenceChangeListener { _, newValue ->
             if (newValue == true) {
-                queueBackgroundRefresh(R.string.youtube_refresh_background_started, immediate = true)
+                queueBackgroundRefresh(R.string.youtube_refresh_started, immediate = true)
             } else {
                 progressDialog?.dismiss()
                 progressDialog = null
+                refreshInProgress = false
                 updateVideoCount()
+                updateCacheCountPreference(YouTubeVideoPrefs.count.toIntOrNull())
                 viewModel.refreshCacheSize()
             }
             true
         }
 
         findPreference<Preference>("yt_refresh_now")?.setOnPreferenceClickListener {
-            queueBackgroundRefresh(R.string.youtube_refresh_background_started, immediate = true)
+            queueBackgroundRefresh(R.string.youtube_refresh_started, immediate = true)
             true
         }
 
@@ -158,7 +157,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
         qualityPreference.setOnPreferenceChangeListener { _, _ ->
             YouTubeFeature.markQualitySelectionExplicit(requireContext())
-            queueBackgroundRefresh(R.string.youtube_refresh_background_started, immediate = true)
+            queueBackgroundRefresh(R.string.youtube_refresh_started, immediate = true)
             true
         }
         qualityPreference.summaryProvider = ListPreference.SimpleSummaryProvider.getInstance()
@@ -172,11 +171,12 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             }
 
             RefreshState.Loading -> {
+                markRefreshInProgress()
                 if (progressDialog == null) {
                     progressDialog =
                         DialogHelper.progressDialog(
                             requireContext(),
-                            getString(R.string.message_media_searching),
+                            getString(R.string.youtube_refresh_dialog_message),
                         )
                     progressDialog?.show()
                 }
@@ -187,12 +187,14 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                 progressDialog = null
                 YouTubeVideoPrefs.count = state.count.toString()
                 updateVideoCount()
+                updateCacheCountPreference(state.count)
+                markRefreshComplete(state.count)
                 viewModel.refreshCacheSize()
                 viewLifecycleOwner.lifecycleScope.launch {
                     ToastHelper.show(
                         requireContext(),
                         getString(R.string.youtube_refresh_success, state.count),
-                        Toast.LENGTH_SHORT,
+                        Toast.LENGTH_LONG,
                     )
                 }
                 viewModel.clearRefreshState()
@@ -201,22 +203,18 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             RefreshState.Error -> {
                 progressDialog?.dismiss()
                 progressDialog = null
+                markRefreshFailed()
                 viewLifecycleOwner.lifecycleScope.launch {
                     ToastHelper.show(
                         requireContext(),
                         R.string.youtube_refresh_failed,
-                        Toast.LENGTH_SHORT,
+                        Toast.LENGTH_LONG,
                     )
                 }
                 viewModel.refreshCacheSize()
                 viewModel.clearRefreshState()
             }
         }
-    }
-
-    private fun renderCacheWarning(cacheSize: Int) {
-        val warningPreference = findPreference<Preference>("yt_cache_warning") ?: return
-        warningPreference.isVisible = YouTubeVideoPrefs.enabled && cacheSize == 0
     }
 
     private fun updateVideoCount() {
@@ -228,6 +226,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             } else {
                 getString(R.string.youtube_count_pending_summary)
             }
+        updateCacheCountPreference(cachedCount)
     }
 
     private fun isCountPending(): Boolean =
@@ -237,8 +236,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         messageResId: Int,
         immediate: Boolean = false,
     ) {
-        YouTubeVideoPrefs.count = "-1"
-        updateVideoCount()
+        markRefreshInProgress()
         viewModel.refreshCacheSize()
         view?.post {
             if (immediate) {
@@ -254,18 +252,45 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             }
         }
         viewLifecycleOwner.lifecycleScope.launch {
-            ToastHelper.show(requireContext(), messageResId, Toast.LENGTH_SHORT)
+            ToastHelper.show(requireContext(), messageResId, Toast.LENGTH_LONG)
         }
     }
 
     private fun queueCategoryRefresh() {
+        markRefreshInProgress()
         viewModel.onCategoryChanged()
         viewLifecycleOwner.lifecycleScope.launch {
-            ToastHelper.show(requireContext(), R.string.youtube_category_refresh_started, Toast.LENGTH_SHORT)
+            ToastHelper.show(requireContext(), R.string.youtube_category_refresh_started, Toast.LENGTH_LONG)
         }
     }
 
+    private fun updateCacheCountPreference(cachedCount: Int?) {
+        val cacheCountPreference = findPreference<Preference>(PREFERENCE_CACHE_COUNT) ?: return
+        cacheCountPreference.summary =
+            if (cachedCount != null && cachedCount >= 0) {
+                getString(R.string.youtube_cache_count_summary, cachedCount)
+            } else {
+                getString(R.string.youtube_cache_count_pending)
+            }
+    }
+
+    private fun markRefreshInProgress() {
+        refreshInProgress = true
+        updateCacheCountPreference(null)
+    }
+
+    private fun markRefreshComplete(cachedCount: Int) {
+        refreshInProgress = false
+        updateCacheCountPreference(cachedCount)
+    }
+
+    private fun markRefreshFailed() {
+        refreshInProgress = false
+        updateCacheCountPreference(YouTubeVideoPrefs.count.toIntOrNull())
+    }
+
     companion object {
+        private const val PREFERENCE_CACHE_COUNT = "yt_cache_count"
         private val CATEGORY_PREFERENCE_KEYS =
             listOf(
                 "yt_category_nature",

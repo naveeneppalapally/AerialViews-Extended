@@ -1,7 +1,9 @@
 package com.neilturner.aerialviews.ui.core
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.AttributeSet
+import android.util.Log
 import androidx.core.net.toUri
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
@@ -31,6 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import me.kosert.flowbus.GlobalBus
 import timber.log.Timber
@@ -123,8 +126,12 @@ class VideoPlayerView
             state.type = media.source
             resolveVideoJob?.cancel()
             exoPlayer.stop()
-            resizeMode = VideoPlayerHelper.getResizeMode(GeneralPrefs.videoScale)
-            exoPlayer.videoScalingMode = VideoPlayerHelper.getVideoScalingMode(GeneralPrefs.videoScale)
+            val forceCropForYouTube = media.source == AerialMediaSource.YOUTUBE
+            resizeMode = VideoPlayerHelper.getResizeMode(GeneralPrefs.videoScale, forceCropForYouTube)
+            exoPlayer.videoScalingMode = VideoPlayerHelper.getVideoScalingMode(GeneralPrefs.videoScale, forceCropForYouTube)
+            if (forceCropForYouTube) {
+                Log.i("VideoPlayerView", "Applying forced crop scaling for YouTube playback")
+            }
 
             resolveVideoJob =
                 mainScope.launch {
@@ -141,6 +148,7 @@ class VideoPlayerView
                         PhilipsMediaCodecAdapterFactory.mediaUrl = playableMedia.uri.toString()
                     }
 
+                    Log.i("VideoPlayerView", "Preparing media source: ${playableMedia.uri}")
                     configureTrackSelection(playableMedia)
                     VideoPlayerHelper.setupMediaSource(exoPlayer, playableMedia)
 
@@ -296,6 +304,7 @@ class VideoPlayerView
         override fun onPlayerError(error: PlaybackException) {
             super.onPlayerError(error)
             removeCallbacks(almostFinishedRunnable)
+            Log.e("VideoPlayerView", "onPlayerError: ${error.errorCodeName} ${error.localizedMessage}", error)
             FirebaseHelper.crashlyticsException(error.cause)
 
             if (GeneralPrefs.showMediaErrorToasts) {
@@ -310,7 +319,10 @@ class VideoPlayerView
 
         override fun onPlayerErrorChanged(error: PlaybackException?) {
             super.onPlayerErrorChanged(error)
-            error?.let { Timber.e(it) }
+            error?.let {
+                Log.e("VideoPlayerView", "onPlayerErrorChanged: ${it.errorCodeName} ${it.localizedMessage}", it)
+                Timber.e(it)
+            }
         }
 
         private suspend fun resolveMediaForPlayback(media: AerialMedia): AerialMedia =
@@ -323,6 +335,11 @@ class VideoPlayerView
                 val youtubeVideoId = media.metadata.exif.description?.takeIf { it.isNotBlank() }
                 val mediaUrl = media.uri.toString()
                 if (!isYouTubePageUrl(mediaUrl)) {
+                    logFirstYouTubeResolveTiming(
+                        durationMs = 0L,
+                        mediaUrl = mediaUrl,
+                        fromPreResolvedUrl = true,
+                    )
                     youtubeVideoId?.let { videoId ->
                         repository.markAsPlayed(videoId)
                     }
@@ -330,7 +347,17 @@ class VideoPlayerView
                     return@withContext media
                 }
 
-                val streamUrl = repository.resolveVideoUrl(mediaUrl)
+                val resolveStartedAt = SystemClock.elapsedRealtime()
+                val streamUrl =
+                    withTimeoutOrNull(YOUTUBE_STREAM_RESOLVE_TIMEOUT_MS) {
+                        repository.resolveVideoUrl(mediaUrl)
+                    } ?: throw IllegalStateException("Timed out resolving YouTube stream URL")
+                val resolveDurationMs = SystemClock.elapsedRealtime() - resolveStartedAt
+                logFirstYouTubeResolveTiming(
+                    durationMs = resolveDurationMs,
+                    mediaUrl = mediaUrl,
+                    fromPreResolvedUrl = false,
+                )
                 media.copy(uri = streamUrl.toUri())
             }
 
@@ -362,6 +389,12 @@ class VideoPlayerView
                             .setMaxVideoBitrate(10_000_000)
                     }
 
+                    "1440p" -> {
+                        builder
+                            .setMaxVideoSize(Int.MAX_VALUE, 1440)
+                            .setMaxVideoBitrate(16_000_000)
+                    }
+
                     "2160p",
                     "4k",
                     -> {
@@ -373,6 +406,24 @@ class VideoPlayerView
             }
 
             exoPlayer.trackSelectionParameters = builder.build()
+        }
+
+        private fun logFirstYouTubeResolveTiming(
+            durationMs: Long,
+            mediaUrl: String,
+            fromPreResolvedUrl: Boolean,
+        ) {
+            synchronized(RESOLVE_LOG_LOCK) {
+                if (firstYouTubeResolveTimingLogged) {
+                    return
+                }
+                firstYouTubeResolveTimingLogged = true
+            }
+            val mode = if (fromPreResolvedUrl) "pre-resolved" else "resolved"
+            Log.i(
+                "VideoPlayerView",
+                "YouTube first URL resolution: ${durationMs}ms mode=$mode url=$mediaUrl",
+            )
         }
 
         private fun seek(backward: Boolean = false) {
@@ -506,7 +557,7 @@ class VideoPlayerView
             val maxAllowedStart = (endPosition - YOUTUBE_INTRO_SKIP_END_GUARD_MS).coerceAtLeast(startPosition)
             val adjustedStart = (startPosition + introSkip).coerceAtMost(maxAllowedStart)
             if (adjustedStart > startPosition) {
-                Timber.i("Skipping YouTube intro segment: +${introSkip.milliseconds}")
+                Log.i("VideoPlayerView", "Skipping YouTube intro segment: +${introSkip.milliseconds}")
             }
             return adjustedStart
         }
@@ -524,9 +575,13 @@ class VideoPlayerView
         companion object {
             const val CHANGE_PLAYBACK_SPEED_DELAY: Long = 2000
             const val CHANGE_PLAYBACK_START_END_DELAY: Long = 4000
-            const val YOUTUBE_INTRO_SKIP_MIN_DURATION_MS: Long = 180_000
-            const val YOUTUBE_INTRO_SKIP_MS: Long = 0
-            const val YOUTUBE_INTRO_SKIP_END_GUARD_MS: Long = 90_000
+            const val YOUTUBE_INTRO_SKIP_MIN_DURATION_MS: Long = 60_000
+            const val YOUTUBE_INTRO_SKIP_MS: Long = 20_000
+            const val YOUTUBE_INTRO_SKIP_END_GUARD_MS: Long = 20_000
+            const val YOUTUBE_STREAM_RESOLVE_TIMEOUT_MS: Long = 15_000
+            private val RESOLVE_LOG_LOCK = Any()
+            @Volatile
+            private var firstYouTubeResolveTimingLogged = false
         }
     }
 

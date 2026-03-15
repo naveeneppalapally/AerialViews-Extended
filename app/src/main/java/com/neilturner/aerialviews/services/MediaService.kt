@@ -1,6 +1,7 @@
 package com.neilturner.aerialviews.services
 
 import android.content.Context
+import androidx.preference.PreferenceManager
 import com.neilturner.aerialviews.models.MediaPlaylist
 import com.neilturner.aerialviews.models.enums.AerialMediaSource
 import com.neilturner.aerialviews.models.enums.AerialMediaType
@@ -61,8 +62,17 @@ class MediaService(
 
     suspend fun fetchMedia(): MediaPlaylist =
         withContext(Dispatchers.IO) {
+            normalizeYouTubeSourceModeIfNeeded()
+
             // Build media list from all providers
-            val media = buildMediaList(providers)
+            var media = buildMediaList(providers)
+            if (media.isEmpty()) {
+                val youtubeOnlyMedia = tryYouTubeFallback()
+                if (youtubeOnlyMedia.isNotEmpty()) {
+                    Timber.i("Recovered empty playlist using direct YouTube fallback (%s items)", youtubeOnlyMedia.size)
+                    media = youtubeOnlyMedia
+                }
+            }
 
             // Split into videos and photos
             var (videos, photos) = media.partition { it.type == AerialMediaType.VIDEO }
@@ -103,8 +113,17 @@ class MediaService(
 
             // Discard unmatched manifest videos
             if (GeneralPrefs.ignoreNonManifestVideos) {
-                Timber.i("Removing ${unmatchedVideos.size} non-manifest videos")
-                unmatchedVideos = emptyList()
+                val (youtubeVideos, otherUnmatchedVideos) =
+                    unmatchedVideos.partition { video ->
+                        video.source == AerialMediaSource.YOUTUBE
+                    }
+                if (otherUnmatchedVideos.isNotEmpty()) {
+                    Timber.i("Removing ${otherUnmatchedVideos.size} non-manifest videos")
+                }
+                if (youtubeVideos.isNotEmpty()) {
+                    Timber.i("Preserving ${youtubeVideos.size} YouTube videos while ignoreNonManifestVideos is enabled")
+                }
+                unmatchedVideos = youtubeVideos
             }
 
             var filteredMedia = unmatchedVideos + matchedVideos + unmatchedPhotos + matchedPhotos
@@ -166,4 +185,54 @@ class MediaService(
                 reshuffleOnWrap = GeneralPrefs.shuffleVideos,
             )
         }
+
+    private fun normalizeYouTubeSourceModeIfNeeded() {
+        val sourceMode =
+            PreferenceManager
+                .getDefaultSharedPreferences(context)
+                .getString(KEY_SOURCE_MODE, SOURCE_MODE_YOUTUBE)
+                ?.trim()
+                ?.lowercase()
+                ?: SOURCE_MODE_YOUTUBE
+        if (sourceMode != SOURCE_MODE_YOUTUBE) {
+            return
+        }
+
+        var changed = false
+        if (!YouTubeVideoPrefs.enabled) {
+            YouTubeVideoPrefs.enabled = true
+            changed = true
+        }
+        if (AppleVideoPrefs.enabled) {
+            AppleVideoPrefs.enabled = false
+            changed = true
+        }
+        if (AmazonVideoPrefs.enabled) {
+            AmazonVideoPrefs.enabled = false
+            changed = true
+        }
+        if (Comm1VideoPrefs.enabled) {
+            Comm1VideoPrefs.enabled = false
+            changed = true
+        }
+        if (Comm2VideoPrefs.enabled) {
+            Comm2VideoPrefs.enabled = false
+            changed = true
+        }
+        if (changed) {
+            Timber.i("Normalized providers for source_mode=youtube (YouTube on, default aerial providers off)")
+        }
+    }
+
+    private suspend fun tryYouTubeFallback() =
+        runCatching {
+            YouTubeMediaProvider(context).fetchMedia()
+        }.onFailure { exception ->
+            Timber.w(exception, "YouTube fallback fetch failed")
+        }.getOrDefault(emptyList())
+
+    companion object {
+        private const val KEY_SOURCE_MODE = "source_mode"
+        private const val SOURCE_MODE_YOUTUBE = "youtube"
+    }
 }

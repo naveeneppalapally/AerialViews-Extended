@@ -1,6 +1,7 @@
 package com.neilturner.aerialviews.providers.youtube
 
 import android.content.Context
+import android.util.Log
 import androidx.core.net.toUri
 import com.neilturner.aerialviews.models.enums.AerialMediaSource
 import com.neilturner.aerialviews.models.enums.AerialMediaType
@@ -14,6 +15,8 @@ import com.neilturner.aerialviews.utils.NetworkHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
@@ -30,8 +33,18 @@ class YouTubeMediaProvider(
 
     override suspend fun fetchMedia(): List<AerialMedia> {
         val cacheSize = repository.getCacheSize()
+        Log.i(TAG, "YouTube fetchMedia startup cacheSize=$cacheSize")
         if (cacheSize == 0) {
             return fetchInitialMedia()
+        }
+
+        // Startup must always prefer immediately playable local cache entries.
+        // Signature/version refresh can run in background, but should not block initial playback.
+        val startupCachedEntries = repository.getCachedVideosSnapshot()
+        if (startupCachedEntries.isNotEmpty()) {
+            Log.i(TAG, "Using local startup cache entries=${startupCachedEntries.size}")
+            repository.preWarmInBackground()
+            return startupCachedEntries.toAerialMedia()
         }
 
         return withTimeoutOrNull(NORMAL_FETCH_TIMEOUT_MS) {
@@ -57,32 +70,35 @@ class YouTubeMediaProvider(
     private suspend fun fetchInitialMedia(): List<AerialMedia> {
         YouTubeFeature.markCountPending()
 
-        if (!YouTubeFeature.isOnlyYouTubeSourceEnabled()) {
-            Timber.tag(TAG).d("Cache empty, warming YouTube in background while other sources play")
-            repository.preWarmInBackground()
-            return emptyList()
-        }
-
         if (!NetworkHelper.isInternetAvailable(context)) {
             Timber.tag(TAG).w("Cache empty and network unavailable for first-run YouTube fetch")
             return emptyList()
         }
 
-        Timber.tag(TAG).d("Cache empty on first run, bootstrapping YouTube cache")
-        val refreshedEntries =
-            withTimeoutOrNull(INITIAL_FETCH_TIMEOUT_MS) {
-                runCatching { repository.refreshSearchResults() }
-                    .onFailure { exception ->
-                        Timber.tag(TAG).w(exception, "Initial YouTube refresh failed")
-                    }.getOrDefault(emptyList())
-            }
-
-        if (refreshedEntries == null) {
-            Timber.tag(TAG).w("Initial YouTube fetch timed out after %sms", INITIAL_FETCH_TIMEOUT_MS)
+        val warmedCacheEntries =
+            withTimeoutOrNull(INITIAL_CACHE_WARM_WAIT_MS) {
+                repository.getCachedVideosSnapshot()
+            } ?: emptyList()
+        if (warmedCacheEntries.isNotEmpty()) {
+            Log.i(TAG, "Using warmed startup cache entries=${warmedCacheEntries.size}")
             repository.preWarmInBackground()
+            return warmedCacheEntries.toAerialMedia()
         }
 
-        return fetchCachedMedia()
+        val bootstrapMedia = buildBootstrapMedia()
+        if (bootstrapMedia.isEmpty()) {
+            return emptyList()
+        }
+
+        val firstBootstrapUrl = bootstrapMedia.first().uri.toString()
+        repository.preResolveVideo(firstBootstrapUrl, providerScope)
+        Log.i(TAG, "Startup bootstrap first URL queued for pre-resolve")
+        Log.i(TAG, "Using bootstrap startup playlist size=${bootstrapMedia.size}")
+        providerScope.launch {
+            delay(STARTUP_BACKGROUND_WARM_DELAY_MS)
+            repository.preWarmInBackground()
+        }
+        return bootstrapMedia
     }
 
     private suspend fun fetchCachedMedia(): List<AerialMedia> {
@@ -126,6 +142,32 @@ class YouTubeMediaProvider(
         }
     }
 
+    private fun buildBootstrapMedia(): MutableList<AerialMedia> =
+        STARTUP_BOOTSTRAP_VIDEO_URLS.map { videoPageUrl ->
+            val videoId = extractBootstrapVideoId(videoPageUrl)
+            AerialMedia(
+                uri = videoPageUrl.toUri(),
+                type = AerialMediaType.VIDEO,
+                source = AerialMediaSource.YOUTUBE,
+                metadata =
+                    AerialMediaMetadata(
+                        shortDescription = "YouTube Startup Bootstrap",
+                        exif =
+                            AerialExifMetadata(
+                                description = videoId,
+                            ),
+                    ),
+            )
+        }.toMutableList()
+
+    private fun extractBootstrapVideoId(videoPageUrl: String): String =
+        Regex("[?&]v=([^&#]+)")
+            .find(videoPageUrl)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.takeIf { it.isNotBlank() }
+            ?: videoPageUrl
+
     private fun toAerialMedia(
         entry: YouTubeCacheEntity,
         useDirectPlaybackUrl: Boolean,
@@ -150,9 +192,15 @@ class YouTubeMediaProvider(
         )
 
     companion object {
-        private const val INITIAL_FETCH_TIMEOUT_MS = 30_000L
+        private const val INITIAL_CACHE_WARM_WAIT_MS = 1_500L
+        private const val STARTUP_BACKGROUND_WARM_DELAY_MS = 30_000L
         private const val NORMAL_FETCH_TIMEOUT_MS = 3_000L
         private const val DIRECT_PLAYBACK_WINDOW = 12
         private const val TAG = "YouTubeMedia"
+        private val STARTUP_BOOTSTRAP_VIDEO_URLS =
+            listOf(
+                "https://www.youtube.com/watch?v=BHACKCNDMW8",
+                "https://www.youtube.com/watch?v=LXb3EKWsInQ",
+            )
     }
 }

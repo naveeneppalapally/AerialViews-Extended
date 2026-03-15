@@ -37,7 +37,7 @@ Plays fresh 4K nature, aerial, and ambient videos from YouTube directly on your 
 Or install via ADB:
 
 ```sh
-adb install -r AerialViews-Plus-v1.0.0.apk
+adb install -r AerialViews-Plus-v1.1.0.apk
 ```
 
 ## How to set AerialViews+ as the default screensaver

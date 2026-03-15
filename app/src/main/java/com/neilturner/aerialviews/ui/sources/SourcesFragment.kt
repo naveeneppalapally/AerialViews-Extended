@@ -33,7 +33,7 @@ class SourcesFragment : MenuStateFragment() {
         val preference = findPreference<ListPreference>(KEY_SOURCE_MODE) ?: return
         preference.summaryProvider = ListPreference.SimpleSummaryProvider.getInstance()
         preference.setOnPreferenceChangeListener { _, newValue ->
-            applySourceMode(newValue as? String ?: SOURCE_MODE_COMBINED)
+            applySourceMode(newValue as? String ?: SOURCE_MODE_YOUTUBE)
             configureYouTubeMixWeightPreference()
             true
         }
@@ -49,8 +49,8 @@ class SourcesFragment : MenuStateFragment() {
                 .apply()
         }
         if (!sharedPreferences.contains(KEY_SOURCE_MODE)) {
-            modePreference.value = SOURCE_MODE_COMBINED
-            applySourceMode(SOURCE_MODE_COMBINED)
+            modePreference.value = SOURCE_MODE_YOUTUBE
+            applySourceMode(SOURCE_MODE_YOUTUBE)
         } else {
             synchronizeSourceModePreference()
         }
@@ -107,7 +107,9 @@ class SourcesFragment : MenuStateFragment() {
 
     private fun configureYouTubeMixWeightPreference() {
         val preference = findPreference<ListPreference>(YouTubeSourceRepository.KEY_MIX_WEIGHT) ?: return
-        if (YouTubeVideoPrefs.enabled) {
+        val sourceMode = preferenceManager.sharedPreferences?.getString(KEY_SOURCE_MODE, SOURCE_MODE_YOUTUBE)
+        val shouldEnable = YouTubeVideoPrefs.enabled && sourceMode == SOURCE_MODE_COMBINED
+        if (shouldEnable) {
             preference.isEnabled = true
             preference.summaryProvider = ListPreference.SimpleSummaryProvider.getInstance()
         } else {

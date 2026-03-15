@@ -58,15 +58,21 @@ object VideoPlayerHelper {
     }
 
     @OptIn(UnstableApi::class)
-    fun getResizeMode(scale: VideoScale?): Int =
-        if (scale == VideoScale.SCALE_TO_FIT_WITH_CROPPING) {
+    fun getResizeMode(
+        scale: VideoScale?,
+        forceCrop: Boolean = false,
+    ): Int =
+        if (forceCrop || scale == VideoScale.SCALE_TO_FIT_WITH_CROPPING) {
             AspectRatioFrameLayout.RESIZE_MODE_ZOOM
         } else {
             AspectRatioFrameLayout.RESIZE_MODE_FIT
         }
 
-    fun getVideoScalingMode(scale: VideoScale?): Int =
-        if (scale == VideoScale.SCALE_TO_FIT_WITH_CROPPING) {
+    fun getVideoScalingMode(
+        scale: VideoScale?,
+        forceCrop: Boolean = false,
+    ): Int =
+        if (forceCrop || scale == VideoScale.SCALE_TO_FIT_WITH_CROPPING) {
             C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
         } else {
             C.VIDEO_SCALING_MODE_SCALE_TO_FIT
@@ -94,14 +100,14 @@ object VideoPlayerHelper {
         trackSelector.parameters = parametersBuilder.build()
 
         var rendererFactory: DefaultRenderersFactory = DefaultRenderersFactory(context)
-        rendererFactory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+        rendererFactory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
         if (prefs.allowFallbackDecoders) {
             rendererFactory.setEnableDecoderFallback(true)
         }
 
         if (prefs.philipsDolbyVisionFix) {
             rendererFactory = CustomRendererFactory(context)
-            rendererFactory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+            rendererFactory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
             if (prefs.allowFallbackDecoders) {
                 rendererFactory.setEnableDecoderFallback(true)
             }

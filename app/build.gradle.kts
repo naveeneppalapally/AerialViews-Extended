@@ -25,7 +25,7 @@ android {
         minSdk = 23 // Android v6
         targetSdk = 36
         versionCode = 102
-        versionName = "1.0.0"
+        versionName = "1.1.0"
         betaVersion = "-beta12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -82,7 +82,7 @@ android {
             isDebuggable = false
             isMinifyEnabled = false
             isShrinkResources = false
-            buildConfigField("boolean", "ENABLE_YOUTUBE_LOGS", "true")
+            buildConfigField("boolean", "ENABLE_YOUTUBE_LOGS", "false")
             matchingFallbacks += listOf("release")
         }
         release {

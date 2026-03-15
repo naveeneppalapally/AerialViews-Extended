@@ -71,24 +71,10 @@ class YouTubeSettingsViewModel(
         backgroundRefreshJob =
             viewModelScope.launch {
                 runCatching {
-                    repository.applyCurrentCategoryFilter()
+                    repository.applyCategoryDeltaRefresh()
                 }.onFailure { exception ->
-                    Timber.e(exception, "Failed to apply YouTube category filter")
+                    Timber.e(exception, "Failed to apply YouTube category delta refresh")
                 }
-                refreshInBackground()
-            }
-    }
-
-    fun onMinimumDurationChanged(minSeconds: Int) {
-        backgroundRefreshJob?.cancel()
-        backgroundRefreshJob =
-            viewModelScope.launch {
-                runCatching {
-                    repository.applyDurationFilter(minSeconds)
-                }.onFailure { exception ->
-                    Timber.e(exception, "Failed to apply YouTube duration filter")
-                }
-                refreshInBackground()
             }
     }
 
@@ -111,19 +97,6 @@ class YouTubeSettingsViewModel(
 
     fun clearRefreshState() {
         _refreshState.value = RefreshState.Idle
-    }
-
-    private fun applyFiltersThenScheduleRefresh() {
-        backgroundRefreshJob?.cancel()
-        backgroundRefreshJob =
-            viewModelScope.launch {
-                runCatching {
-                    repository.applyCurrentFilters()
-                }.onFailure { exception ->
-                    Timber.e(exception, "Failed to apply YouTube cache filters")
-                }
-                refreshInBackground()
-            }
     }
 }
 

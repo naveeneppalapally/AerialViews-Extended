@@ -20,31 +20,35 @@
     <!-- YouTube -->
     <string-array name="youtube_quality_entries" translatable="false">
         <item>Highest Available</item>
+        <item>1440p</item>
         <item>1080p</item>
         <item>720p</item>
     </string-array>
     <string-array name="youtube_quality_values" translatable="false">
         <item>best</item>
+        <item>1440p</item>
         <item>1080p</item>
         <item>720p</item>
     </string-array>
     <string-array name="youtube_quality_entries_uhd" translatable="false">
         <item>Highest Available</item>
         <item>4K</item>
+        <item>1440p</item>
         <item>1080p</item>
         <item>720p</item>
     </string-array>
     <string-array name="youtube_quality_values_uhd" translatable="false">
         <item>best</item>
         <item>2160p</item>
+        <item>1440p</item>
         <item>1080p</item>
         <item>720p</item>
     </string-array>
     <string name="youtube_quality_default" translatable="false">best</string>
     <string-array name="youtube_mix_weight_entries" translatable="false">
-        <item>Same as other sources</item>
-        <item>YouTube more often</item>
-        <item>YouTube most often</item>
+        <item>Balanced mix</item>
+        <item>More YouTube</item>
+        <item>Mostly YouTube</item>
     </string-array>
     <string-array name="youtube_mix_weight_values" translatable="false">
         <item>1</item>
@@ -53,16 +57,16 @@
     </string-array>
     <string name="youtube_mix_weight_default" translatable="false">2</string>
     <string-array name="source_mode_entries" translatable="false">
-        <item>AerialViews+ videos</item>
-        <item>YouTube videos</item>
-        <item>Combined</item>
+        <item>AerialViews only</item>
+        <item>YouTube only</item>
+        <item>AerialViews + YouTube</item>
     </string-array>
     <string-array name="source_mode_values" translatable="false">
         <item>aerial</item>
         <item>youtube</item>
         <item>combined</item>
     </string-array>
-    <string name="source_mode_default" translatable="false">combined</string>
+    <string name="source_mode_default" translatable="false">youtube</string>
 
     <!-- Estimated data usage per hour -->
     <string-array name="apple_videos_data_usage_values" translatable="false">
@@ -1113,24 +1117,12 @@
 
     <!-- Projectivy Video Providers -->
     <string-array name="projectivy_shared_providers_entries">
-        <item>Apple Videos</item>
-        <item>Amazon Videos</item>
-        <item>Jetson Creative Videos</item>
-        <item>Robin Fourcade Videos</item>
         <item>@string/projectivy_youtube_videos</item>
-        <!--    <item>Local or USB storage</item>-->
     </string-array>
     <string-array name="projectivy_shared_providers_values" translatable="false">
-        <item>APPLE</item>
-        <item>AMAZON</item>
-        <item>COMM1</item>
-        <item>COMM2</item>
         <item>youtube</item>
-        <!--    <item>LOCAL</item>-->
     </string-array>
     <string-array name="projectivy_shared_providers_default" translatable="false">
-        <item>AMAZON</item>
-        <item>COMM1</item>
         <item>youtube</item>
     </string-array>
 

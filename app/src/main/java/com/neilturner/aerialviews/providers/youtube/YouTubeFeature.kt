@@ -2,6 +2,7 @@ package com.neilturner.aerialviews.providers.youtube
 
 import android.content.Context
 import android.hardware.display.DisplayManager
+import android.util.Log
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import androidx.work.Constraints
@@ -180,6 +181,7 @@ object YouTubeFeature {
 
         val startupRequest =
             OneTimeWorkRequestBuilder<YouTubeRefreshWorker>()
+                .setInitialDelay(STARTUP_REFRESH_INITIAL_DELAY_SECONDS, TimeUnit.SECONDS)
                 .setConstraints(constraints)
                 .setInputData(
                     workDataOf(YouTubeRefreshWorker.KEY_FORCE_SEARCH_REFRESH to false),
@@ -209,16 +211,20 @@ object YouTubeFeature {
         val hasInitializedQuality = prefs.getBoolean(KEY_QUALITY_INITIALIZED, false)
         val configuredQuality = prefs.getString(YouTubeSourceRepository.KEY_QUALITY, null)?.trim()
         val userSelectedQuality = prefs.getBoolean(KEY_QUALITY_USER_SELECTED, false)
-        val deviceDefaultQuality = if (supportsUltraHdOutput(context)) UHD_QUALITY else YouTubeSourceRepository.DEFAULT_QUALITY
+        val displayHeight = maxDisplayHeight(context)
+        val deviceDefaultQuality = defaultQualityForDisplay(displayHeight)
         val resolvedQuality =
             when {
                 configuredQuality.isNullOrBlank() -> deviceDefaultQuality
                 configuredQuality.equals("4k", ignoreCase = true) -> UHD_QUALITY
-                !userSelectedQuality &&
-                    configuredQuality == YouTubeSourceRepository.DEFAULT_QUALITY &&
-                    deviceDefaultQuality == UHD_QUALITY -> UHD_QUALITY
+                !userSelectedQuality -> deviceDefaultQuality
                 else -> configuredQuality
             }
+
+        Log.i(
+            TAG,
+            "YouTube quality init: displayHeight=${displayHeight}p configured=$configuredQuality userSelected=$userSelectedQuality resolved=$resolvedQuality",
+        )
 
         if (!hasInitializedQuality || resolvedQuality != configuredQuality) {
             prefs.edit {
@@ -240,18 +246,25 @@ object YouTubeFeature {
         }
     }
 
-    private fun supportsUltraHdOutput(context: Context): Boolean {
-        val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager ?: return false
-        return displayManager.displays.any { display ->
-            val mode = display.mode
-            val activeModeSupportsUhd =
-                mode != null && (mode.physicalWidth >= UHD_WIDTH || mode.physicalHeight >= UHD_HEIGHT)
-            val supportedModeHasUhd =
-                display.supportedModes.any { modeInfo ->
-                    modeInfo.physicalWidth >= UHD_WIDTH || modeInfo.physicalHeight >= UHD_HEIGHT
-                }
-            activeModeSupportsUhd || supportedModeHasUhd
+    private fun defaultQualityForDisplay(displayHeight: Int): String {
+        return when {
+            displayHeight >= UHD_HEIGHT -> UHD_QUALITY
+            displayHeight >= QHD_HEIGHT -> QHD_QUALITY
+            displayHeight >= FULL_HD_HEIGHT -> FULL_HD_QUALITY
+            else -> HD_QUALITY
         }
+    }
+
+    private fun maxDisplayHeight(context: Context): Int {
+        val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager ?: return FULL_HD_HEIGHT
+        return displayManager.displays
+            .flatMap { display ->
+                buildList {
+                    display.mode?.physicalHeight?.let(::add)
+                    addAll(display.supportedModes.map { mode -> mode.physicalHeight })
+                }
+            }.maxOrNull()
+            ?: FULL_HD_HEIGHT
     }
 
     private fun millisecondsUntilNextThreeAm(): Long {
@@ -265,6 +278,7 @@ object YouTubeFeature {
 
     private const val STREAM_REFRESH_INTERVAL_MINUTES = 330L
     private const val STREAM_REFRESH_INITIAL_DELAY_MINUTES = 15L
+    private const val STARTUP_REFRESH_INITIAL_DELAY_SECONDS = 90L
     private const val MIN_PREWARM_CACHE_SIZE = 10
     private const val INITIAL_PREWARM_DELAY_MS = 10_000L
     private const val KEY_QUALITY_INITIALIZED = "yt_quality_initialized"
@@ -272,6 +286,10 @@ object YouTubeFeature {
     private const val PENDING_CACHE_COUNT = "-1"
     private const val TAG = "YouTubeFeature"
     private const val UHD_QUALITY = "2160p"
-    private const val UHD_WIDTH = 3840
+    private const val QHD_QUALITY = "1440p"
+    private const val FULL_HD_QUALITY = "1080p"
+    private const val HD_QUALITY = "720p"
     private const val UHD_HEIGHT = 2160
+    private const val QHD_HEIGHT = 1440
+    private const val FULL_HD_HEIGHT = 1080
 }

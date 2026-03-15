@@ -3,6 +3,8 @@ package com.neilturner.aerialviews.ui
 import android.app.Application
 import android.os.StrictMode
 import android.os.StrictMode.VmPolicy
+import androidx.preference.PreferenceManager
+import com.neilturner.aerialviews.models.prefs.AmazonVideoPrefs
 import com.neilturner.aerialviews.BuildConfig
 import com.neilturner.aerialviews.models.enums.OverlayType
 import com.neilturner.aerialviews.models.enums.VideoQuality
@@ -10,6 +12,12 @@ import com.neilturner.aerialviews.models.prefs.AppleVideoPrefs
 import com.neilturner.aerialviews.models.prefs.Comm1VideoPrefs
 import com.neilturner.aerialviews.models.prefs.Comm2VideoPrefs
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
+import com.neilturner.aerialviews.models.prefs.ProjectivyAmazonPrefs
+import com.neilturner.aerialviews.models.prefs.ProjectivyApplePrefs
+import com.neilturner.aerialviews.models.prefs.ProjectivyComm1Prefs
+import com.neilturner.aerialviews.models.prefs.ProjectivyComm2Prefs
+import com.neilturner.aerialviews.models.prefs.ProjectivyPrefs
+import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.utils.DeviceHelper
 import timber.log.Timber
@@ -39,7 +47,38 @@ class AerialApp : Application() {
             GeneralPrefs.checkForHevcSupport = true
         }
 
+        initializeSourceModeDefaults()
+        enforceProjectivyYouTubeOnly()
         YouTubeFeature.initialize(this)
+    }
+
+    private fun initializeSourceModeDefaults() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        if (!prefs.contains(KEY_SOURCE_MODE)) {
+            prefs.edit().putString(KEY_SOURCE_MODE, SOURCE_MODE_YOUTUBE).apply()
+            AppleVideoPrefs.enabled = false
+            AmazonVideoPrefs.enabled = false
+            Comm1VideoPrefs.enabled = false
+            Comm2VideoPrefs.enabled = false
+            YouTubeVideoPrefs.enabled = true
+        }
+
+        // Keep migration-safe baseline for old installs.
+        YouTubeVideoPrefs.minDurationMinutes = 0
+    }
+
+    private fun enforceProjectivyYouTubeOnly() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        prefs
+            .edit()
+            .putStringSet(KEY_PROJECTIVY_SHARED_PROVIDERS, setOf(PROJECTIVY_PROVIDER_YOUTUBE))
+            .apply()
+
+        // Projectivy provider pref objects cache their enabled flag, so force non-YouTube off.
+        ProjectivyApplePrefs.enabled = false
+        ProjectivyAmazonPrefs.enabled = false
+        ProjectivyComm1Prefs.enabled = false
+        ProjectivyComm2Prefs.enabled = false
     }
 
     private fun configureLogging() {
@@ -87,5 +126,12 @@ class AerialApp : Application() {
                 // .penaltyDeath()
                 .build(),
         )
+    }
+
+    companion object {
+        private const val KEY_SOURCE_MODE = "source_mode"
+        private const val SOURCE_MODE_YOUTUBE = "youtube"
+        private const val KEY_PROJECTIVY_SHARED_PROVIDERS = "projectivy_shared_providers"
+        private const val PROJECTIVY_PROVIDER_YOUTUBE = "youtube"
     }
 }

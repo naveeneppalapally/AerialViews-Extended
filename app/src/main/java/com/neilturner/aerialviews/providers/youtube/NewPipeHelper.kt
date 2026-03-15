@@ -84,7 +84,7 @@ object NewPipeHelper {
                 val requiredMinDurationSeconds = maxOf(minDurationSeconds, MIN_SEARCH_DURATION_SECONDS)
                 val searchInfo = loadSearchInfo(query)
                 val baseCandidates = buildSearchCandidates(searchInfo, requiredMinDurationSeconds)
-                selectSearchResults(query, category, baseCandidates)
+                selectSearchResults(category, baseCandidates)
             } catch (exception: Exception) {
                 Timber.tag(TAG).w(exception, "Failed to search YouTube for \"%s\"", query)
                 throw YouTubeExtractionException(
@@ -178,30 +178,10 @@ object NewPipeHelper {
     }
 
     private fun selectSearchResults(
-        query: String,
         category: QueryFormulaEngine.ContentCategory?,
         baseCandidates: List<StreamInfoItem>,
     ): List<StreamInfoItem> {
-        val queryLower = query.lowercase(Locale.US)
-        val categoryMatchedCandidates =
-            baseCandidates.filter { candidate ->
-                QueryFormulaEngine.matchesCandidateCategory(
-                    title = candidate.getName(),
-                    uploader = candidate.getUploaderName().orEmpty(),
-                    category = category,
-                )
-            }.ifEnoughOrElse(MIN_QUERY_MATCH_RESULTS) { baseCandidates }
-
-        val queryMatchedCandidates =
-            categoryMatchedCandidates.filter { candidate ->
-                matchesQueryIntent(
-                    queryLower = queryLower,
-                    titleLower = candidate.getName().lowercase(Locale.US),
-                    category = category,
-                )
-            }.ifEnoughOrElse(MIN_QUERY_MATCH_RESULTS) { categoryMatchedCandidates }
-
-        return queryMatchedCandidates
+        return baseCandidates
             .asSequence()
             .distinctBy { extractVideoId(it.getUrl()) ?: it.getUrl() }
             .distinctBy {
@@ -271,12 +251,19 @@ object NewPipeHelper {
         preferredQuality: String,
         preferVideoOnly: Boolean,
     ): String? {
-        val screenTargetHeight = targetHeightForScreen(screenHeight)
+        val effectiveScreenHeight =
+            if (isAmlogicDevice() && screenHeight in 1 until 1080) {
+                1080
+            } else {
+                screenHeight
+            }
+        val screenTargetHeight = targetHeightForScreen(effectiveScreenHeight)
         val qualityTargetHeight = preferredHeightForQuality(preferredQuality)
         val targetHeight = if (qualityTargetHeight > 0) qualityTargetHeight else screenTargetHeight
+        val minimumFallbackHeight = minimumAllowedHeight(targetHeight)
         Log.i(
             TAG,
-            "Screen: ${screenHeight}p (screenTarget=${screenTargetHeight}p), quality=${preferredQuality}, targeting: ${targetHeight}p",
+            "Screen: ${screenHeight}p (effective=${effectiveScreenHeight}p, screenTarget=${screenTargetHeight}p), quality=${preferredQuality}, targeting: ${targetHeight}p",
         )
         val playableProgressiveStreams =
             progressiveStreams.filter { !it.isVideoOnly() && it.isUrl() && it.getContent().isNotBlank() }
@@ -306,12 +293,20 @@ object NewPipeHelper {
             ?: selectStreamContent(primaryStreams, targetHeight, allowUnsupportedFallback = true)
             ?: selectStreamContent(secondaryStreams, targetHeight, allowUnsupportedFallback = false)
             ?: selectStreamContent(secondaryStreams, targetHeight, allowUnsupportedFallback = true)
-            ?: playableProgressiveStreams.sortedWith(streamQualityComparator()).firstOrNull()?.let { stream ->
-                Log.w(TAG, "STREAM FALLBACK 1: ${describeStream(stream)}")
+            ?: playableProgressiveStreams
+                .filter { stream -> streamHeight(stream) >= minimumFallbackHeight }
+                .sortedWith(streamQualityComparator())
+                .firstOrNull()
+                ?.let { stream ->
+                Log.w(TAG, "STREAM FALLBACK 1 (quality floor ${minimumFallbackHeight}p): ${describeStream(stream)}")
                 stream.getContent()
             }
-            ?: playableAnyStreams.sortedWith(streamQualityComparator()).firstOrNull()?.let { stream ->
-                Log.w(TAG, "STREAM FALLBACK 2 (last resort): ${describeStream(stream)}")
+            ?: playableAnyStreams
+                .filter { stream -> streamHeight(stream) >= minimumFallbackHeight }
+                .sortedWith(streamQualityComparator())
+                .firstOrNull()
+                ?.let { stream ->
+                Log.w(TAG, "STREAM FALLBACK 2 (quality floor ${minimumFallbackHeight}p): ${describeStream(stream)}")
                 stream.getContent()
             }
             ?: dashUrl?.takeIf(String::isNotBlank)?.also {
@@ -479,11 +474,7 @@ object NewPipeHelper {
 
     private fun codecScore(stream: VideoStream): Int {
         val codec = stream.getCodec().orEmpty().lowercase(Locale.US)
-        val isAmlogic = isAmlogicDevice()
         return when {
-            isAmlogic && (codec.contains("avc") || codec.contains("h264")) -> 3
-            isAmlogic && (codec.contains("vp9") || codec.contains("vp09")) -> 2
-            isAmlogic && (codec.contains("av01") || codec.contains("av1")) -> 1
             codec.contains("vp9") || codec.contains("vp09") -> 3
             codec.contains("avc") || codec.contains("h264") -> 2
             codec.contains("av01") || codec.contains("av1") -> 1
@@ -569,10 +560,20 @@ object NewPipeHelper {
         val titleLower = title.lowercase(Locale.US)
         val uploaderLower = uploader.lowercase(Locale.US)
         return isBumperOrVlogTitle(titleLower) ||
+            isTopListTitle(titleLower) ||
             HUMAN_TITLE_BLACKLIST.any(titleLower::contains) ||
             HUMAN_CHANNEL_BLACKLIST.any(uploaderLower::contains) ||
             PERSONAL_VLOG_TITLE_REGEX.containsMatchIn(title)
     }
+
+    internal fun isLikelyHumanContentForTest(
+        title: String,
+        uploader: String = "",
+    ): Boolean = isHumanContent(title = title, uploader = uploader)
+
+    private fun isTopListTitle(titleLower: String): Boolean =
+        TOP_LIST_TITLE_REGEX.containsMatchIn(titleLower) ||
+            TOP_LIST_TITLE_BLACKLIST.any(titleLower::contains)
 
     private fun matchesQueryIntent(
         queryLower: String,
@@ -613,8 +614,8 @@ object NewPipeHelper {
     private fun streamQualityComparator(): Comparator<VideoStream> =
         compareByDescending<VideoStream> { streamHeight(it) }
             .thenBy { codecPenalty(it) }
-            .thenByDescending { it.getBitrate() }
             .thenByDescending { codecScore(it) }
+            .thenByDescending { it.getBitrate() }
             .thenBy { codecPriorityIndex(it) }
 
     private fun meetsBitrateFloor(stream: VideoStream): Boolean {
@@ -806,14 +807,17 @@ object NewPipeHelper {
     fun getScreenHeight(context: Context): Int {
         val wm = context.applicationContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val displayManager = context.getSystemService(DisplayManager::class.java)
             val visualDisplay =
                 runCatching { context.display }
                     .getOrNull()
             val display =
                 visualDisplay
-                    ?: context.getSystemService(DisplayManager::class.java)
-                        ?.getDisplay(Display.DEFAULT_DISPLAY)
-            return display?.mode?.physicalHeight ?: wm.currentWindowMetrics.bounds.height().coerceAtLeast(1080)
+                    ?: displayManager?.getDisplay(Display.DEFAULT_DISPLAY)
+            val activeHeight = display?.mode?.physicalHeight ?: 0
+            val supportedHeight = display?.supportedModes?.maxOfOrNull { mode -> mode.physicalHeight } ?: 0
+            val windowHeight = wm.currentWindowMetrics.bounds.height()
+            return maxOf(activeHeight, supportedHeight, windowHeight).coerceAtLeast(720)
         }
 
         val metrics = DisplayMetrics()
@@ -834,7 +838,7 @@ object NewPipeHelper {
     private fun preferredHeightForQuality(preferredQuality: String): Int {
         val quality = preferredQuality.lowercase(Locale.US)
         return when {
-            quality == "best" -> if (isAmlogicDevice()) 1080 else 2160
+            quality == "best" -> 0
             quality.contains("2160") || quality.contains("4k") -> 2160
             quality.contains("1440") -> 1440
             quality.contains("1080") -> 1080
@@ -847,6 +851,8 @@ object NewPipeHelper {
 
     private fun minimumAllowedHeight(targetHeight: Int): Int =
         when {
+            targetHeight >= 2160 -> 1080
+            targetHeight >= 1440 -> 1080
             targetHeight >= 1080 -> 720
             targetHeight >= 720 -> 480
             else -> 360
@@ -909,7 +915,7 @@ object NewPipeHelper {
     private val SearchInfo.relatedItems: List<InfoItem>
         get() = getRelatedItems()
 
-    private const val MIN_SEARCH_DURATION_SECONDS = 240
+    private const val MIN_SEARCH_DURATION_SECONDS = 180
     private const val MAX_RESULTS_PER_QUERY = 24
     private const val MIN_QUERY_MATCH_RESULTS = 4
     private const val MIN_PREFERRED_RESULTS_PER_QUERY = 6
@@ -1052,6 +1058,14 @@ object NewPipeHelper {
     private val RESOLUTION_PRIORITY = listOf(2160, 1440, 1080, 720, 480)
     private val CODEC_PRIORITY = listOf("vp9", "vp09", "avc1", "avc", "av01", "av1")
     private val REJECTED_LOW_QUALITY_ITAGS = setOf(18, 133, 134, 135, 160)
+    private val TOP_LIST_TITLE_BLACKLIST =
+        listOf(
+            "top 10",
+            "top ten",
+            "most beautiful places",
+            "best places to visit",
+        )
+    private val TOP_LIST_TITLE_REGEX = Regex("\\btop\\s*\\d+\\b", RegexOption.IGNORE_CASE)
     private val HUMAN_TITLE_BLACKLIST =
         listOf(
             "vlog",

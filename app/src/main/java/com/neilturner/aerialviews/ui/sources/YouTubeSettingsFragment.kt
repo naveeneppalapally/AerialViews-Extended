@@ -221,7 +221,9 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         val targetPreference = findPreference<Preference>("yt_enabled") ?: return
         val cachedCount = YouTubeVideoPrefs.count.toIntOrNull()
         targetPreference.summary =
-            if (cachedCount != null && cachedCount >= 0) {
+            if (cachedCount != null && cachedCount >= 0 && cachedCount < YOUTUBE_LIBRARY_TARGET_COUNT) {
+                getString(R.string.youtube_cache_loading_overlay, cachedCount, YOUTUBE_LIBRARY_TARGET_COUNT)
+            } else if (cachedCount != null && cachedCount >= 0) {
                 getString(R.string.videos_count, cachedCount)
             } else {
                 getString(R.string.youtube_count_pending_summary)
@@ -267,7 +269,9 @@ class YouTubeSettingsFragment : MenuStateFragment() {
     private fun updateCacheCountPreference(cachedCount: Int?) {
         val cacheCountPreference = findPreference<Preference>(PREFERENCE_CACHE_COUNT) ?: return
         cacheCountPreference.summary =
-            if (cachedCount != null && cachedCount >= 0) {
+            if (cachedCount != null && cachedCount >= 0 && cachedCount < YOUTUBE_LIBRARY_TARGET_COUNT) {
+                getString(R.string.youtube_cache_loading_overlay, cachedCount, YOUTUBE_LIBRARY_TARGET_COUNT)
+            } else if (cachedCount != null && cachedCount >= 0) {
                 getString(R.string.youtube_cache_count_summary, cachedCount)
             } else {
                 getString(R.string.youtube_cache_count_pending)
@@ -291,6 +295,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
     companion object {
         private const val PREFERENCE_CACHE_COUNT = "yt_cache_count"
+        private const val YOUTUBE_LIBRARY_TARGET_COUNT = 200
         private val CATEGORY_PREFERENCE_KEYS =
             listOf(
                 "yt_category_nature",

@@ -97,7 +97,6 @@ class ScreenController(
     private var preloadJob: Job? = null
     private var playlistRefreshJob: Job? = null
     private var initialPlaylistRetryJob: Job? = null
-    private var youtubeCacheStatusJob: Job? = null
     private val metadataJobs = mutableMapOf<OverlayType, Job>()
     private var currentMedia: AerialMedia? = null
     private var preloadedNextMedia: AerialMedia? = null
@@ -112,7 +111,6 @@ class ScreenController(
     private val loadingView: View
     private val overlayView: View
     private var loadingText: TextView
-    private var youtubeCacheStatusText: TextView
     private var videoPlayer: VideoPlayerView
     private var imagePlayer: ImagePlayerView
     private val brightnessView: View
@@ -147,7 +145,6 @@ class ScreenController(
         overlayView = overlayViewBinding.root
         gradientTopView = overlayViewBinding.gradientTop
         gradientBottomView = overlayViewBinding.gradientBottom
-        youtubeCacheStatusText = overlayViewBinding.youtubeCacheStatus
 
         val initialVideoRoot = binding.videoView.root
         val videoParent = initialVideoRoot.parent as? ViewGroup
@@ -200,7 +197,6 @@ class ScreenController(
         this.topRightIds = overlayIds.topRightIds
         bindOverlayState()
         overlayEventBridge.start()
-        bindYouTubeCacheStatusOverlay()
 
         // Setup progress bar
         if (GeneralPrefs.progressBarLocation != ProgressBarLocation.DISABLED) {
@@ -631,37 +627,6 @@ class ScreenController(
         }
     }
 
-    private fun bindYouTubeCacheStatusOverlay() {
-        if (!YouTubeVideoPrefs.enabled) {
-            youtubeCacheStatusText.isVisible = false
-            return
-        }
-
-        youtubeCacheStatusJob?.cancel()
-        youtubeCacheStatusJob =
-            mainScope.launch {
-                YouTubeFeature.repository(context).cacheCount.collectLatest { count ->
-                    val normalizedCount = count.coerceAtLeast(0)
-                    val shouldShow =
-                        YouTubeVideoPrefs.enabled &&
-                            normalizedCount < YOUTUBE_CACHE_TARGET_SIZE
-
-                    if (!shouldShow) {
-                        youtubeCacheStatusText.isVisible = false
-                        return@collectLatest
-                    }
-
-                    youtubeCacheStatusText.text =
-                        resources.getString(
-                            R.string.youtube_cache_loading_overlay,
-                            normalizedCount,
-                            YOUTUBE_CACHE_TARGET_SIZE,
-                        )
-                    youtubeCacheStatusText.isVisible = true
-                }
-            }
-    }
-
     private fun shouldShowYouTubeLoadingMessage(): Boolean {
         if (!YouTubeFeature.isOnlyYouTubeSourceEnabled()) {
             return false
@@ -821,7 +786,6 @@ class ScreenController(
         preloadJob?.cancel()
         playlistRefreshJob?.cancel()
         initialPlaylistRetryJob?.cancel()
-        youtubeCacheStatusJob?.cancel()
         metadataJobs.values.forEach { it.cancel() }
         metadataJobs.clear()
         mainScope.cancel()
@@ -1125,7 +1089,6 @@ class ScreenController(
         const val PLAYLIST_PREBUILD_REMAINING_ITEMS: Int = 11
         const val YOUTUBE_PLAYLIST_RETRY_DELAY_MS: Long = 5_000
         const val YOUTUBE_FORCE_REFRESH_EVERY_ATTEMPTS: Int = 3
-        const val YOUTUBE_CACHE_TARGET_SIZE: Int = 200
         const val LOADING_FADE_OUT: Long = 300 // Fade out loading text
         const val LOADING_DELAY: Long = 400 // Delay before fading out loading view
         const val ERROR_DELAY: Long = 2000 // Delay before loading next item, after error

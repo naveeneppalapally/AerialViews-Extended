@@ -4,8 +4,18 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import com.neilturner.aerialviews.models.enums.AerialMediaType
+import com.neilturner.aerialviews.models.prefs.ProjectivyAmazonPrefs
+import com.neilturner.aerialviews.models.prefs.ProjectivyApplePrefs
+import com.neilturner.aerialviews.models.prefs.ProjectivyComm1Prefs
+import com.neilturner.aerialviews.models.prefs.ProjectivyComm2Prefs
+import com.neilturner.aerialviews.models.prefs.ProjectivyLocalMediaPrefs
 import com.neilturner.aerialviews.models.prefs.ProjectivyPrefs
 import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
+import com.neilturner.aerialviews.providers.AmazonMediaProvider
+import com.neilturner.aerialviews.providers.AppleMediaProvider
+import com.neilturner.aerialviews.providers.Comm1MediaProvider
+import com.neilturner.aerialviews.providers.Comm2MediaProvider
+import com.neilturner.aerialviews.providers.LocalMediaProvider
 import com.neilturner.aerialviews.providers.MediaProvider
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.providers.youtube.YouTubeMediaProvider
@@ -59,22 +69,50 @@ class WallpaperProviderService : Service() {
         }
 
     private fun getEnabledProviders(): List<MediaProvider> {
-        val normalizedProviders =
+        val selectedProviders =
             ProjectivyPrefs.sharedProviders.map { provider ->
-                provider.trim().lowercase()
+                provider.trim()
             }.toSet()
-        if (!normalizedProviders.contains(PROJECTIVY_YOUTUBE_PROVIDER)) {
-            return emptyList()
-        }
-        if (!YouTubeVideoPrefs.enabled) {
+
+        ProjectivyApplePrefs.enabled = selectedProviders.contains(PROJECTIVY_PROVIDER_APPLE)
+        ProjectivyAmazonPrefs.enabled = selectedProviders.contains(PROJECTIVY_PROVIDER_AMAZON)
+        ProjectivyComm1Prefs.enabled = selectedProviders.contains(PROJECTIVY_PROVIDER_COMM1)
+        ProjectivyComm2Prefs.enabled = selectedProviders.contains(PROJECTIVY_PROVIDER_COMM2)
+
+        if (selectedProviders.contains(PROJECTIVY_PROVIDER_YOUTUBE) && !YouTubeVideoPrefs.enabled) {
             YouTubeVideoPrefs.enabled = true
             Timber.i("Re-enabled YouTube provider for Projectivy wallpaper mode")
         }
-        return listOf(YouTubeMediaProvider(applicationContext))
+
+        return mutableListOf<MediaProvider>().apply {
+            if (ProjectivyApplePrefs.enabled) {
+                add(AppleMediaProvider(applicationContext, ProjectivyApplePrefs))
+            }
+            if (ProjectivyAmazonPrefs.enabled) {
+                add(AmazonMediaProvider(applicationContext, ProjectivyAmazonPrefs))
+            }
+            if (ProjectivyComm1Prefs.enabled) {
+                add(Comm1MediaProvider(applicationContext, ProjectivyComm1Prefs))
+            }
+            if (ProjectivyComm2Prefs.enabled) {
+                add(Comm2MediaProvider(applicationContext, ProjectivyComm2Prefs))
+            }
+            if (selectedProviders.contains(PROJECTIVY_PROVIDER_LOCAL)) {
+                add(LocalMediaProvider(applicationContext, ProjectivyLocalMediaPrefs))
+            }
+            if (selectedProviders.contains(PROJECTIVY_PROVIDER_YOUTUBE)) {
+                add(YouTubeMediaProvider(applicationContext))
+            }
+        }
     }
 
     private companion object {
-        const val PROJECTIVY_YOUTUBE_PROVIDER = "youtube"
+        const val PROJECTIVY_PROVIDER_APPLE = "APPLE"
+        const val PROJECTIVY_PROVIDER_AMAZON = "AMAZON"
+        const val PROJECTIVY_PROVIDER_COMM1 = "COMM1"
+        const val PROJECTIVY_PROVIDER_COMM2 = "COMM2"
+        const val PROJECTIVY_PROVIDER_LOCAL = "LOCAL"
+        const val PROJECTIVY_PROVIDER_YOUTUBE = "youtube"
         const val WALLPAPER_REUSE_WINDOW_MS = 30_000L
     }
 

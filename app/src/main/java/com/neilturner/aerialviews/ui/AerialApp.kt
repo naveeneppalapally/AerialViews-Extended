@@ -12,11 +12,6 @@ import com.neilturner.aerialviews.models.prefs.AppleVideoPrefs
 import com.neilturner.aerialviews.models.prefs.Comm1VideoPrefs
 import com.neilturner.aerialviews.models.prefs.Comm2VideoPrefs
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
-import com.neilturner.aerialviews.models.prefs.ProjectivyAmazonPrefs
-import com.neilturner.aerialviews.models.prefs.ProjectivyApplePrefs
-import com.neilturner.aerialviews.models.prefs.ProjectivyComm1Prefs
-import com.neilturner.aerialviews.models.prefs.ProjectivyComm2Prefs
-import com.neilturner.aerialviews.models.prefs.ProjectivyPrefs
 import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.utils.DeviceHelper
@@ -48,7 +43,7 @@ class AerialApp : Application() {
         }
 
         initializeSourceModeDefaults()
-        enforceProjectivyYouTubeOnly()
+        initializeProjectivyProviderDefaults()
         YouTubeFeature.initialize(this)
     }
 
@@ -67,18 +62,20 @@ class AerialApp : Application() {
         YouTubeVideoPrefs.minDurationMinutes = 0
     }
 
-    private fun enforceProjectivyYouTubeOnly() {
+    private fun initializeProjectivyProviderDefaults() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        prefs
-            .edit()
-            .putStringSet(KEY_PROJECTIVY_SHARED_PROVIDERS, setOf(PROJECTIVY_PROVIDER_YOUTUBE))
-            .apply()
-
-        // Projectivy provider pref objects cache their enabled flag, so force non-YouTube off.
-        ProjectivyApplePrefs.enabled = false
-        ProjectivyAmazonPrefs.enabled = false
-        ProjectivyComm1Prefs.enabled = false
-        ProjectivyComm2Prefs.enabled = false
+        if (!prefs.contains(KEY_PROJECTIVY_SHARED_PROVIDERS)) {
+            prefs
+                .edit()
+                .putStringSet(
+                    KEY_PROJECTIVY_SHARED_PROVIDERS,
+                    setOf(
+                        PROJECTIVY_PROVIDER_AMAZON,
+                        PROJECTIVY_PROVIDER_COMM1,
+                        PROJECTIVY_PROVIDER_YOUTUBE,
+                    ),
+                ).apply()
+        }
     }
 
     private fun configureLogging() {
@@ -132,6 +129,8 @@ class AerialApp : Application() {
         private const val KEY_SOURCE_MODE = "source_mode"
         private const val SOURCE_MODE_YOUTUBE = "youtube"
         private const val KEY_PROJECTIVY_SHARED_PROVIDERS = "projectivy_shared_providers"
+        private const val PROJECTIVY_PROVIDER_AMAZON = "AMAZON"
+        private const val PROJECTIVY_PROVIDER_COMM1 = "COMM1"
         private const val PROJECTIVY_PROVIDER_YOUTUBE = "youtube"
     }
 }

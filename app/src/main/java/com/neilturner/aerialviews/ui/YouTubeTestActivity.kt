@@ -48,7 +48,7 @@ class YouTubeTestActivity : AppCompatActivity() {
 
                 val streamUrl =
                     withContext(Dispatchers.IO) {
-                        NewPipeHelper.extractStreamUrl(testVideoUrl)
+                        NewPipeHelper.extractStreamUrl(testVideoUrl, this@YouTubeTestActivity)
                     }
 
                 if (streamUrl.isBlank()) {

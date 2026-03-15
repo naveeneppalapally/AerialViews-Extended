@@ -1,5 +1,6 @@
 package com.neilturner.aerialviews.providers.youtube
 
+import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import androidx.core.content.edit
@@ -29,6 +30,7 @@ import timber.log.Timber
 import kotlin.random.Random
 
 class YouTubeSourceRepository(
+    private val context: Context,
     private val cacheDao: YouTubeCacheDao,
     private val sharedPreferences: SharedPreferences,
 ) {
@@ -421,11 +423,13 @@ class YouTubeSourceRepository(
     private fun buildRefreshPlan(): RefreshPlan {
         val cachedAt = System.currentTimeMillis()
         val categoryPreferences = categoryPreferences()
+        val existingEntries = filteredExistingEntries(cacheDao.getAllGood())
+        val isColdStart = existingEntries.size < COLD_CACHE_SKIP_THRESHOLD
         return RefreshPlan(
             query = searchQuery(),
             queryPool =
                 QueryFormulaEngine.generateQueryPool(
-                    count = QUERY_POOL_SIZE,
+                    count = if (isColdStart) COLD_START_QUERY_POOL_SIZE else QUERY_POOL_SIZE,
                     entropySeed = cachedAt,
                     prefs = categoryPreferences,
                 ),
@@ -433,8 +437,9 @@ class YouTubeSourceRepository(
             preferredQuality = preferredQuality(),
             cachedAt = cachedAt,
             entropySeed = System.nanoTime() xor cachedAt,
-            existingEntries = filteredExistingEntries(cacheDao.getAllGood()),
+            existingEntries = existingEntries,
             recentRefreshIds = recentRefreshIds().toSet(),
+            isColdStart = isColdStart,
         )
     }
 
@@ -444,6 +449,15 @@ class YouTubeSourceRepository(
                 queries = refreshPlan.queryPool,
                 minDurationSeconds = refreshPlan.minimumDurationSeconds,
             )
+        if (refreshPlan.isColdStart) {
+            Timber.tag(TAG).i(
+                "Using fast cold-start YouTube candidate pool (%s queries, %s/%s unique candidates)",
+                refreshPlan.queryPool.size,
+                mainSearchResults.size,
+                uniqueCandidateCount(mainSearchResults),
+            )
+            return mainSearchResults
+        }
         val expandedResults = maybeExpandWithLongTail(mainSearchResults, refreshPlan.minimumDurationSeconds)
         val healthyResults = ensureHealthyCandidatePool(refreshPlan.query, expandedResults)
         val healthyUniqueCount = uniqueCandidateCount(healthyResults)
@@ -880,11 +894,11 @@ class YouTubeSourceRepository(
                         .filterNotNull()
 
                 entries += extractedChunk
-                if (publishMinimumCache && !minimumCachePublished && entries.size >= MINIMUM_VIABLE_CACHE_SIZE) {
+                if (publishMinimumCache && !minimumCachePublished && entries.isNotEmpty()) {
                     cacheDao.clearAndInsert(entries.toList())
                     updateCachedCount(entries.size)
                     minimumCachePublished = true
-                    Timber.tag(TAG).i("Minimum viable YouTube cache ready (%s videos)", entries.size)
+                    Timber.tag(TAG).i("Cold-start YouTube cache published early (%s videos)", entries.size)
                 }
 
                 if (entries.size >= limit) {
@@ -940,6 +954,7 @@ class YouTubeSourceRepository(
         val updatedUrl =
             NewPipeHelper.extractStreamUrl(
                 entry.videoPageUrl,
+                context,
                 preferredQuality(),
                 preferVideoOnly = shouldPreferVideoOnly(),
             )
@@ -1287,6 +1302,7 @@ class YouTubeSourceRepository(
                     val updatedUrl =
                         NewPipeHelper.extractStreamUrl(
                             entry.videoPageUrl,
+                            context,
                             preferredQuality(),
                             preferVideoOnly = shouldPreferVideoOnly(),
                         )
@@ -1372,6 +1388,7 @@ class YouTubeSourceRepository(
             val streamUrl =
                 NewPipeHelper.extractStreamUrl(
                     videoPageUrl,
+                    context,
                     preferredQuality,
                     preferVideoOnly = shouldPreferVideoOnly(),
                 )
@@ -1407,6 +1424,7 @@ class YouTubeSourceRepository(
         val streamUrl =
             NewPipeHelper.extractStreamUrl(
                 videoPageUrl,
+                context,
                 preferredQuality,
                 preferVideoOnly = shouldPreferVideoOnly(),
             )
@@ -1538,10 +1556,10 @@ class YouTubeSourceRepository(
         sharedPreferences.getBoolean(KEY_SHUFFLE, DEFAULT_SHUFFLE)
 
     private fun shouldPreferVideoOnly(): Boolean =
-        false
+        true
 
     private fun streamMode(): String =
-        "progressive"
+        "video_only_preferred"
 
     private fun updateCachedCount(count: Int) {
         _cacheCount.value = count
@@ -1970,6 +1988,7 @@ class YouTubeSourceRepository(
         val entropySeed: Long,
         val existingEntries: List<YouTubeCacheEntity>,
         val recentRefreshIds: Set<String>,
+        val isColdStart: Boolean,
     )
 
     private data class SearchCandidate(
@@ -2056,6 +2075,7 @@ class YouTubeSourceRepository(
         private const val EXTRACTION_BATCH_SIZE = 4
         private const val MAX_STREAM_URL_REFRESHES_PER_WARM = 24
         private const val QUERY_SEARCH_BATCH_SIZE = 5
+        private const val COLD_START_QUERY_POOL_SIZE = 10
         private const val QUERY_POOL_SIZE = 50
         private const val FALLBACK_QUERY_POOL_SIZE = 16
         private const val SUPPLEMENTAL_QUERY_POOL_SIZE = 24
@@ -2077,7 +2097,7 @@ class YouTubeSourceRepository(
         private const val RECENT_PLAYBACK_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L
         private const val MAX_PLAYBACK_RESOLVE_ATTEMPTS = 5
         private const val BAD_ENTRY_REFRESH_THRESHOLD = 10
-        private const val CURRENT_CACHE_VERSION = 27
+        private const val CURRENT_CACHE_VERSION = 29
         private const val HISTORY_SEPARATOR = "|"
         private const val DEFAULT_CATEGORY_KEY = "__uncategorized__"
         private const val MIN_MAIN_SEARCH_UNIQUE_VIDEOS = 60

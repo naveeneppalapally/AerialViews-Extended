@@ -1,8 +1,13 @@
 package com.neilturner.aerialviews.providers.youtube
 
+import android.content.Context
+import android.hardware.display.DisplayManager
 import android.media.MediaCodecList
 import android.os.Build
+import android.util.DisplayMetrics
 import android.util.Log
+import android.view.Display
+import android.view.WindowManager
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request.Builder
@@ -91,6 +96,7 @@ object NewPipeHelper {
 
     suspend fun extractStreamUrl(
         videoPageUrl: String,
+        context: Context,
         preferredQuality: String = "1080p",
         preferVideoOnly: Boolean = false,
     ): String =
@@ -98,7 +104,7 @@ object NewPipeHelper {
             init()
 
             try {
-                loadPlayableStreamUrl(videoPageUrl, preferredQuality, preferVideoOnly)
+                loadPlayableStreamUrl(videoPageUrl, context, preferredQuality, preferVideoOnly)
             } catch (exception: AgeRestrictedContentException) {
                 Timber.tag(TAG).d("Age-restricted stream rejected: %s", videoPageUrl)
                 throw exception
@@ -225,6 +231,7 @@ object NewPipeHelper {
 
     private fun loadPlayableStreamUrl(
         videoPageUrl: String,
+        context: Context,
         preferredQuality: String,
         preferVideoOnly: Boolean,
     ): String {
@@ -241,12 +248,14 @@ object NewPipeHelper {
                 ),
             )
         streamExtractor.fetchPage()
+        val screenHeight = getScreenHeight(context)
 
         return selectBestStreamUrl(
             progressiveStreams = streamExtractor.videoStreams,
             videoOnlyStreams = streamExtractor.videoOnlyStreams,
             dashUrl = streamExtractor.dashMpdUrl,
             hlsUrl = streamExtractor.hlsUrl,
+            screenHeight = screenHeight,
             preferredQuality = preferredQuality,
             preferVideoOnly = preferVideoOnly,
         )?.takeIf(String::isNotBlank)
@@ -258,23 +267,40 @@ object NewPipeHelper {
         videoOnlyStreams: List<VideoStream>,
         dashUrl: String?,
         hlsUrl: String?,
+        screenHeight: Int,
         preferredQuality: String,
         preferVideoOnly: Boolean,
     ): String? {
-        val normalizedPreference = preferredQuality.trim().lowercase()
+        val targetHeight = targetHeightForScreen(screenHeight)
+        Log.i(TAG, "Screen: ${screenHeight}p, targeting: ${targetHeight}p")
         val playableProgressiveStreams =
             progressiveStreams.filter { !it.isVideoOnly() && it.isUrl() && it.getContent().isNotBlank() }
         val playableVideoOnlyStreams =
             videoOnlyStreams.filter { it.isUrl() && it.getContent().isNotBlank() }
         val playableAnyStreams = (playableProgressiveStreams + playableVideoOnlyStreams)
+        val primaryStreams =
+            if (preferVideoOnly && playableVideoOnlyStreams.isNotEmpty()) {
+                playableVideoOnlyStreams
+            } else {
+                playableProgressiveStreams
+            }
+        val secondaryStreams =
+            if (primaryStreams === playableVideoOnlyStreams) {
+                playableProgressiveStreams
+            } else {
+                playableVideoOnlyStreams
+            }
         Timber.tag(TAG).i(
-            "Evaluating YouTube progressive streams (preferred=%s, playable=%s, available=%s)",
+            "Evaluating YouTube streams (preferred=%s, progressive=%s, videoOnly=%s, mode=%s)",
             preferredQuality,
             playableProgressiveStreams.size,
-            playableProgressiveStreams.joinToString { stream -> describeStream(stream) },
+            playableVideoOnlyStreams.size,
+            if (primaryStreams === playableVideoOnlyStreams) "videoOnlyPreferred" else "progressivePreferred",
         )
-        return selectStreamContent(playableProgressiveStreams, normalizedPreference, allowUnsupportedFallback = false)
-            ?: selectStreamContent(playableProgressiveStreams, normalizedPreference, allowUnsupportedFallback = true)
+        return selectStreamContent(primaryStreams, targetHeight, allowUnsupportedFallback = false)
+            ?: selectStreamContent(primaryStreams, targetHeight, allowUnsupportedFallback = true)
+            ?: selectStreamContent(secondaryStreams, targetHeight, allowUnsupportedFallback = false)
+            ?: selectStreamContent(secondaryStreams, targetHeight, allowUnsupportedFallback = true)
             ?: playableProgressiveStreams.sortedWith(streamQualityComparator()).firstOrNull()?.let { stream ->
                 Log.w(TAG, "STREAM FALLBACK 1: ${describeStream(stream)}")
                 stream.getContent()
@@ -291,7 +317,8 @@ object NewPipeHelper {
             }
             ?: run {
                 Timber.tag(TAG).w(
-                    "No playable YouTube stream found for preference=%s (progressive=%s videoOnly=%s dash=%s hls=%s preferVideoOnly=%s)",
+                    "No playable YouTube stream found for target=%sp (preference=%s progressive=%s videoOnly=%s dash=%s hls=%s preferVideoOnly=%s)",
+                    targetHeight,
                     preferredQuality,
                     progressiveStreams.size,
                     videoOnlyStreams.size,
@@ -305,26 +332,28 @@ object NewPipeHelper {
 
     private fun selectStreamContent(
         streams: List<VideoStream>,
-        preferredQuality: String,
+        targetHeight: Int,
         allowUnsupportedFallback: Boolean,
     ): String? =
-        selectBestVideoStream(streams, preferredQuality, allowUnsupportedFallback)?.let { stream ->
+        selectBestVideoStream(streams, targetHeight, allowUnsupportedFallback)?.let { stream ->
             logSelectedStream(stream)
             stream.getContent()
         }
 
     private fun selectBestVideoStream(
         streams: List<VideoStream>,
-        preferredQuality: String,
+        targetHeight: Int,
         allowUnsupportedFallback: Boolean = false,
     ): VideoStream? {
         val deviceSafeCandidates =
             streams
                 .let(::applyDeviceCodecRestrictions)
-                .let(::applyDeviceResolutionRestrictions)
+                .filter { streamHeight(it) > 0 }
+                .filter { streamHeight(it) <= maxTargetHeight(targetHeight) }
         if (deviceSafeCandidates.isEmpty()) {
             Timber.tag(TAG).w(
-                "Rejecting YouTube progressive streams because no non-rejected candidates were available (available=%s)",
+                "Rejecting YouTube progressive streams because no candidates fit target=%sp (available=%s)",
+                targetHeight,
                 streams.map { stream -> "${streamHeight(stream)}p/itag=${stream.getItag()}" },
             )
             return null
@@ -332,12 +361,10 @@ object NewPipeHelper {
 
         val preferredCandidates =
             deviceSafeCandidates.filter { candidate ->
-                streamHeight(candidate) >= MIN_PREFERRED_PROGRESSIVE_HEIGHT &&
+                streamHeight(candidate) in MIN_PREFERRED_PROGRESSIVE_HEIGHT..targetHeight &&
                     candidate.getItag() !in REJECTED_LOW_QUALITY_ITAGS
             }
         val rankedCandidates = preferredCandidates.ifEmpty { deviceSafeCandidates }
-
-        val preferredHeight = qualityToHeight(preferredQuality)
         val supportPriority =
             buildList {
                 add(DecoderSupport.SUPPORTED)
@@ -356,7 +383,7 @@ object NewPipeHelper {
                 return@forEach
             }
 
-            selectBestVideoStreamFromTier(supportCandidates, preferredHeight)?.let { return it }
+            selectBestVideoStreamFromTier(supportCandidates, targetHeight)?.let { return it }
         }
 
         return null
@@ -365,15 +392,6 @@ object NewPipeHelper {
     private fun applyDeviceCodecRestrictions(streams: List<VideoStream>): List<VideoStream> {
         if (!isAmlogicDevice()) {
             return streams
-        }
-
-        val avcOnlyCandidates =
-            streams.filter { stream ->
-                codecFamily(stream) == CodecFamily.AVC
-            }
-        if (avcOnlyCandidates.isNotEmpty()) {
-            Log.i(TAG, "Applying Amlogic safe codec restriction: AVC-only (${avcOnlyCandidates.size}/${streams.size} streams)")
-            return avcOnlyCandidates
         }
 
         val nonAv1Candidates =
@@ -386,55 +404,22 @@ object NewPipeHelper {
         return nonAv1Candidates.ifEmpty { streams }
     }
 
-    private fun applyDeviceResolutionRestrictions(streams: List<VideoStream>): List<VideoStream> {
-        if (!isAmlogicDevice()) {
-            return streams
-        }
-
-        val safeResolutionCandidates =
-            streams.filter { stream ->
-                val height = streamHeight(stream)
-                height in 1..1080
-            }
-        if (safeResolutionCandidates.isNotEmpty()) {
-            Log.i(
-                TAG,
-                "Applying Amlogic safe resolution restriction: 1080p-or-lower (${safeResolutionCandidates.size}/${streams.size} streams)",
-            )
-            return safeResolutionCandidates
-        }
-
-        return streams
-    }
-
     private fun selectBestVideoStreamFromTier(
         streams: List<VideoStream>,
-        preferredHeight: Int?,
+        preferredHeight: Int,
     ): VideoStream? {
-        if (preferredHeight != null) {
-            selectBestStreamAtResolution(streams, preferredHeight)?.let { return it }
-        }
+        selectBestStreamAtResolution(streams, preferredHeight)?.let { return it }
 
         RESOLUTION_PRIORITY.forEach { resolution ->
+            if (resolution > preferredHeight) {
+                return@forEach
+            }
             selectBestStreamAtResolution(streams, resolution)?.let { return it }
         }
 
         Timber.tag(TAG).w("No preferred YouTube stream quality found, using best available fallback")
         return streams.sortedWith(streamQualityComparator()).firstOrNull()
     }
-
-    private fun qualityToHeight(quality: String): Int? =
-        when (quality) {
-            "2160p",
-            "4k",
-            -> 2160
-            "1080p" -> 1080
-            "720p" -> 720
-            "best",
-            "best available",
-            -> null
-            else -> null
-        }
 
     private fun selectBestStreamAtResolution(
         streams: List<VideoStream>,
@@ -770,18 +755,6 @@ object NewPipeHelper {
             return true
         }
 
-        val usesProblematic4kCodec =
-            codecFamily == CodecFamily.VP9 || codecFamily == CodecFamily.AV1
-
-        if (height >= 2160 && isAmlogicDevice() && usesProblematic4kCodec) {
-            Timber.tag(TAG).w(
-                "Treating %sp %s as unsupported on this device due to Amlogic 4K decoder compatibility",
-                height,
-                stream.getCodec(),
-            )
-            return true
-        }
-
         return false
     }
 
@@ -795,6 +768,36 @@ object NewPipeHelper {
         val uploadInstant = item.getUploadDate()?.getInstant() ?: return true
         return uploadInstant.isAfter(ZonedDateTime.now().minusYears(10).toInstant())
     }
+
+    fun getScreenHeight(context: Context): Int {
+        val wm = context.applicationContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val visualDisplay =
+                runCatching { context.display }
+                    .getOrNull()
+            val display =
+                visualDisplay
+                    ?: context.getSystemService(DisplayManager::class.java)
+                        ?.getDisplay(Display.DEFAULT_DISPLAY)
+            return display?.mode?.physicalHeight ?: wm.currentWindowMetrics.bounds.height().coerceAtLeast(1080)
+        }
+
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        wm.defaultDisplay.getRealMetrics(metrics)
+        return metrics.heightPixels
+    }
+
+    private fun targetHeightForScreen(screenHeight: Int): Int =
+        when {
+            screenHeight >= 2160 -> 2160
+            screenHeight >= 1440 -> 1440
+            screenHeight >= 1080 -> 1080
+            screenHeight >= 720 -> 720
+            else -> 720
+        }
+
+    private fun maxTargetHeight(targetHeight: Int): Int = ((targetHeight * 1.1f).toInt()).coerceAtLeast(targetHeight)
 
     private class OkHttpDownloader(
         private val client: OkHttpClient,

@@ -103,6 +103,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.YouTubeTestActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:label="YouTube Test" />
+
         <!-- Allow screensaver to be started via 3rd party app, etc -->
         <activity
             android:exported="true"

@@ -271,8 +271,13 @@ object NewPipeHelper {
         preferredQuality: String,
         preferVideoOnly: Boolean,
     ): String? {
-        val targetHeight = targetHeightForScreen(screenHeight)
-        Log.i(TAG, "Screen: ${screenHeight}p, targeting: ${targetHeight}p")
+        val screenTargetHeight = targetHeightForScreen(screenHeight)
+        val qualityTargetHeight = preferredHeightForQuality(preferredQuality)
+        val targetHeight = if (qualityTargetHeight > 0) qualityTargetHeight else screenTargetHeight
+        Log.i(
+            TAG,
+            "Screen: ${screenHeight}p (screenTarget=${screenTargetHeight}p), quality=${preferredQuality}, targeting: ${targetHeight}p",
+        )
         val playableProgressiveStreams =
             progressiveStreams.filter { !it.isVideoOnly() && it.isUrl() && it.getContent().isNotBlank() }
         val playableVideoOnlyStreams =
@@ -345,15 +350,18 @@ object NewPipeHelper {
         targetHeight: Int,
         allowUnsupportedFallback: Boolean = false,
     ): VideoStream? {
+        val minimumHeight = minimumAllowedHeight(targetHeight)
         val deviceSafeCandidates =
             streams
                 .let(::applyDeviceCodecRestrictions)
                 .filter { streamHeight(it) > 0 }
+                .filter { streamHeight(it) >= minimumHeight }
                 .filter { streamHeight(it) <= maxTargetHeight(targetHeight) }
         if (deviceSafeCandidates.isEmpty()) {
             Timber.tag(TAG).w(
-                "Rejecting YouTube progressive streams because no candidates fit target=%sp (available=%s)",
+                "Rejecting YouTube streams because no candidates fit target=%sp min=%sp (available=%s)",
                 targetHeight,
+                minimumHeight,
                 streams.map { stream -> "${streamHeight(stream)}p/itag=${stream.getItag()}" },
             )
             return null
@@ -364,7 +372,11 @@ object NewPipeHelper {
                 streamHeight(candidate) in MIN_PREFERRED_PROGRESSIVE_HEIGHT..targetHeight &&
                     candidate.getItag() !in REJECTED_LOW_QUALITY_ITAGS
             }
-        val rankedCandidates = preferredCandidates.ifEmpty { deviceSafeCandidates }
+        val highBitratePreferredCandidates = preferredCandidates.filter(::meetsBitrateFloor)
+        val rankedCandidates =
+            highBitratePreferredCandidates.ifEmpty {
+                preferredCandidates.ifEmpty { deviceSafeCandidates }
+            }
         val supportPriority =
             buildList {
                 add(DecoderSupport.SUPPORTED)
@@ -467,7 +479,11 @@ object NewPipeHelper {
 
     private fun codecScore(stream: VideoStream): Int {
         val codec = stream.getCodec().orEmpty().lowercase(Locale.US)
+        val isAmlogic = isAmlogicDevice()
         return when {
+            isAmlogic && (codec.contains("avc") || codec.contains("h264")) -> 3
+            isAmlogic && (codec.contains("vp9") || codec.contains("vp09")) -> 2
+            isAmlogic && (codec.contains("av01") || codec.contains("av1")) -> 1
             codec.contains("vp9") || codec.contains("vp09") -> 3
             codec.contains("avc") || codec.contains("h264") -> 2
             codec.contains("av01") || codec.contains("av1") -> 1
@@ -596,10 +612,28 @@ object NewPipeHelper {
 
     private fun streamQualityComparator(): Comparator<VideoStream> =
         compareByDescending<VideoStream> { streamHeight(it) }
-            .thenByDescending { codecScore(it) }
             .thenBy { codecPenalty(it) }
-            .thenBy { codecPriorityIndex(it) }
             .thenByDescending { it.getBitrate() }
+            .thenByDescending { codecScore(it) }
+            .thenBy { codecPriorityIndex(it) }
+
+    private fun meetsBitrateFloor(stream: VideoStream): Boolean {
+        val bitrate = stream.getBitrate()
+        if (bitrate <= 0) {
+            return true
+        }
+
+        val floor =
+            when {
+                streamHeight(stream) >= 2160 -> 10_000_000
+                streamHeight(stream) >= 1440 -> 7_000_000
+                streamHeight(stream) >= 1080 -> 3_800_000
+                streamHeight(stream) >= 720 -> 1_500_000
+                streamHeight(stream) >= 480 -> 900_000
+                else -> 0
+            }
+        return bitrate >= floor
+    }
 
     private fun isLikelySyntheticWallpaperTitle(titleLower: String): Boolean =
         SYNTHETIC_WALLPAPER_BLACKLIST.any { token ->
@@ -797,7 +831,26 @@ object NewPipeHelper {
             else -> 720
         }
 
+    private fun preferredHeightForQuality(preferredQuality: String): Int {
+        val quality = preferredQuality.lowercase(Locale.US)
+        return when {
+            quality == "best" -> if (isAmlogicDevice()) 1080 else 2160
+            quality.contains("2160") || quality.contains("4k") -> 2160
+            quality.contains("1440") -> 1440
+            quality.contains("1080") -> 1080
+            quality.contains("720") -> 720
+            else -> 0
+        }
+    }
+
     private fun maxTargetHeight(targetHeight: Int): Int = ((targetHeight * 1.1f).toInt()).coerceAtLeast(targetHeight)
+
+    private fun minimumAllowedHeight(targetHeight: Int): Int =
+        when {
+            targetHeight >= 1080 -> 720
+            targetHeight >= 720 -> 480
+            else -> 360
+        }
 
     private class OkHttpDownloader(
         private val client: OkHttpClient,

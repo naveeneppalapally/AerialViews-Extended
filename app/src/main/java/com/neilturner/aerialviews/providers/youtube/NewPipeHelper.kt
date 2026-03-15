@@ -264,6 +264,9 @@ object NewPipeHelper {
         val normalizedPreference = preferredQuality.trim().lowercase()
         val playableProgressiveStreams =
             progressiveStreams.filter { !it.isVideoOnly() && it.isUrl() && it.getContent().isNotBlank() }
+        val playableVideoOnlyStreams =
+            videoOnlyStreams.filter { it.isUrl() && it.getContent().isNotBlank() }
+        val playableAnyStreams = (playableProgressiveStreams + playableVideoOnlyStreams)
         Timber.tag(TAG).i(
             "Evaluating YouTube progressive streams (preferred=%s, playable=%s, available=%s)",
             preferredQuality,
@@ -272,10 +275,25 @@ object NewPipeHelper {
         )
         return selectStreamContent(playableProgressiveStreams, normalizedPreference, allowUnsupportedFallback = false)
             ?: selectStreamContent(playableProgressiveStreams, normalizedPreference, allowUnsupportedFallback = true)
+            ?: playableProgressiveStreams.sortedWith(streamQualityComparator()).firstOrNull()?.let { stream ->
+                Log.w(TAG, "STREAM FALLBACK 1: ${describeStream(stream)}")
+                stream.getContent()
+            }
+            ?: playableAnyStreams.sortedWith(streamQualityComparator()).firstOrNull()?.let { stream ->
+                Log.w(TAG, "STREAM FALLBACK 2 (last resort): ${describeStream(stream)}")
+                stream.getContent()
+            }
+            ?: dashUrl?.takeIf(String::isNotBlank)?.also {
+                Log.w(TAG, "STREAM FALLBACK 3 (dash): using DASH manifest URL")
+            }
+            ?: hlsUrl?.takeIf(String::isNotBlank)?.also {
+                Log.w(TAG, "STREAM FALLBACK 4 (hls): using HLS manifest URL")
+            }
             ?: run {
                 Timber.tag(TAG).w(
-                    "No playable progressive YouTube stream found for preference=%s (videoOnly=%s dash=%s hls=%s preferVideoOnly=%s)",
+                    "No playable YouTube stream found for preference=%s (progressive=%s videoOnly=%s dash=%s hls=%s preferVideoOnly=%s)",
                     preferredQuality,
+                    progressiveStreams.size,
                     videoOnlyStreams.size,
                     !dashUrl.isNullOrBlank(),
                     !hlsUrl.isNullOrBlank(),
@@ -300,11 +318,11 @@ object NewPipeHelper {
         preferredQuality: String,
         allowUnsupportedFallback: Boolean = false,
     ): VideoStream? {
-        val candidates =
+        val deviceSafeCandidates =
             streams
-                .filterNot { it.getItag() in REJECTED_LOW_QUALITY_ITAGS }
                 .let(::applyDeviceCodecRestrictions)
-        if (candidates.isEmpty()) {
+                .let(::applyDeviceResolutionRestrictions)
+        if (deviceSafeCandidates.isEmpty()) {
             Timber.tag(TAG).w(
                 "Rejecting YouTube progressive streams because no non-rejected candidates were available (available=%s)",
                 streams.map { stream -> "${streamHeight(stream)}p/itag=${stream.getItag()}" },
@@ -312,8 +330,12 @@ object NewPipeHelper {
             return null
         }
 
-        val preferredCandidates = candidates.filter { streamHeight(it) >= MIN_PREFERRED_PROGRESSIVE_HEIGHT }
-        val rankedCandidates = preferredCandidates.ifEmpty { candidates }
+        val preferredCandidates =
+            deviceSafeCandidates.filter { candidate ->
+                streamHeight(candidate) >= MIN_PREFERRED_PROGRESSIVE_HEIGHT &&
+                    candidate.getItag() !in REJECTED_LOW_QUALITY_ITAGS
+            }
+        val rankedCandidates = preferredCandidates.ifEmpty { deviceSafeCandidates }
 
         val preferredHeight = qualityToHeight(preferredQuality)
         val supportPriority =
@@ -362,6 +384,27 @@ object NewPipeHelper {
             Log.i(TAG, "Applying Amlogic safe codec restriction: removing AV1 streams (${nonAv1Candidates.size}/${streams.size} streams remain)")
         }
         return nonAv1Candidates.ifEmpty { streams }
+    }
+
+    private fun applyDeviceResolutionRestrictions(streams: List<VideoStream>): List<VideoStream> {
+        if (!isAmlogicDevice()) {
+            return streams
+        }
+
+        val safeResolutionCandidates =
+            streams.filter { stream ->
+                val height = streamHeight(stream)
+                height in 1..1080
+            }
+        if (safeResolutionCandidates.isNotEmpty()) {
+            Log.i(
+                TAG,
+                "Applying Amlogic safe resolution restriction: 1080p-or-lower (${safeResolutionCandidates.size}/${streams.size} streams)",
+            )
+            return safeResolutionCandidates
+        }
+
+        return streams
     }
 
     private fun selectBestVideoStreamFromTier(
@@ -437,6 +480,16 @@ object NewPipeHelper {
             ?: 0
     }
 
+    private fun codecScore(stream: VideoStream): Int {
+        val codec = stream.getCodec().orEmpty().lowercase(Locale.US)
+        return when {
+            codec.contains("vp9") || codec.contains("vp09") -> 3
+            codec.contains("avc") || codec.contains("h264") -> 2
+            codec.contains("av01") || codec.contains("av1") -> 1
+            else -> 0
+        }
+    }
+
     private fun codecPriorityIndex(stream: VideoStream): Int {
         val codec = stream.getCodec().orEmpty().lowercase(Locale.US)
         return CODEC_PRIORITY.indexOfFirst(codec::contains).takeIf { it >= 0 } ?: CODEC_PRIORITY.size
@@ -447,26 +500,26 @@ object NewPipeHelper {
         return when (decoderSupport(codecFamily, stream)) {
             DecoderSupport.SUPPORTED ->
                 when (codecFamily) {
-                    CodecFamily.AV1 -> 0
-                    CodecFamily.VP9 -> 100
-                    CodecFamily.AVC -> 200
+                    CodecFamily.VP9 -> 0
+                    CodecFamily.AVC -> 100
+                    CodecFamily.AV1 -> 200
                     CodecFamily.OTHER -> 300
                 }
 
             DecoderSupport.UNKNOWN ->
                 when (codecFamily) {
-                    CodecFamily.VP9 -> 100
-                    CodecFamily.AVC -> 200
+                    CodecFamily.VP9 -> 0
+                    CodecFamily.AVC -> 100
+                    CodecFamily.AV1 -> 200
                     CodecFamily.OTHER -> 300
-                    CodecFamily.AV1 -> 1_000
                 }
 
             DecoderSupport.UNSUPPORTED ->
                 when (codecFamily) {
                     CodecFamily.VP9 -> 5_000
                     CodecFamily.AVC -> 5_100
-                    CodecFamily.OTHER -> 5_200
-                    CodecFamily.AV1 -> 6_000
+                    CodecFamily.AV1 -> 5_200
+                    CodecFamily.OTHER -> 5_300
                 }
         }
     }
@@ -558,6 +611,7 @@ object NewPipeHelper {
 
     private fun streamQualityComparator(): Comparator<VideoStream> =
         compareByDescending<VideoStream> { streamHeight(it) }
+            .thenByDescending { codecScore(it) }
             .thenBy { codecPenalty(it) }
             .thenBy { codecPriorityIndex(it) }
             .thenByDescending { it.getBitrate() }
@@ -733,7 +787,9 @@ object NewPipeHelper {
 
     private fun isAmlogicDevice(): Boolean =
         DEVICE_FINGERPRINT.contains("amlogic") ||
-            DEVICE_FINGERPRINT.contains("t5d")
+            DEVICE_FINGERPRINT.contains("t5d") ||
+            DEVICE_FINGERPRINT.contains("rango") ||
+            DEVICE_FINGERPRINT.contains("mitv")
 
     private fun isRecentEnough(item: StreamInfoItem): Boolean {
         val uploadInstant = item.getUploadDate()?.getInstant() ?: return true
@@ -938,7 +994,7 @@ object NewPipeHelper {
     private val SUSPICIOUS_EXACT_DURATIONS = setOf(3600, 7200, 10800, 14400, 21600)
     private const val MIN_PREFERRED_PROGRESSIVE_HEIGHT = 720
     private val RESOLUTION_PRIORITY = listOf(2160, 1440, 1080, 720, 480)
-    private val CODEC_PRIORITY = listOf("av01", "vp9", "vp09", "avc1", "avc")
+    private val CODEC_PRIORITY = listOf("vp9", "vp09", "avc1", "avc", "av01", "av1")
     private val REJECTED_LOW_QUALITY_ITAGS = setOf(18, 133, 134, 135, 160)
     private val HUMAN_TITLE_BLACKLIST =
         listOf(

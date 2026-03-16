@@ -936,6 +936,7 @@ class YouTubeSourceRepository(
         preferredQuality: String,
         limit: Int,
         publishMinimumCache: Boolean,
+        publishProgress: Boolean = true,
     ): List<YouTubeCacheEntity> =
         supervisorScope {
             val entries = mutableListOf<YouTubeCacheEntity>()
@@ -961,7 +962,11 @@ class YouTubeSourceRepository(
                         .filterNotNull()
 
                 entries += extractedChunk
-                _cacheLoadingProgress.value = Pair(entries.size, TARGET_CACHE_SIZE)
+                // Only emit progress for full refreshes; delta category refresh would show
+                // a misleading count (new entries only, not the total library size)
+                if (publishProgress) {
+                    _cacheLoadingProgress.value = Pair(entries.size, TARGET_CACHE_SIZE)
+                }
                 if (publishMinimumCache && !minimumCachePublished && entries.isNotEmpty()) {
                     cacheDao.clearAndInsert(entries.toList())
                     updateCachedCount(entries.size)
@@ -1675,6 +1680,7 @@ class YouTubeSourceRepository(
                 preferredQuality = preferredQuality(),
                 limit = CATEGORY_DELTA_EXTRACTION_LIMIT,
                 publishMinimumCache = false,
+                publishProgress = false,
             )
         if (extractedEntries.isEmpty()) {
             _cacheLoadingProgress.value = null

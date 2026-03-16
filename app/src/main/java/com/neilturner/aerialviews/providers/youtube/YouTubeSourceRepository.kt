@@ -191,31 +191,37 @@ class YouTubeSourceRepository(
             val removedCategories = previousEnabled - currentEnabled
             val addedCategories = currentEnabled - previousEnabled
 
-            val removedCount =
-                if (removedCategories.isNotEmpty()) {
-                    applyCurrentCategoryFilterInternal()
-                } else {
-                    0
+            var removedCount = 0
+            var insertedCount = 0
+
+            try {
+                removedCount =
+                    if (removedCategories.isNotEmpty()) {
+                        applyCurrentCategoryFilterInternal()
+                    } else {
+                        0
+                    }
+
+                val existingEntries = cacheDao.getAllGood()
+
+                if (addedCategories.isNotEmpty() && existingEntries.size >= TARGET_CACHE_SIZE) {
+                    _cacheFullEvent.value = true
                 }
 
-            val existingEntries = cacheDao.getAllGood()
-
-            if (addedCategories.isNotEmpty() && existingEntries.size >= TARGET_CACHE_SIZE) {
-                _cacheFullEvent.value = true
+                insertedCount =
+                    if (addedCategories.isNotEmpty()) {
+                        addEntriesForCategories(
+                            categoryKeys = addedCategories,
+                            existingEntries = existingEntries,
+                            initialCount = existingEntries.size,
+                        )
+                    } else {
+                        0
+                    }
+            } finally {
+                // Clear any loading progress emitted during addEntriesForCategories extraction
+                _cacheLoadingProgress.value = null
             }
-
-            val insertedCount =
-                if (addedCategories.isNotEmpty()) {
-                    addEntriesForCategories(
-                        categoryKeys = addedCategories,
-                        existingEntries = existingEntries,
-                    )
-                } else {
-                    0
-                }
-
-            // Clear any loading progress emitted during addEntriesForCategories extraction
-            _cacheLoadingProgress.value = null
 
             val filteredCount = currentFilteredCount()
             if (removedCount > 0 || insertedCount > 0) {
@@ -472,25 +478,27 @@ class YouTubeSourceRepository(
             )
         }
 
-        return runCatching {
+        return try {
             val refreshPlan = buildRefreshPlan()
             val searchResults = searchRefreshCandidates(refreshPlan)
-            val extractedEntries = extractRefreshEntries(refreshPlan, searchResults)
+            val extractedEntries = extractRefreshEntries(refreshPlan, searchResults, replaceExistingCache)
             val entries = mergeRefreshedEntries(refreshPlan, extractedEntries, replaceExistingCache)
             persistFreshEntries(refreshPlan, entries)
             entries
-        }.getOrElse { exception ->
-            _cacheLoadingProgress.value = null
+        } catch (exception: Exception) {
             val fallbackEntries = filteredExistingEntries(cacheDao.getAllGood())
             if (fallbackEntries.isNotEmpty()) {
                 Timber.tag(TAG).w(exception, "Using filtered cached YouTube entries after refresh failure")
                 updateCachedCount(fallbackEntries.size)
-                return fallbackEntries
+                fallbackEntries
+            } else {
+                throw when (exception) {
+                    is YouTubeSourceException -> exception
+                    else -> YouTubeSourceException("Failed to refresh YouTube videos", exception)
+                }
             }
-            throw when (exception) {
-                is YouTubeSourceException -> exception
-                else -> YouTubeSourceException("Failed to refresh YouTube videos", exception)
-            }
+        } finally {
+            _cacheLoadingProgress.value = null
         }
     }
 
@@ -571,6 +579,7 @@ class YouTubeSourceRepository(
     private suspend fun extractRefreshEntries(
         refreshPlan: RefreshPlan,
         searchResults: List<SearchCandidate>,
+        replaceExistingCache: Boolean,
     ): List<YouTubeCacheEntity> {
         val filteredCandidates =
             filterCategoryMismatchedCandidates(
@@ -583,12 +592,13 @@ class YouTubeSourceRepository(
 
         val extractedEntries =
             extractEntries(
-            items = rankedCandidates,
-            cachedAt = refreshPlan.cachedAt,
-            preferredQuality = refreshPlan.preferredQuality,
-            limit = EXTRACTION_TARGET_SIZE,
-            publishMinimumCache = refreshPlan.existingEntries.size < COLD_CACHE_SKIP_THRESHOLD,
-        )
+                items = rankedCandidates,
+                cachedAt = refreshPlan.cachedAt,
+                preferredQuality = refreshPlan.preferredQuality,
+                limit = EXTRACTION_TARGET_SIZE,
+                publishMinimumCache = refreshPlan.existingEntries.size < COLD_CACHE_SKIP_THRESHOLD,
+                initialCount = if (replaceExistingCache) 0 else refreshPlan.existingEntries.size,
+            )
 
         Timber.tag(TAG).i(
             "Extracted YouTube refresh entries (search=%s, filtered=%s, ranked=%s, extracted=%s)",
@@ -937,6 +947,7 @@ class YouTubeSourceRepository(
         limit: Int,
         publishMinimumCache: Boolean,
         publishProgress: Boolean = true,
+        initialCount: Int = 0,
     ): List<YouTubeCacheEntity> =
         supervisorScope {
             val entries = mutableListOf<YouTubeCacheEntity>()
@@ -965,7 +976,7 @@ class YouTubeSourceRepository(
                 // Only emit progress for full refreshes; delta category refresh would show
                 // a misleading count (new entries only, not the total library size)
                 if (publishProgress) {
-                    _cacheLoadingProgress.value = Pair(entries.size, TARGET_CACHE_SIZE)
+                    _cacheLoadingProgress.value = Pair(initialCount + entries.size, TARGET_CACHE_SIZE)
                 }
                 if (publishMinimumCache && !minimumCachePublished && entries.isNotEmpty()) {
                     cacheDao.clearAndInsert(entries.toList())
@@ -1631,6 +1642,7 @@ class YouTubeSourceRepository(
     private suspend fun addEntriesForCategories(
         categoryKeys: Set<String>,
         existingEntries: List<YouTubeCacheEntity>,
+        initialCount: Int,
     ): Int {
         if (categoryKeys.isEmpty()) {
             _cacheLoadingProgress.value = null
@@ -1680,7 +1692,8 @@ class YouTubeSourceRepository(
                 preferredQuality = preferredQuality(),
                 limit = CATEGORY_DELTA_EXTRACTION_LIMIT,
                 publishMinimumCache = false,
-                publishProgress = false,
+                publishProgress = true, // We now want progress for delta refresh
+                initialCount = initialCount,
             )
         if (extractedEntries.isEmpty()) {
             _cacheLoadingProgress.value = null

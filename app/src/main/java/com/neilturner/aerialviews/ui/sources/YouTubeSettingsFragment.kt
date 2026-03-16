@@ -185,12 +185,14 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             }
         }
 
-        // Reset to highest supported value if current value is not supported by this display
+        // Reset to highest supported value if current value is not supported by this display,
+        // or if it is 720p (the old hardcoded default — Highest Available is always better)
         val supportedValues = qualityPreference.entryValues?.map { it.toString() }.orEmpty()
-        if (qualityPreference.value !in supportedValues) {
+        val currentValue = qualityPreference.value
+        if (currentValue !in supportedValues || currentValue == "720p") {
             val highestSupported = supportedValues.firstOrNull() ?: YouTubeSourceRepository.DEFAULT_QUALITY
             qualityPreference.value = highestSupported
-            Log.d(TAG, "Reset quality to $highestSupported (previous value not supported on this display)")
+            Log.d(TAG, "Reset quality to $highestSupported (was: $currentValue, not optimal for this display)")
         }
 
         qualityPreference.setOnPreferenceChangeListener { _, _ ->
@@ -257,14 +259,17 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
     private fun updateVideoCount() {
         val targetPreference = findPreference<Preference>("yt_enabled") ?: return
-        val cachedCount = YouTubeVideoPrefs.count.toIntOrNull()
-        // Show only a static summary on the toggle row — never the loading counter.
-        // The live loading counter is shown exclusively on the yt_cache_count row.
+        // Always show the last-known count on the toggle row.
+        // During refresh, count still holds the previous value — show it, not a transient status.
+        // Only fall back to pending summary on a truly fresh install (count was never set).
+        val rawCount = YouTubeVideoPrefs.count
+        val cachedCount = rawCount.toIntOrNull()
         targetPreference.summary =
             if (cachedCount != null && cachedCount >= 0) {
                 getString(R.string.videos_count, cachedCount)
             } else {
-                getString(R.string.youtube_count_pending_summary)
+                // Fresh install: count is "-1", never been loaded yet
+                null
             }
         updateCacheCountPreference(cachedCount)
     }

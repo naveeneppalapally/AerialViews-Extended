@@ -481,7 +481,13 @@ class YouTubeSourceRepository(
         return try {
             val refreshPlan = buildRefreshPlan()
             val searchResults = searchRefreshCandidates(refreshPlan)
-            val extractedEntries = extractRefreshEntries(refreshPlan, searchResults, replaceExistingCache)
+            val extractedEntries =
+                extractRefreshEntries(
+                    refreshPlan = refreshPlan,
+                    searchResults = searchResults,
+                    replaceExistingCache = replaceExistingCache,
+                    initialCount = refreshPlan.existingEntries.size,
+                )
             val entries = mergeRefreshedEntries(refreshPlan, extractedEntries, replaceExistingCache)
             persistFreshEntries(refreshPlan, entries)
             entries
@@ -580,6 +586,7 @@ class YouTubeSourceRepository(
         refreshPlan: RefreshPlan,
         searchResults: List<SearchCandidate>,
         replaceExistingCache: Boolean,
+        initialCount: Int,
     ): List<YouTubeCacheEntity> {
         val filteredCandidates =
             filterCategoryMismatchedCandidates(
@@ -589,7 +596,7 @@ class YouTubeSourceRepository(
             rankCandidatesWithStyleBalance(filteredCandidates)
                 .let(::deduplicateCandidatesByTitle)
                 .let { applyCandidateDiversityCaps(it, EXTRACTION_TARGET_SIZE) }
-
+ 
         val extractedEntries =
             extractEntries(
                 items = rankedCandidates,
@@ -597,7 +604,8 @@ class YouTubeSourceRepository(
                 preferredQuality = refreshPlan.preferredQuality,
                 limit = EXTRACTION_TARGET_SIZE,
                 publishMinimumCache = refreshPlan.existingEntries.size < COLD_CACHE_SKIP_THRESHOLD,
-                initialCount = if (replaceExistingCache) 0 else refreshPlan.existingEntries.size,
+                publishProgress = true,
+                initialCount = initialCount,
             )
 
         Timber.tag(TAG).i(
@@ -975,7 +983,11 @@ class YouTubeSourceRepository(
                 // Only emit progress for full refreshes; delta category refresh would show
                 // a misleading count (new entries only, not the total library size)
                 if (publishProgress) {
-                    _cacheLoadingProgress.value = Pair(initialCount + entries.size, TARGET_CACHE_SIZE)
+                    _cacheLoadingProgress.value =
+                        Pair(
+                            (initialCount + entries.size).coerceAtMost(TARGET_CACHE_SIZE),
+                            TARGET_CACHE_SIZE,
+                        )
                 }
                 if (publishMinimumCache && !minimumCachePublished && entries.isNotEmpty()) {
                     cacheDao.clearAndInsert(entries.toList())

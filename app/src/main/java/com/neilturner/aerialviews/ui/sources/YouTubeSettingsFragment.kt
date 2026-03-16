@@ -31,17 +31,18 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             when (key) {
                 YouTubeSourceRepository.KEY_COUNT -> {
-                    val cacheCount = YouTubeVideoPrefs.count.toIntOrNull()
-                    updateVideoCount()
-                    updateCacheCountPreference(cacheCount)
-                    if (refreshInProgress && cacheCount != null && cacheCount >= 0) {
-                        markRefreshComplete(cacheCount)
+                    if (!refreshInProgress) {
+                        val cacheCount = YouTubeVideoPrefs.count.toIntOrNull()
+                        updateVideoCount()
+                        updateCacheCountPreference(cacheCount)
                     }
                     viewModel.refreshCacheSize()
                 }
                 YouTubeSourceRepository.KEY_ENABLED -> {
-                    updateVideoCount()
-                    updateCacheCountPreference(YouTubeVideoPrefs.count.toIntOrNull())
+                    if (!refreshInProgress) {
+                        updateVideoCount()
+                        updateCacheCountPreference(YouTubeVideoPrefs.count.toIntOrNull())
+                    }
                     if (!YouTubeVideoPrefs.enabled) {
                         refreshInProgress = false
                     }
@@ -270,16 +271,19 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         
         targetPreference.summary =
             if (liveCount != null) {
-                // We are actively loading: sync with the library row's "X of 200" style or simpler?
-                // The user said "above 131 videos are not live counting", implying they want to see it move.
                 getString(R.string.youtube_cache_loading_overlay, liveCount, YOUTUBE_LIBRARY_TARGET_COUNT)
             } else if (displayCount != null && displayCount >= 0) {
-                getString(R.string.videos_count, displayCount)
+                if (refreshInProgress) {
+                    // We are refreshing but no progress emmitted yet? Show a simpler "Refreshing..."
+                    getString(R.string.youtube_cache_count_pending)
+                } else {
+                    getString(R.string.videos_count, displayCount)
+                }
             } else {
                 null
             }
             
-        updateCacheCountPreference(displayCount)
+        updateCacheCountPreference(liveCount ?: displayCount)
     }
 
     private fun isCountPending(): Boolean =

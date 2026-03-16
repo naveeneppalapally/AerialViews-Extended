@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import timber.log.Timber
 
 class YouTubeSettingsViewModel(
@@ -22,6 +25,19 @@ class YouTubeSettingsViewModel(
 
     val refreshState: StateFlow<RefreshState> = _refreshState.asStateFlow()
     val cacheSize: StateFlow<Int> = _cacheSize.asStateFlow()
+
+    private val _events = kotlinx.coroutines.flow.MutableSharedFlow<YouTubeSettingsEvent>()
+    val events: kotlinx.coroutines.flow.SharedFlow<YouTubeSettingsEvent> = _events.asSharedFlow()
+
+    sealed interface YouTubeSettingsEvent {
+        data class CategoryRemoved(
+            val removedCount: Int,
+            val remainingCount: Int,
+        ) : YouTubeSettingsEvent
+
+        data object AllCategoriesDisabled : YouTubeSettingsEvent
+        data object LibraryFullOnCategory : YouTubeSettingsEvent
+    }
 
     init {
         YouTubeFeature.preWarmIfNeeded(viewModelScope)
@@ -74,7 +90,20 @@ class YouTubeSettingsViewModel(
         backgroundRefreshJob =
             viewModelScope.launch {
                 runCatching {
-                    repository.applyCategoryDeltaRefresh()
+                    val result = repository.applyCategoryDeltaRefresh()
+                    if (result.allCategoriesDisabled) {
+                        _events.emit(YouTubeSettingsEvent.AllCategoriesDisabled)
+                    } else if (result.removedCount > 0) {
+                        _events.emit(
+                            YouTubeSettingsEvent.CategoryRemoved(
+                                removedCount = result.removedCount,
+                                remainingCount = result.finalCount,
+                            ),
+                        )
+                    } else if (result.insertedCount == 0 && result.libraryFull) {
+                        // User tried to turn on a category but we didn't insert anything because cache is full
+                        _events.emit(YouTubeSettingsEvent.LibraryFullOnCategory)
+                    }
                 }.onFailure { exception ->
                     Timber.e(exception, "Failed to apply YouTube category delta refresh")
                 }

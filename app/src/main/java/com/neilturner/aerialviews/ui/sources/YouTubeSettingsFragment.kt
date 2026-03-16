@@ -25,7 +25,6 @@ import kotlinx.coroutines.launch
 
 class YouTubeSettingsFragment : MenuStateFragment() {
     private val viewModel by viewModels<YouTubeSettingsViewModel>()
-    private var progressDialog: AlertDialog? = null
     private var refreshInProgress = false
     private val sharedPreferenceListener =
         android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -112,6 +111,34 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                 }
             }
         }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.events.collect { event ->
+                when (event) {
+                    is YouTubeSettingsViewModel.YouTubeSettingsEvent.CategoryRemoved -> {
+                        ToastHelper.show(
+                            requireContext(),
+                            getString(R.string.youtube_videos_removed_toast, event.removedCount, event.remainingCount),
+                            Toast.LENGTH_LONG,
+                        )
+                    }
+                    YouTubeSettingsViewModel.YouTubeSettingsEvent.AllCategoriesDisabled -> {
+                        ToastHelper.show(
+                            requireContext(),
+                            R.string.youtube_no_categories_selected_toast,
+                            Toast.LENGTH_LONG,
+                        )
+                    }
+                    YouTubeSettingsViewModel.YouTubeSettingsEvent.LibraryFullOnCategory -> {
+                        ToastHelper.show(
+                            requireContext(),
+                            R.string.youtube_cache_full_on_category_toast,
+                            Toast.LENGTH_LONG,
+                        )
+                    }
+                }
+            }
+        }
     }
 
     override fun onResume() {
@@ -140,8 +167,6 @@ class YouTubeSettingsFragment : MenuStateFragment() {
     }
 
     override fun onDestroyView() {
-        progressDialog?.dismiss()
-        progressDialog = null
         super.onDestroyView()
     }
 
@@ -150,10 +175,8 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
         findPreference<SwitchPreference>("yt_enabled")?.setOnPreferenceChangeListener { _, newValue ->
             if (newValue == true) {
-                queueBackgroundRefresh(R.string.youtube_refresh_started, immediate = true)
+                queueBackgroundRefresh(R.string.youtube_rebuilding_library, immediate = true)
             } else {
-                progressDialog?.dismiss()
-                progressDialog = null
                 refreshInProgress = false
                 updateVideoCount()
                 updateCacheCountPreference(YouTubeVideoPrefs.count.toIntOrNull())
@@ -163,7 +186,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         }
 
         findPreference<Preference>("yt_refresh_now")?.setOnPreferenceClickListener {
-            queueBackgroundRefresh(R.string.youtube_refresh_started, immediate = true)
+            queueBackgroundRefresh(R.string.youtube_rebuilding_library, immediate = true)
             true
         }
 
@@ -211,34 +234,36 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
         qualityPreference.setOnPreferenceChangeListener { _, _ ->
             YouTubeFeature.markQualitySelectionExplicit(requireContext())
-            queueBackgroundRefresh(R.string.youtube_refresh_started, immediate = true)
+            queueBackgroundRefresh(R.string.youtube_rebuilding_library, immediate = true)
             true
         }
         qualityPreference.summaryProvider = ListPreference.SimpleSummaryProvider.getInstance()
+
+        findPreference<ListPreference>("yt_min_duration")?.let { durationPref ->
+            durationPref.setOnPreferenceChangeListener { _, newValue ->
+                val minutes = (newValue as? String)?.toIntOrNull() ?: 0
+                if (minutes >= 60) {
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        ToastHelper.show(requireContext(), R.string.youtube_min_duration_warning_toast, Toast.LENGTH_LONG)
+                    }
+                }
+                view?.post { queueCategoryRefresh() } ?: queueCategoryRefresh()
+                true
+            }
+            durationPref.summaryProvider = ListPreference.SimpleSummaryProvider.getInstance()
+        }
     }
 
     private fun renderRefreshState(state: RefreshState) {
         when (state) {
             RefreshState.Idle -> {
-                progressDialog?.dismiss()
-                progressDialog = null
             }
 
             RefreshState.Loading -> {
                 markRefreshInProgress()
-                if (progressDialog == null) {
-                    progressDialog =
-                        DialogHelper.progressDialog(
-                            requireContext(),
-                            getString(R.string.youtube_refresh_dialog_message),
-                        )
-                    progressDialog?.show()
-                }
             }
 
             is RefreshState.Success -> {
-                progressDialog?.dismiss()
-                progressDialog = null
                 YouTubeVideoPrefs.count = state.count.toString()
                 updateVideoCount()
                 updateCacheCountPreference(state.count)
@@ -255,8 +280,6 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             }
 
             RefreshState.Error -> {
-                progressDialog?.dismiss()
-                progressDialog = null
                 markRefreshFailed()
                 viewLifecycleOwner.lifecycleScope.launch {
                     ToastHelper.show(

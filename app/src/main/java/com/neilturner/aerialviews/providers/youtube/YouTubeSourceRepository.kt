@@ -197,7 +197,15 @@ class YouTubeSourceRepository(
             dbCount
         }
 
-    suspend fun applyCategoryDeltaRefresh(): Int =
+    data class DeltaRefreshResult(
+        val removedCount: Int,
+        val insertedCount: Int,
+        val finalCount: Int,
+        val allCategoriesDisabled: Boolean,
+        val libraryFull: Boolean,
+    )
+
+    suspend fun applyCategoryDeltaRefresh(): DeltaRefreshResult =
         withContext(Dispatchers.IO) {
             val currentEnabled = enabledCategoryKeys().toSet()
             val previousEnabled = readCategorySnapshot().ifEmpty { currentEnabled }
@@ -206,6 +214,7 @@ class YouTubeSourceRepository(
 
             var removedCount = 0
             var insertedCount = 0
+            val initialExistingEntries = cacheDao.getAllGood()
 
             try {
                 removedCount =
@@ -215,9 +224,7 @@ class YouTubeSourceRepository(
                         0
                     }
 
-                val existingEntries = cacheDao.getAllGood()
-
-                if (addedCategories.isNotEmpty() && existingEntries.size >= TARGET_CACHE_SIZE) {
+                if (addedCategories.isNotEmpty() && initialExistingEntries.size >= TARGET_CACHE_SIZE) {
                     _cacheFullEvent.value = true
                 }
 
@@ -225,8 +232,8 @@ class YouTubeSourceRepository(
                     if (addedCategories.isNotEmpty()) {
                         addEntriesForCategories(
                             categoryKeys = addedCategories,
-                            existingEntries = existingEntries,
-                            initialCount = existingEntries.size,
+                            existingEntries = initialExistingEntries,
+                            initialCount = initialExistingEntries.size,
                         )
                     } else {
                         0
@@ -248,7 +255,13 @@ class YouTubeSourceRepository(
                 "Applied category delta refresh (added=${addedCategories.size}, removed=${removedCategories.size}, " +
                     "inserted=$insertedCount, removedRows=$removedCount, remaining=$dbCount)",
             )
-            dbCount
+            DeltaRefreshResult(
+                removedCount = removedCount,
+                insertedCount = insertedCount,
+                finalCount = dbCount,
+                allCategoriesDisabled = currentEnabled.isEmpty(),
+                libraryFull = initialExistingEntries.size >= TARGET_CACHE_SIZE,
+            )
         }
 
     suspend fun applyDurationFilter(minSeconds: Int): Int =
@@ -1818,7 +1831,7 @@ class YouTubeSourceRepository(
             ?: DEFAULT_QUALITY
 
     private fun minimumDurationSeconds(): Int =
-        0
+        sharedPreferences.getString(KEY_MIN_DURATION, "0")?.toIntOrNull()?.let { it * 60 } ?: 0
 
     private fun shouldShuffle(): Boolean =
         sharedPreferences.getBoolean(KEY_SHUFFLE, DEFAULT_SHUFFLE)

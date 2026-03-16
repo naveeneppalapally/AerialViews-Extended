@@ -110,5 +110,16 @@
                     app:key="yt_shuffle"
                     app:title="@string/youtube_shuffle_title"
                     app:defaultValue="true" />
+
+                <ListPreference
+                    app:dependency="yt_enabled"
+                    app:disableDependentsState="false"
+                    app:key="yt_min_duration"
+                    app:title="@string/youtube_min_duration_title"
+                    app:summary="@string/youtube_min_duration_summary"
+                    app:entries="@array/youtube_min_duration_entries"
+                    app:entryValues="@array/youtube_min_duration_values"
+                    app:defaultValue="0"
+                    app:useSimpleSummaryProvider="true" />
         </PreferenceCategory>
 </PreferenceScreen>

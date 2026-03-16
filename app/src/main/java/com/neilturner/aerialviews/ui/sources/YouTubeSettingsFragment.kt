@@ -93,6 +93,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             YouTubeFeature.repository(requireContext()).cacheLoadingProgress.collect { progress ->
+                Log.d(TAG, "YouTube progress observer: $progress")
                 if (progress != null) {
                     val (current, _) = progress
                     updateVideoCount(liveCount = current)

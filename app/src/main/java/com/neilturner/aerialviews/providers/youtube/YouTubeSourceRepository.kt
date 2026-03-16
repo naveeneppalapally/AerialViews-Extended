@@ -23,6 +23,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import org.schabi.newpipe.extractor.exceptions.AgeRestrictedContentException
 import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException
 import org.schabi.newpipe.extractor.exceptions.ExtractionException
@@ -44,8 +47,16 @@ class YouTubeSourceRepository(
     val cacheCount: StateFlow<Int> = _cacheCount.asStateFlow()
     private val _cacheFullEvent = MutableStateFlow(false)
     val cacheFullEvent: StateFlow<Boolean> = _cacheFullEvent.asStateFlow()
-    private val _cacheLoadingProgress = MutableStateFlow<Pair<Int, Int>?>(null)
-    val cacheLoadingProgress: StateFlow<Pair<Int, Int>?> = _cacheLoadingProgress.asStateFlow()
+    private val _cacheLoadingProgress = MutableSharedFlow<Pair<Int, Int>?>(replay = 1, extraBufferCapacity = 64)
+    val cacheLoadingProgress: SharedFlow<Pair<Int, Int>?> = _cacheLoadingProgress.asSharedFlow()
+
+    fun publishProgress(current: Int, total: Int) {
+        _cacheLoadingProgress.tryEmit(Pair(current, total))
+    }
+
+    suspend fun clearProgress() {
+        _cacheLoadingProgress.emit(null)
+    }
     private var badCountThisSession = 0
 
     @Volatile
@@ -222,7 +233,7 @@ class YouTubeSourceRepository(
                     }
             } finally {
                 // Clear any loading progress emitted during addEntriesForCategories extraction
-                _cacheLoadingProgress.value = null
+                _cacheLoadingProgress.emit(null)
             }
 
             val filteredCount = currentFilteredCount()
@@ -508,7 +519,7 @@ class YouTubeSourceRepository(
                 }
             }
         } finally {
-            _cacheLoadingProgress.value = null
+            _cacheLoadingProgress.emit(null)
         }
     }
 
@@ -989,7 +1000,7 @@ class YouTubeSourceRepository(
                     
                     if (publishProgress) {
                         val currentTotal = initialCount + entries.size
-                        _cacheLoadingProgress.value = Pair(currentTotal.coerceAtMost(TARGET_CACHE_SIZE), TARGET_CACHE_SIZE)
+                        _cacheLoadingProgress.emit(Pair(currentTotal.coerceAtMost(TARGET_CACHE_SIZE), TARGET_CACHE_SIZE))
                         Log.v(TAG, "YouTube live progress: $currentTotal of $TARGET_CACHE_SIZE")
                     }
                 }
@@ -1711,7 +1722,7 @@ class YouTubeSourceRepository(
                 initialCount = initialCount,
             )
         if (extractedEntries.isEmpty()) {
-            _cacheLoadingProgress.value = null
+            _cacheLoadingProgress.emit(null)
             return 0
         }
 

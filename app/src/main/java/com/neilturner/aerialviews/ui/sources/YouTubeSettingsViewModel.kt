@@ -52,6 +52,9 @@ class YouTubeSettingsViewModel(
 
         viewModelScope.launch {
             _refreshState.value = RefreshState.Loading
+            // Diagnostic: immediately emit 0% progress to confirm the flow and observer are working
+            repository.publishProgress(0, 200)
+            
             _refreshState.value =
                 try {
                     repository.forceRefresh().let(RefreshState::Success)

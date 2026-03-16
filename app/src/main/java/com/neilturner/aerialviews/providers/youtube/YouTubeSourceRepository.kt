@@ -42,6 +42,10 @@ class YouTubeSourceRepository(
     private val preResolvedLock = Any()
     private val _cacheCount = MutableStateFlow(sharedPreferences.getString(KEY_COUNT, "0")?.toIntOrNull() ?: 0)
     val cacheCount: StateFlow<Int> = _cacheCount.asStateFlow()
+    private val _cacheFullEvent = MutableStateFlow(false)
+    val cacheFullEvent: StateFlow<Boolean> = _cacheFullEvent.asStateFlow()
+    private val _cacheLoadingProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val cacheLoadingProgress: StateFlow<Pair<Int, Int>?> = _cacheLoadingProgress.asStateFlow()
     private var badCountThisSession = 0
 
     @Volatile
@@ -52,6 +56,10 @@ class YouTubeSourceRepository(
 
     init {
         initializeCategorySnapshotIfNeeded()
+    }
+
+    fun consumeCacheFullEvent() {
+        _cacheFullEvent.value = false
     }
 
     suspend fun getNextVideoUrl(): String =
@@ -191,6 +199,11 @@ class YouTubeSourceRepository(
                 }
 
             val existingEntries = cacheDao.getAllGood()
+
+            if (addedCategories.isNotEmpty() && existingEntries.size >= TARGET_CACHE_SIZE) {
+                _cacheFullEvent.value = true
+            }
+
             val insertedCount =
                 if (addedCategories.isNotEmpty()) {
                     addEntriesForCategories(
@@ -464,6 +477,7 @@ class YouTubeSourceRepository(
             persistFreshEntries(refreshPlan, entries)
             entries
         }.getOrElse { exception ->
+            _cacheLoadingProgress.value = null
             val fallbackEntries = filteredExistingEntries(cacheDao.getAllGood())
             if (fallbackEntries.isNotEmpty()) {
                 Timber.tag(TAG).w(exception, "Using filtered cached YouTube entries after refresh failure")
@@ -630,6 +644,7 @@ class YouTubeSourceRepository(
         badCountThisSession = 0
         recordRefreshHistory(entries)
         markSearchCacheFresh(entries.size)
+        _cacheLoadingProgress.value = null
         Log.i(
             TAG,
             "Cached ${entries.size} YouTube videos for query \"${refreshPlan.query}\" across ${refreshPlan.queryPool.size} searches " +
@@ -943,6 +958,7 @@ class YouTubeSourceRepository(
                         .filterNotNull()
 
                 entries += extractedChunk
+                _cacheLoadingProgress.value = Pair(entries.size, TARGET_CACHE_SIZE)
                 if (publishMinimumCache && !minimumCachePublished && entries.isNotEmpty()) {
                     cacheDao.clearAndInsert(entries.toList())
                     updateCachedCount(entries.size)

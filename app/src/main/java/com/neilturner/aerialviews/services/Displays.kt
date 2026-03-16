@@ -196,3 +196,9 @@ fun Display.supportsUltraHdOutput(): Boolean =
         .filterNotNull()
         .any { it.width >= 3840 || it.height >= 2160 } ||
         supportedModes.any { it.width >= 3840 || it.height >= 2160 }
+
+fun Display.supports1440pOutput(): Boolean =
+    sequenceOf(renderOutput, physicalOutput)
+        .filterNotNull()
+        .any { it.width >= 2560 || it.height >= 1440 } ||
+        supportedModes.any { it.width >= 2560 || it.height >= 1440 }

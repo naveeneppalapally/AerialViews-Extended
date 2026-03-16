@@ -44,6 +44,16 @@
         <item>1080p</item>
         <item>720p</item>
     </string-array>
+    <string-array name="youtube_quality_entries_1080p" translatable="false">
+        <item>Highest Available</item>
+        <item>1080p</item>
+        <item>720p</item>
+    </string-array>
+    <string-array name="youtube_quality_values_1080p" translatable="false">
+        <item>best</item>
+        <item>1080p</item>
+        <item>720p</item>
+    </string-array>
     <string name="youtube_quality_default" translatable="false">best</string>
     <string-array name="youtube_mix_weight_entries" translatable="false">
         <item>Balanced mix</item>

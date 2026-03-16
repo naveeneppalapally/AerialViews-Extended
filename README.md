@@ -117,19 +117,19 @@ Not all TCL TVs have the same software and features. If the above __Safety Guard
 Android <v14:
 
 ```sh
-appops set com.naveeneppalapally.aerialviewsplus APP_AUTO_START allow
+appops set com.naveen.aerialviewsplus APP_AUTO_START allow
 ```
 
 Androind >=v14
 
 ```sh
-appops set com.naveeneppalapally.aerialviewsplus AUTO_START allow
+appops set com.naveen.aerialviewsplus AUTO_START allow
 ```
 
 You can confirm the available options:
 
 ```sh
-appops get com.naveeneppalapally.aerialviewsplus
+appops get com.naveen.aerialviewsplus
 
 # Returns
 WAKE_LOCK: allow; time=+5m55s466ms ago; duration=+2s889ms
@@ -294,7 +294,7 @@ adb shell
 Next, set AerialViews+ as the default screensaver with this command…
 
 ```sh
-settings put secure screensaver_components com.naveeneppalapally.aerialviewsplus/.ui.screensaver.DreamActivity
+settings put secure screensaver_components com.naveen.aerialviewsplus/.ui.screensaver.DreamActivity
 ```
 
 Optional: Confirm that the command was run successfully, as there is no confirmation when the command above is run.
@@ -306,7 +306,7 @@ settings get secure screensaver_components
 If set correctly, you should see... 
 
 ```sh
-com.naveeneppalapally.aerialviewsplus/.ui.screensaver.DreamActivity
+com.naveen.aerialviewsplus/.ui.screensaver.DreamActivity
 ```
 
 </details>
@@ -320,7 +320,7 @@ Recent updates to Fire OS mean extra commands are required for AerialViews+ to f
 Like with previous ADB commands, connect to your Android TV device and start a command shell. Then run the following commands...
 
 ```sh
-settings put secure screensaver_default_component com.naveeneppalapally.aerialviewsplus/.ui.screensaver.DreamActivity
+settings put secure screensaver_default_component com.naveen.aerialviewsplus/.ui.screensaver.DreamActivity
 settings put secure contextual_screen_off_timeout 300000 
 settings put secure screensaver_enabled 1
 ```

@@ -1,5 +1,6 @@
 package com.neilturner.aerialviews.providers.youtube
 
+import android.content.Context
 import android.content.SharedPreferences
 import io.mockk.Runs
 import io.mockk.coEvery
@@ -28,12 +29,12 @@ internal class YouTubeSourceRepositoryTest {
         mockkObject(NewPipeHelper)
         val dao = FakeYouTubeCacheDao()
         val prefs = createPreferences()
-        val repository = YouTubeSourceRepository(dao, prefs)
+        val repository = YouTubeSourceRepository(mockk<Context>(relaxed = true), dao, prefs)
 
         coEvery { NewPipeHelper.searchVideos(any(), any(), any()) } answers {
             listOf(searchItem("abc123", titledForCategory(firstArg(), thirdArg())))
         }
-        coEvery { NewPipeHelper.extractStreamUrl("https://www.youtube.com/watch?v=abc123", "best", false) } returns
+        coEvery { NewPipeHelper.extractStreamUrl("https://www.youtube.com/watch?v=abc123", any(), "best", false) } returns
             "https://cdn.example.com/stream1.mpd"
 
         val result = repository.getNextVideoUrl()
@@ -63,9 +64,9 @@ internal class YouTubeSourceRepositoryTest {
                 )
             }
         val prefs = createPreferences()
-        val repository = YouTubeSourceRepository(dao, prefs)
+        val repository = YouTubeSourceRepository(mockk<Context>(relaxed = true), dao, prefs)
 
-        coEvery { NewPipeHelper.extractStreamUrl("https://www.youtube.com/watch?v=abc123", "best", false) } returns
+        coEvery { NewPipeHelper.extractStreamUrl("https://www.youtube.com/watch?v=abc123", any(), "best", false) } returns
             "https://cdn.example.com/new.mpd"
 
         val result = repository.resolveVideoUrl("https://www.youtube.com/watch?v=abc123")
@@ -79,9 +80,9 @@ internal class YouTubeSourceRepositoryTest {
         mockkObject(NewPipeHelper)
         val dao = FakeYouTubeCacheDao()
         val prefs = createPreferences()
-        val repository = YouTubeSourceRepository(dao, prefs)
+        val repository = YouTubeSourceRepository(mockk<Context>(relaxed = true), dao, prefs)
 
-        coEvery { NewPipeHelper.extractStreamUrl("https://www.youtube.com/watch?v=missing1", "best", false) } returns
+        coEvery { NewPipeHelper.extractStreamUrl("https://www.youtube.com/watch?v=missing1", any(), "best", false) } returns
             "https://cdn.example.com/missing1.mpd"
 
         val result = repository.resolveVideoUrl("https://www.youtube.com/watch?v=missing1")
@@ -110,7 +111,7 @@ internal class YouTubeSourceRepositoryTest {
                     ),
                 )
             }
-        val repository = YouTubeSourceRepository(dao, prefs)
+        val repository = YouTubeSourceRepository(mockk<Context>(relaxed = true), dao, prefs)
 
         val result = repository.preloadVideoUrl("https://www.youtube.com/watch?v=preload1")
 
@@ -123,7 +124,7 @@ internal class YouTubeSourceRepositoryTest {
         mockkObject(NewPipeHelper)
         val dao = FakeYouTubeCacheDao()
         val prefs = createPreferences()
-        val repository = YouTubeSourceRepository(dao, prefs)
+        val repository = YouTubeSourceRepository(mockk<Context>(relaxed = true), dao, prefs)
 
         coEvery { NewPipeHelper.searchVideos(any(), any(), any()) } answers {
             val query = firstArg<String>().replace("\\s+".toRegex(), "_")
@@ -132,7 +133,7 @@ internal class YouTubeSourceRepositoryTest {
                 searchItem("${query}_$index", titledForCategory(query, category, index))
             }
         }
-        coEvery { NewPipeHelper.extractStreamUrl(any(), "best", false) } answers {
+        coEvery { NewPipeHelper.extractStreamUrl(any(), any(), "best", false) } answers {
             val url = firstArg<String>()
             "https://cdn.example.com/${url.substringAfter("v=")}.mpd"
         }
@@ -148,7 +149,7 @@ internal class YouTubeSourceRepositoryTest {
         mockkObject(NewPipeHelper)
         val dao = FakeYouTubeCacheDao()
         val prefs = createPreferences(query = "ambient aerial")
-        val repository = YouTubeSourceRepository(dao, prefs)
+        val repository = YouTubeSourceRepository(mockk<Context>(relaxed = true), dao, prefs)
 
         coEvery { NewPipeHelper.searchVideos(any(), any(), any()) } answers {
             val queryKey = firstArg<String>().replace("\\s+".toRegex(), "_")
@@ -158,7 +159,7 @@ internal class YouTubeSourceRepositoryTest {
                 searchItem("${queryKey}_2", titledForCategory(queryKey, category, 2)),
             )
         }
-        coEvery { NewPipeHelper.extractStreamUrl(any(), "best", false) } answers {
+        coEvery { NewPipeHelper.extractStreamUrl(any(), any(), "best", false) } answers {
             val url = firstArg<String>()
             "https://cdn.example.com/${url.substringAfter("v=")}.mpd"
         }
@@ -191,7 +192,7 @@ internal class YouTubeSourceRepositoryTest {
                 insertAll(listOf(cachedEntry))
             }
         val prefs = createPreferences(cacheVersion = 0)
-        val repository = YouTubeSourceRepository(dao, prefs)
+        val repository = YouTubeSourceRepository(mockk<Context>(relaxed = true), dao, prefs)
 
         coEvery { NewPipeHelper.searchVideos(any(), any(), any()) } throws YouTubeSourceException("offline")
 
@@ -240,9 +241,12 @@ internal class YouTubeSourceRepositoryTest {
         every { prefs.getBoolean(YouTubeSourceRepository.KEY_CATEGORY_WEATHER, any()) } returns false
         every { prefs.getBoolean(YouTubeSourceRepository.KEY_CATEGORY_WINTER, any()) } returns true
         every { prefs.edit() } returns editor
+        every { prefs.contains(any()) } returns false
+        every { prefs.getStringSet(any(), any()) } returns emptySet()
         every { editor.putString(any(), any()) } returns editor
         every { editor.putInt(any(), any()) } returns editor
         every { editor.putBoolean(any(), any()) } returns editor
+        every { editor.putStringSet(any(), any()) } returns editor
         every { editor.apply() } just Runs
 
         return prefs

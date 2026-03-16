@@ -16,6 +16,7 @@ import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.providers.youtube.YouTubeSourceRepository
 import com.neilturner.aerialviews.services.getDisplay
 import com.neilturner.aerialviews.services.supportsUltraHdOutput
+import com.neilturner.aerialviews.services.supports1440pOutput
 import com.neilturner.aerialviews.utils.DialogHelper
 import com.neilturner.aerialviews.utils.MenuStateFragment
 import com.neilturner.aerialviews.utils.ToastHelper
@@ -72,6 +73,28 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.refreshState.collect { state ->
                 renderRefreshState(state)
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            YouTubeFeature.repository(requireContext()).cacheFullEvent.collect { isFull ->
+                if (isFull) {
+                    ToastHelper.show(
+                        requireContext(),
+                        R.string.youtube_cache_full_toast,
+                        Toast.LENGTH_LONG,
+                    )
+                    YouTubeFeature.repository(requireContext()).consumeCacheFullEvent()
+                }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            YouTubeFeature.repository(requireContext()).cacheLoadingProgress.collect { progress ->
+                if (progress != null) {
+                    val (current, target) = progress
+                    updateCacheCountPreference(current)
+                }
             }
         }
     }
@@ -139,20 +162,32 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
     private fun configureQualityPreference() {
         val qualityPreference = findPreference<ListPreference>("yt_quality") ?: return
+        val display =
+            runCatching { getDisplay(requireActivity()) }.getOrNull()
         val supportsUltraHd =
-            runCatching {
-                getDisplay(requireActivity()).supportsUltraHdOutput()
-            }.getOrDefault(false)
+            display?.let { runCatching { it.supportsUltraHdOutput() }.getOrDefault(false) } ?: false
+        val supports1440p =
+            display?.let { runCatching { it.supports1440pOutput() }.getOrDefault(false) } ?: false
 
-        if (supportsUltraHd) {
-            qualityPreference.setEntries(R.array.youtube_quality_entries_uhd)
-            qualityPreference.setEntryValues(R.array.youtube_quality_values_uhd)
-        } else {
-            qualityPreference.setEntries(R.array.youtube_quality_entries)
-            qualityPreference.setEntryValues(R.array.youtube_quality_values)
-            if (qualityPreference.value.equals("2160p", ignoreCase = true)) {
-                qualityPreference.value = YouTubeSourceRepository.DEFAULT_QUALITY
+        when {
+            supportsUltraHd -> {
+                qualityPreference.setEntries(R.array.youtube_quality_entries_uhd)
+                qualityPreference.setEntryValues(R.array.youtube_quality_values_uhd)
             }
+            supports1440p -> {
+                qualityPreference.setEntries(R.array.youtube_quality_entries)
+                qualityPreference.setEntryValues(R.array.youtube_quality_values)
+            }
+            else -> {
+                qualityPreference.setEntries(R.array.youtube_quality_entries_1080p)
+                qualityPreference.setEntryValues(R.array.youtube_quality_values_1080p)
+            }
+        }
+
+        // Reset to default if current value is not supported by this display
+        val supportedValues = qualityPreference.entryValues?.map { it.toString() }.orEmpty()
+        if (qualityPreference.value !in supportedValues) {
+            qualityPreference.value = YouTubeSourceRepository.DEFAULT_QUALITY
         }
 
         qualityPreference.setOnPreferenceChangeListener { _, _ ->

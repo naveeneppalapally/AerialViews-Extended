@@ -21,7 +21,7 @@ android {
     var betaVersion = ""
     val keyProps = loadProperties("secrets.properties")
     defaultConfig {
-        applicationId = "com.naveeneppalapally.aerialviewsplus"
+        applicationId = "com.naveen.aerialviewsplus"
         minSdk = 23 // Android v6
         targetSdk = 36
         versionCode = 102

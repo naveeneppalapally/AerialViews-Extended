@@ -57,6 +57,10 @@ class YouTubeSourceRepository(
     suspend fun clearProgress() {
         _cacheLoadingProgress.emit(null)
     }
+
+    @Volatile
+    private var isRefreshing = false
+
     private var badCountThisSession = 0
 
     @Volatile
@@ -158,7 +162,11 @@ class YouTubeSourceRepository(
 
     suspend fun getCacheSize(): Int =
         withContext(Dispatchers.IO) {
-            cacheDao.countGoodEntries()
+            if (isRefreshing) {
+                cacheDao.countGoodEntries()
+            } else {
+                sharedPreferences.getString(KEY_COUNT, "0")?.toIntOrNull() ?: 0
+            }
         }
 
     suspend fun applyCurrentFilters(): Int =
@@ -217,6 +225,7 @@ class YouTubeSourceRepository(
             val initialExistingEntries = cacheDao.getAllGood()
 
             try {
+                isRefreshing = true
                 removedCount =
                     if (removedCategories.isNotEmpty()) {
                         applyCurrentCategoryFilterInternal()
@@ -241,8 +250,11 @@ class YouTubeSourceRepository(
                         0
                     }
             } finally {
-                // Clear any loading progress emitted during addEntriesForCategories extraction
+                val finalCount = cacheDao.countGoodEntries()
+                _cacheCount.value = finalCount
+                sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
                 _cacheLoadingProgress.emit(null)
+                isRefreshing = false
             }
 
             val filteredCount = currentFilteredCount()
@@ -509,6 +521,7 @@ class YouTubeSourceRepository(
         }
 
         return try {
+            isRefreshing = true
             val refreshPlan = buildRefreshPlan()
             val searchResults = searchRefreshCandidates(refreshPlan)
             val extractedEntries =
@@ -534,7 +547,11 @@ class YouTubeSourceRepository(
                 }
             }
         } finally {
+            val finalCount = cacheDao.countGoodEntries()
+            _cacheCount.value = finalCount
+            sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
             _cacheLoadingProgress.emit(null)
+            isRefreshing = false
         }
     }
 
@@ -1015,14 +1032,15 @@ class YouTubeSourceRepository(
                         extractedChunk
                     }
                     if (toInsert.isNotEmpty()) {
-                        // Insert into DB immediately for live counter effect
-                        cacheDao.insertAll(toInsert)
                         entries += toInsert
-                        
-                        if (publishProgress) {
-                            val currentTotal = initialCount + entries.size
-                            _cacheLoadingProgress.emit(Pair(currentTotal.coerceAtMost(TARGET_CACHE_SIZE), TARGET_CACHE_SIZE))
-                            Log.v(TAG, "YouTube live progress: $currentTotal of $TARGET_CACHE_SIZE")
+                        var insertedCount = cacheDao.countGoodEntries()
+                        for (video in toInsert) {
+                            if (insertedCount >= TARGET_CACHE_SIZE) break
+                            cacheDao.insertAll(listOf(video))
+                            insertedCount++
+                            if (publishProgress) {
+                                _cacheLoadingProgress.emit(Pair(insertedCount, TARGET_CACHE_SIZE))
+                            }
                         }
                     }
                 }
@@ -1858,6 +1876,7 @@ class YouTubeSourceRepository(
         "video_only_preferred"
 
     private fun updateCachedCount(count: Int) {
+        if (isRefreshing) return
         _cacheCount.value = count
         sharedPreferences.edit {
             putString(KEY_COUNT, count.toString())

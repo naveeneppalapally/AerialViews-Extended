@@ -224,7 +224,9 @@ class YouTubeSourceRepository(
                         0
                     }
 
-                if (addedCategories.isNotEmpty() && initialExistingEntries.size >= TARGET_CACHE_SIZE) {
+                val currentCount = cacheDao.countGoodEntries()
+
+                if (addedCategories.isNotEmpty() && currentCount >= TARGET_CACHE_SIZE) {
                     _cacheFullEvent.value = true
                 }
 
@@ -260,7 +262,7 @@ class YouTubeSourceRepository(
                 insertedCount = insertedCount,
                 finalCount = dbCount,
                 allCategoriesDisabled = currentEnabled.isEmpty(),
-                libraryFull = initialExistingEntries.size >= TARGET_CACHE_SIZE,
+                libraryFull = cacheDao.countGoodEntries() >= TARGET_CACHE_SIZE,
             )
         }
 
@@ -1007,14 +1009,21 @@ class YouTubeSourceRepository(
                         .filterNotNull()
 
                 if (extractedChunk.isNotEmpty()) {
-                    // Insert into DB immediately for live counter effect
-                    cacheDao.insertAll(extractedChunk)
-                    entries += extractedChunk
-                    
-                    if (publishProgress) {
-                        val currentTotal = initialCount + entries.size
-                        _cacheLoadingProgress.emit(Pair(currentTotal.coerceAtMost(TARGET_CACHE_SIZE), TARGET_CACHE_SIZE))
-                        Log.v(TAG, "YouTube live progress: $currentTotal of $TARGET_CACHE_SIZE")
+                    val toInsert = if (entries.size + extractedChunk.size > limit) {
+                        extractedChunk.take(limit - entries.size)
+                    } else {
+                        extractedChunk
+                    }
+                    if (toInsert.isNotEmpty()) {
+                        // Insert into DB immediately for live counter effect
+                        cacheDao.insertAll(toInsert)
+                        entries += toInsert
+                        
+                        if (publishProgress) {
+                            val currentTotal = initialCount + entries.size
+                            _cacheLoadingProgress.emit(Pair(currentTotal.coerceAtMost(TARGET_CACHE_SIZE), TARGET_CACHE_SIZE))
+                            Log.v(TAG, "YouTube live progress: $currentTotal of $TARGET_CACHE_SIZE")
+                        }
                     }
                 }
 

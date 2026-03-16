@@ -104,6 +104,21 @@ android {
                 excludes.add("META-INF/LICENSE")
                 excludes.add("META-INF/NOTICE")
                 excludes.add("META-INF/*.kotlin_module")
+                // JANSI: Windows/Mac/Linux native libs bundled by slf4j-simple — useless on Android
+                excludes.add("org/fusesource/jansi/internal/native/**")
+                // BouncyCastle PQC binary data — not used on Android
+                excludes.add("org/bouncycastle/pqc/crypto/picnic/**")
+                excludes.add("org/bouncycastle/pqc/crypto/lms/**")
+                // Redundant license/notice files from dependencies
+                excludes.add("META-INF/DEPENDENCIES")
+                excludes.add("META-INF/LICENSE.txt")
+                excludes.add("META-INF/NOTICE.txt")
+                excludes.add("META-INF/AL2.0")
+                excludes.add("META-INF/LGPL2.1")
+                excludes.add("META-INF/ASL2.0")
+                excludes.add("META-INF/*.SF")
+                excludes.add("META-INF/*.RSA")
+                excludes.add("META-INF/*.DSA")
             }
         }
     }

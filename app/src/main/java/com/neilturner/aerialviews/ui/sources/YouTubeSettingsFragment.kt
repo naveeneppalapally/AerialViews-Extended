@@ -1,6 +1,7 @@
 package com.neilturner.aerialviews.ui.sources
 
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -184,10 +185,12 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             }
         }
 
-        // Reset to default if current value is not supported by this display
+        // Reset to highest supported value if current value is not supported by this display
         val supportedValues = qualityPreference.entryValues?.map { it.toString() }.orEmpty()
         if (qualityPreference.value !in supportedValues) {
-            qualityPreference.value = YouTubeSourceRepository.DEFAULT_QUALITY
+            val highestSupported = supportedValues.firstOrNull() ?: YouTubeSourceRepository.DEFAULT_QUALITY
+            qualityPreference.value = highestSupported
+            Log.d(TAG, "Reset quality to $highestSupported (previous value not supported on this display)")
         }
 
         qualityPreference.setOnPreferenceChangeListener { _, _ ->
@@ -255,10 +258,10 @@ class YouTubeSettingsFragment : MenuStateFragment() {
     private fun updateVideoCount() {
         val targetPreference = findPreference<Preference>("yt_enabled") ?: return
         val cachedCount = YouTubeVideoPrefs.count.toIntOrNull()
+        // Show only a static summary on the toggle row — never the loading counter.
+        // The live loading counter is shown exclusively on the yt_cache_count row.
         targetPreference.summary =
-            if (cachedCount != null && cachedCount >= 0 && cachedCount < YOUTUBE_LIBRARY_TARGET_COUNT) {
-                getString(R.string.youtube_cache_loading_overlay, cachedCount, YOUTUBE_LIBRARY_TARGET_COUNT)
-            } else if (cachedCount != null && cachedCount >= 0) {
+            if (cachedCount != null && cachedCount >= 0) {
                 getString(R.string.videos_count, cachedCount)
             } else {
                 getString(R.string.youtube_count_pending_summary)
@@ -329,6 +332,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
     }
 
     companion object {
+        private const val TAG = "YouTubeSettingsFragment"
         private const val PREFERENCE_CACHE_COUNT = "yt_cache_count"
         private const val YOUTUBE_LIBRARY_TARGET_COUNT = 200
         private val CATEGORY_PREFERENCE_KEYS =

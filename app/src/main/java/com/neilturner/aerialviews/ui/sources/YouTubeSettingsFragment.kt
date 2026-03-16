@@ -93,8 +93,13 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             YouTubeFeature.repository(requireContext()).cacheLoadingProgress.collect { progress ->
                 if (progress != null) {
-                    val (current, target) = progress
+                    val (current, _) = progress
                     updateCacheCountPreference(current)
+                    updateVideoCount(liveCount = current)
+                } else {
+                    // Progress is null -> refresh finished or cancelled.
+                    // Reset both rows to their static/final states.
+                    updateVideoCount()
                 }
             }
         }
@@ -257,21 +262,24 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         }
     }
 
-    private fun updateVideoCount() {
+    private fun updateVideoCount(liveCount: Int? = null) {
         val targetPreference = findPreference<Preference>("yt_enabled") ?: return
-        // Always show the last-known count on the toggle row.
-        // During refresh, count still holds the previous value — show it, not a transient status.
-        // Only fall back to pending summary on a truly fresh install (count was never set).
-        val rawCount = YouTubeVideoPrefs.count
-        val cachedCount = rawCount.toIntOrNull()
+        
+        // Use live progress if available, otherwise fall back to static saved count
+        val displayCount = liveCount ?: YouTubeVideoPrefs.count.toIntOrNull()
+        
         targetPreference.summary =
-            if (cachedCount != null && cachedCount >= 0) {
-                getString(R.string.videos_count, cachedCount)
+            if (liveCount != null) {
+                // We are actively loading: sync with the library row's "X of 200" style or simpler?
+                // The user said "above 131 videos are not live counting", implying they want to see it move.
+                getString(R.string.youtube_cache_loading_overlay, liveCount, YOUTUBE_LIBRARY_TARGET_COUNT)
+            } else if (displayCount != null && displayCount >= 0) {
+                getString(R.string.videos_count, displayCount)
             } else {
-                // Fresh install: count is "-1", never been loaded yet
                 null
             }
-        updateCacheCountPreference(cachedCount)
+            
+        updateCacheCountPreference(displayCount)
     }
 
     private fun isCountPending(): Boolean =

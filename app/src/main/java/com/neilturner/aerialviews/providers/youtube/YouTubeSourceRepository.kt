@@ -657,7 +657,6 @@ class YouTubeSourceRepository(
         badCountThisSession = 0
         recordRefreshHistory(entries)
         markSearchCacheFresh(entries.size)
-        _cacheLoadingProgress.value = null
         Log.i(
             TAG,
             "Cached ${entries.size} YouTube videos for query \"${refreshPlan.query}\" across ${refreshPlan.queryPool.size} searches " +
@@ -1645,7 +1644,6 @@ class YouTubeSourceRepository(
         initialCount: Int,
     ): Int {
         if (categoryKeys.isEmpty()) {
-            _cacheLoadingProgress.value = null
             return 0
         }
 
@@ -1662,13 +1660,11 @@ class YouTubeSourceRepository(
                 entropySeed = entropySeed,
             )
         if (queryPool.isEmpty()) {
-            _cacheLoadingProgress.value = null
             return 0
         }
 
         val searchResults = searchCandidateVideos(queryPool, minimumDurationSeconds())
         if (searchResults.isEmpty()) {
-            _cacheLoadingProgress.value = null
             return 0
         }
 
@@ -1681,7 +1677,6 @@ class YouTubeSourceRepository(
                 .let(::deduplicateCandidatesByTitle)
                 .let { applyCandidateDiversityCaps(it, CATEGORY_DELTA_EXTRACTION_LIMIT) }
         if (rankedCandidates.isEmpty()) {
-            _cacheLoadingProgress.value = null
             return 0
         }
 
@@ -1696,7 +1691,6 @@ class YouTubeSourceRepository(
                 initialCount = initialCount,
             )
         if (extractedEntries.isEmpty()) {
-            _cacheLoadingProgress.value = null
             return 0
         }
 
@@ -1710,7 +1704,6 @@ class YouTubeSourceRepository(
             }
 
         cacheDao.insertAll(entriesToInsert)
-        _cacheLoadingProgress.value = null
         return entriesToInsert.count { entry -> entry.videoId !in existingById }
     }
 

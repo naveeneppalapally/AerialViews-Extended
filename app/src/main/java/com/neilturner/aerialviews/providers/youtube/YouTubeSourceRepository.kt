@@ -2323,7 +2323,7 @@ class YouTubeSourceRepository(
         private const val TAG = "YouTubeSource"
         const val KEY_QUERY = "yt_query"
         const val KEY_QUALITY = "yt_quality"
-        const val KEY_MIN_DURATION = "yt_min_duration"
+        const val KEY_MIN_DURATION = "yt_min_duration_str"
         const val KEY_MIX_WEIGHT = "yt_mix_weight"
         const val KEY_SHUFFLE = "yt_shuffle"
         const val KEY_ENABLED = "yt_enabled"

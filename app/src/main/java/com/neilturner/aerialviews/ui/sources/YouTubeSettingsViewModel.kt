@@ -81,6 +81,12 @@ class YouTubeSettingsViewModel(
         }
     }
 
+    fun triggerInitialProgress() {
+        viewModelScope.launch {
+            repository.publishProgress(0, 200)
+        }
+    }
+
     fun refreshInBackground() {
         YouTubeFeature.requestImmediateRefresh(getApplication(), forceSearchRefresh = true)
     }

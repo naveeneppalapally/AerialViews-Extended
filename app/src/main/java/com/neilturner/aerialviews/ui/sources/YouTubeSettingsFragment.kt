@@ -98,6 +98,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                     updateVideoCount(liveCount = current)
                 } else {
                     // Progress is null -> refresh finished or cancelled.
+                    refreshInProgress = false
                     // Reset both rows to their static/final states.
                     updateVideoCount()
                 }
@@ -187,6 +188,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
         findPreference<Preference>("yt_refresh_now")?.setOnPreferenceClickListener {
             queueBackgroundRefresh(R.string.youtube_rebuilding_library, immediate = true)
+            viewModel.triggerInitialProgress()
             true
         }
 

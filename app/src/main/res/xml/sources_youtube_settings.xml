@@ -114,7 +114,7 @@
                 <ListPreference
                     app:dependency="yt_enabled"
                     app:disableDependentsState="false"
-                    app:key="yt_min_duration"
+                    app:key="yt_min_duration_str"
                     app:title="@string/youtube_min_duration_title"
                     app:summary="@string/youtube_min_duration_summary"
                     app:entries="@array/youtube_min_duration_entries"

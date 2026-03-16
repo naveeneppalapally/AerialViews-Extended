@@ -9,10 +9,13 @@ object YouTubeVideoPrefs : KotprefModel() {
     var enabled by booleanPref(true, "yt_enabled")
     var query by stringPref(YouTubeSourceRepository.DEFAULT_QUERY, YouTubeSourceRepository.KEY_QUERY)
     var quality by stringPref(YouTubeSourceRepository.DEFAULT_QUALITY, YouTubeSourceRepository.KEY_QUALITY)
-    var minDurationMinutes by intPref(
-        YouTubeSourceRepository.DEFAULT_MIN_DURATION_MINUTES,
+    var minDurationMinutesStr by stringPref(
+        YouTubeSourceRepository.DEFAULT_MIN_DURATION_MINUTES.toString(),
         YouTubeSourceRepository.KEY_MIN_DURATION,
     )
+    var minDurationMinutes: Int
+        get() = minDurationMinutesStr.toIntOrNull() ?: YouTubeSourceRepository.DEFAULT_MIN_DURATION_MINUTES
+        set(value) { minDurationMinutesStr = value.toString() }
     var mixWeight by stringPref(YouTubeSourceRepository.DEFAULT_MIX_WEIGHT, YouTubeSourceRepository.KEY_MIX_WEIGHT)
     var shuffle by booleanPref(YouTubeSourceRepository.DEFAULT_SHUFFLE, YouTubeSourceRepository.KEY_SHUFFLE)
     var count by stringPref("-1", YouTubeSourceRepository.KEY_COUNT)

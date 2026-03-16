@@ -155,6 +155,7 @@ class YouTubeMediaProvider(
                         exif =
                             AerialExifMetadata(
                                 description = videoId,
+                                durationSeconds = 0,
                             ),
                     ),
             )
@@ -187,6 +188,7 @@ class YouTubeMediaProvider(
                     exif =
                         AerialExifMetadata(
                             description = entry.videoId,
+                            durationSeconds = entry.durationSeconds,
                         ),
                 ),
         )

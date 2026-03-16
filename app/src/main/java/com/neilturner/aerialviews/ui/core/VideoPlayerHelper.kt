@@ -255,12 +255,16 @@ object VideoPlayerHelper {
 
     fun calculatePlaybackParameters(
         player: ExoPlayer,
+        media: AerialMedia,
         prefs: GeneralPrefs,
-        type: AerialMediaSource,
     ): Pair<Long, Long> {
+        val type = media.source
+        val metadataDurationMs = media.metadata.exif.durationSeconds?.toLong()?.times(1000) ?: 0L
+        val effectiveDuration = if (player.duration > 0) player.duration else metadataDurationMs
+        
         val maxVideoLength = prefs.maxVideoLength.toLong() * 1000
         val isLengthLimited = maxVideoLength >= TEN_SECONDS
-        val isShortVideo = player.duration < maxVideoLength
+        val isShortVideo = effectiveDuration < maxVideoLength
 
         if (type == AerialMediaSource.RTSP) {
             Timber.i("Calculating RTSP stream length...")
@@ -271,12 +275,12 @@ object VideoPlayerHelper {
         if (!isLengthLimited && prefs.randomStartPosition) {
             Timber.i("Calculating random start position...")
             val range = GeneralPrefs.randomStartPositionRange.toInt()
-            return calculateRandomStartPosition(player.duration, range)
+            return calculateRandomStartPosition(effectiveDuration, range)
         }
 
         if (isShortVideo && isLengthLimited && prefs.loopShortVideos) {
             Timber.i("Calculating looping short video...")
-            return calculateLoopingVideo(player.duration, maxVideoLength)
+            return calculateLoopingVideo(effectiveDuration, maxVideoLength)
         }
 
         if (!isShortVideo && isLengthLimited) {
@@ -284,9 +288,9 @@ object VideoPlayerHelper {
                 LimitLongerVideos.LIMIT -> {
                     Timber.i("Calculating long video type... obey limit, play until time limit")
                     val duration =
-                        if (maxVideoLength >= player.duration) {
+                        if (maxVideoLength >= effectiveDuration) {
                             Timber.i("Using video duration as limit (shorter than max!)")
-                            player.duration
+                            effectiveDuration
                         } else {
                             Timber.i("Using user limit")
                             maxVideoLength
@@ -296,19 +300,19 @@ object VideoPlayerHelper {
 
                 LimitLongerVideos.SEGMENT -> {
                     Timber.i("Calculating long video type... play random segment")
-                    return calculateRandomSegment(player.duration, maxVideoLength)
+                    return calculateRandomSegment(effectiveDuration, maxVideoLength)
                 }
 
                 else -> {
                     Timber.i("Calculating long video type... ignore limit, play full video")
-                    return Pair(0, player.duration)
+                    return Pair(0, effectiveDuration)
                 }
             }
         }
 
         // Use normal start + end/duration
         Timber.i("Calculating normal video type...")
-        return Pair(0, player.duration)
+        return Pair(0, effectiveDuration)
     }
 
     private fun calculateRandomStartPosition(

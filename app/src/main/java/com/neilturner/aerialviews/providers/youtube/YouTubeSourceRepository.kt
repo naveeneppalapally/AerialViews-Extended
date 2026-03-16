@@ -176,12 +176,14 @@ class YouTubeSourceRepository(
             if (removed > 0) {
                 clearPreResolvedEntry()
             }
-            markCategoryStateFresh(filteredCount, enabledCategoryKeys().toSet())
+            val dbCount = cacheDao.countGoodEntries()
+            updateCachedCount(dbCount)
+            markCategoryStateFresh(dbCount)
             Log.i(
                 TAG,
-                "Applied YouTube category filter instantly (enabled=${enabledCategoryKeys()}, removed=$removed, remaining=$filteredCount)",
+                "Applied YouTube category filter instantly (enabled=${enabledCategoryKeys()}, removed=$removed, remaining=$dbCount)",
             )
-            filteredCount
+            dbCount
         }
 
     suspend fun applyCategoryDeltaRefresh(): Int =
@@ -227,13 +229,15 @@ class YouTubeSourceRepository(
             if (removedCount > 0 || insertedCount > 0) {
                 clearPreResolvedEntry()
             }
-            markCategoryStateFresh(filteredCount, currentEnabled)
+            val dbCount = cacheDao.countGoodEntries()
+            updateCachedCount(dbCount)
+            markCategoryStateFresh(dbCount)
             Log.i(
                 TAG,
                 "Applied category delta refresh (added=${addedCategories.size}, removed=${removedCategories.size}, " +
-                    "inserted=$insertedCount, removedRows=$removedCount, remaining=$filteredCount)",
+                    "inserted=$insertedCount, removedRows=$removedCount, remaining=$dbCount)",
             )
-            filteredCount
+            dbCount
         }
 
     suspend fun applyDurationFilter(minSeconds: Int): Int =
@@ -664,7 +668,7 @@ class YouTubeSourceRepository(
         cacheDao.clearAndInsert(entries)
         badCountThisSession = 0
         recordRefreshHistory(entries)
-        markSearchCacheFresh(entries.size)
+        markCategoryStateFresh(entries.size)
         Log.i(
             TAG,
             "Cached ${entries.size} YouTube videos for query \"${refreshPlan.query}\" across ${refreshPlan.queryPool.size} searches " +
@@ -958,7 +962,6 @@ class YouTubeSourceRepository(
     ): List<YouTubeCacheEntity> =
         supervisorScope {
             val entries = mutableListOf<YouTubeCacheEntity>()
-            var minimumCachePublished = false
 
             for (chunk in items.chunked(EXTRACTION_BATCH_SIZE)) {
                 val extractedChunk =
@@ -979,21 +982,16 @@ class YouTubeSourceRepository(
                         }.awaitAll()
                         .filterNotNull()
 
-                entries += extractedChunk
-                // Only emit progress for full refreshes; delta category refresh would show
-                // a misleading count (new entries only, not the total library size)
-                if (publishProgress) {
-                    _cacheLoadingProgress.value =
-                        Pair(
-                            (initialCount + entries.size).coerceAtMost(TARGET_CACHE_SIZE),
-                            TARGET_CACHE_SIZE,
-                        )
-                }
-                if (publishMinimumCache && !minimumCachePublished && entries.isNotEmpty()) {
-                    cacheDao.clearAndInsert(entries.toList())
-                    updateCachedCount(entries.size)
-                    minimumCachePublished = true
-                    Timber.tag(TAG).i("Cold-start YouTube cache published early (%s videos)", entries.size)
+                if (extractedChunk.isNotEmpty()) {
+                    // Insert into DB immediately for live counter effect
+                    cacheDao.insertAll(extractedChunk)
+                    entries += extractedChunk
+                    
+                    if (publishProgress) {
+                        val currentTotal = initialCount + entries.size
+                        _cacheLoadingProgress.value = Pair(currentTotal.coerceAtMost(TARGET_CACHE_SIZE), TARGET_CACHE_SIZE)
+                        Log.v(TAG, "YouTube live progress: $currentTotal of $TARGET_CACHE_SIZE")
+                    }
                 }
 
                 if (entries.size >= limit) {
@@ -1378,11 +1376,21 @@ class YouTubeSourceRepository(
         }
     }
 
-    private fun cacheSignature(): String =
-        "${QueryFormulaEngine.freshnessSeed(searchQuery())}|0|${preferredQuality()}|${streamMode()}|${categorySignature()}"
+    private fun cacheSignature(): String {
+        val appVersion = context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
+        // DO NOT include categorySignature here; category changes should not invalidate the whole cache.
+        return "$appVersion|v$CURRENT_CACHE_VERSION"
+    }
 
-    private fun isCacheSignatureStale(): Boolean =
-        sharedPreferences.getString(KEY_CACHE_SIGNATURE, "") != cacheSignature()
+    private fun isCacheSignatureStale(): Boolean {
+        val currentSignature = cacheSignature()
+        val storedSignature = sharedPreferences.getString(KEY_CACHE_SIGNATURE, "")
+        val isStale = storedSignature != currentSignature
+        if (isStale) {
+            Timber.tag(TAG).d("YouTube cache signature stale: current=\"%s\", stored=\"%s\"", currentSignature, storedSignature)
+        }
+        return isStale
+    }
 
     private suspend fun resolveEntryStreamUrl(entry: YouTubeCacheEntity): String {
         return resolveEntryStreamUrl(entry, recordPlayback = true)
@@ -1703,6 +1711,7 @@ class YouTubeSourceRepository(
                 initialCount = initialCount,
             )
         if (extractedEntries.isEmpty()) {
+            _cacheLoadingProgress.value = null
             return 0
         }
 
@@ -1822,27 +1831,21 @@ class YouTubeSourceRepository(
         }
     }
 
-    private fun markCategoryStateFresh(
-        count: Int,
-        enabledKeysSnapshot: Set<String>,
-    ) {
-        _cacheCount.value = count
+    private fun markCategoryStateFresh(count: Int) {
+        val signature = categorySignature()
         sharedPreferences.edit {
             putString(KEY_COUNT, count.toString())
-            putString(KEY_CACHE_SIGNATURE, cacheSignature())
-            putStringSet(KEY_CATEGORY_SNAPSHOT, enabledKeysSnapshot)
+            putString(KEY_CACHE_SIGNATURE, signature)
+            putStringSet(KEY_CATEGORY_SNAPSHOT, enabledCategoryKeys().toSet())
+            putInt(KEY_CACHE_VERSION, CURRENT_CACHE_VERSION)
+            putLong("yt_last_search_at", System.currentTimeMillis())
         }
+        _cacheCount.value = count
+        Timber.tag(TAG).d("Marked YouTube cache fresh: count=%s, signature=\"%s\"", count, signature)
     }
 
     private fun markSearchCacheFresh(count: Int) {
-        _cacheCount.value = count
-        val enabledKeysSnapshot = enabledCategoryKeys().toSet()
-        sharedPreferences.edit {
-            putString(KEY_COUNT, count.toString())
-            putInt(KEY_CACHE_VERSION, CURRENT_CACHE_VERSION)
-            putString(KEY_CACHE_SIGNATURE, cacheSignature())
-            putStringSet(KEY_CATEGORY_SNAPSHOT, enabledKeysSnapshot)
-        }
+        markCategoryStateFresh(count)
     }
 
     private fun applyCandidateDiversityCaps(

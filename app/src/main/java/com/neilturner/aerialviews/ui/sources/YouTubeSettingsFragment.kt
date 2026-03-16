@@ -95,12 +95,19 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             YouTubeFeature.repository(requireContext()).cacheLoadingProgress.collect { progress ->
                 if (progress != null) {
                     val (current, _) = progress
-                    updateCacheCountPreference(current)
                     updateVideoCount(liveCount = current)
                 } else {
                     // Progress is null -> refresh finished or cancelled.
                     // Reset both rows to their static/final states.
                     updateVideoCount()
+                }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            YouTubeFeature.repository(requireContext()).cacheCount.collect { count ->
+                if (!refreshInProgress) {
+                    updateVideoCount(staticCount = count)
                 }
             }
         }
@@ -263,17 +270,16 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         }
     }
 
-    private fun updateVideoCount(liveCount: Int? = null) {
+    private fun updateVideoCount(liveCount: Int? = null, staticCount: Int? = null) {
         val targetPreference = findPreference<Preference>("yt_enabled") ?: return
         
-        // Use live progress if available, otherwise fall back to static saved count
-        val displayCount = liveCount ?: YouTubeVideoPrefs.count.toIntOrNull()
+        // Use live progress if available, otherwise use provided staticCount, 
+        // fall back to saved count as last resort.
+        val displayCount = liveCount ?: staticCount ?: YouTubeVideoPrefs.count.toIntOrNull()
         
         targetPreference.summary =
-            if (liveCount != null) {
-                getString(R.string.youtube_cache_loading_overlay, liveCount, YOUTUBE_LIBRARY_TARGET_COUNT)
-            } else if (displayCount != null && displayCount >= 0) {
-                if (refreshInProgress) {
+            if (displayCount != null && displayCount >= 0) {
+                if (refreshInProgress && liveCount == null) {
                     // We are refreshing but no progress emmitted yet? Show a simpler "Refreshing..."
                     getString(R.string.youtube_cache_count_pending)
                 } else {
@@ -283,7 +289,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                 null
             }
             
-        updateCacheCountPreference(liveCount ?: displayCount)
+        updateCacheCountPreference(displayCount)
     }
 
     private fun isCountPending(): Boolean =

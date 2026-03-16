@@ -124,6 +124,7 @@ class VideoPlayerView
         fun setVideo(media: AerialMedia) {
             state = VideoState() // Reset params for each video
             state.type = media.source
+            state.currentMedia = media
             resolveVideoJob?.cancel()
             exoPlayer.stop()
             val forceCropForYouTube = media.source == AerialMediaSource.YOUTUBE
@@ -237,10 +238,13 @@ class VideoPlayerView
                 Timber.i("Preparing...")
 
                 // Waiting for... https://youtrack.jetbrains.com/issue/KT-19627/Object-name-based-destructuring
-                val result = VideoPlayerHelper.calculatePlaybackParameters(exoPlayer, GeneralPrefs, state.type)
-                state.startPosition = result.first
-                state.endPosition = result.second
-                state.startPosition = adjustYouTubeStartForIntroSkip(state.startPosition, state.endPosition)
+                val currentMedia = state.currentMedia
+                if (currentMedia != null) {
+                    val result = VideoPlayerHelper.calculatePlaybackParameters(exoPlayer, currentMedia, GeneralPrefs)
+                    state.startPosition = result.first
+                    state.endPosition = result.second
+                    state.startPosition = adjustYouTubeStartForIntroSkip(state.startPosition, state.endPosition)
+                }
 
                 if (state.startPosition > 0) {
                     Timber.i("Seeking to ${state.startPosition.milliseconds}")
@@ -592,4 +596,5 @@ data class VideoState(
     var loopCount: Int = 0,
     var startPosition: Long = 0L,
     var endPosition: Long = 0L,
+    var currentMedia: AerialMedia? = null,
 )

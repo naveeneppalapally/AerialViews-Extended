@@ -512,6 +512,24 @@ class YouTubeSourceRepository(
             loadFreshSearchResults(replaceExistingCache)
         }
 
+    suspend fun forceRefreshDirect() {
+        if (refreshMutex.isLocked) return
+        refreshMutex.withLock {
+            isRefreshing = true
+            try {
+                _cacheLoadingProgress.emit(Pair(0, TARGET_CACHE_SIZE))
+                cacheDao.clearAll()
+                loadFreshSearchResults(replaceExistingCache = true)
+            } finally {
+                val finalCount = cacheDao.countGoodEntries()
+                _cacheCount.value = finalCount
+                sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
+                _cacheLoadingProgress.emit(null)
+                isRefreshing = false
+            }
+        }
+    }
+
     suspend fun forceRefresh(): Int =
         withContext(Dispatchers.IO) {
             refreshSearchResults(replaceExistingCache = true).size

@@ -129,8 +129,8 @@ class AerialApp : Application() {
         private const val KEY_SOURCE_MODE = "source_mode"
         private const val SOURCE_MODE_YOUTUBE = "youtube"
         private const val KEY_PROJECTIVY_SHARED_PROVIDERS = "projectivy_shared_providers"
-        private const val PROJECTIVY_PROVIDER_AMAZON = "AMAZON"
-        private const val PROJECTIVY_PROVIDER_COMM1 = "COMM1"
+        private const val PROJECTIVY_PROVIDER_AMAZON = "amazon"
+        private const val PROJECTIVY_PROVIDER_COMM1 = "comm1"
         private const val PROJECTIVY_PROVIDER_YOUTUBE = "youtube"
     }
 }

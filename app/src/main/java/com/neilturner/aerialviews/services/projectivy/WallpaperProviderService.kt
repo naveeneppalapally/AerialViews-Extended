@@ -85,30 +85,29 @@ class WallpaperProviderService : Service() {
     private fun getEnabledProviders(): List<MediaProvider> {
         val selectedProviders =
             ProjectivyPrefs.sharedProviders.map { provider ->
-                provider.trim()
+                provider.trim().lowercase()
             }.toSet()
 
-        ProjectivyApplePrefs.enabled = selectedProviders.contains(PROJECTIVY_PROVIDER_APPLE)
-        ProjectivyAmazonPrefs.enabled = selectedProviders.contains(PROJECTIVY_PROVIDER_AMAZON)
-        ProjectivyComm1Prefs.enabled = selectedProviders.contains(PROJECTIVY_PROVIDER_COMM1)
-        ProjectivyComm2Prefs.enabled = selectedProviders.contains(PROJECTIVY_PROVIDER_COMM2)
-
-        if (selectedProviders.contains(PROJECTIVY_PROVIDER_YOUTUBE) && !YouTubeVideoPrefs.enabled) {
-            YouTubeVideoPrefs.enabled = true
-            Timber.i("Re-enabled YouTube provider for Projectivy wallpaper mode")
+        if (selectedProviders.contains(PROJECTIVY_PROVIDER_YOUTUBE)) {
+            if (!YouTubeVideoPrefs.enabled) {
+                YouTubeVideoPrefs.enabled = true
+                Timber.i("Re-enabled YouTube provider for Projectivy wallpaper mode")
+            }
+            // Ensure YouTubeFeature is ready before using its provider.
+            YouTubeFeature.initialize(applicationContext)
         }
 
-        return mutableListOf<MediaProvider>().apply {
-            if (ProjectivyApplePrefs.enabled) {
+        val providers = mutableListOf<MediaProvider>().apply {
+            if (selectedProviders.contains(PROJECTIVY_PROVIDER_APPLE) || ProjectivyApplePrefs.enabled) {
                 add(appleProvider)
             }
-            if (ProjectivyAmazonPrefs.enabled) {
+            if (selectedProviders.contains(PROJECTIVY_PROVIDER_AMAZON) || ProjectivyAmazonPrefs.enabled) {
                 add(amazonProvider)
             }
-            if (ProjectivyComm1Prefs.enabled) {
+            if (selectedProviders.contains(PROJECTIVY_PROVIDER_COMM1) || ProjectivyComm1Prefs.enabled) {
                 add(comm1Provider)
             }
-            if (ProjectivyComm2Prefs.enabled) {
+            if (selectedProviders.contains(PROJECTIVY_PROVIDER_COMM2) || ProjectivyComm2Prefs.enabled) {
                 add(comm2Provider)
             }
             if (selectedProviders.contains(PROJECTIVY_PROVIDER_LOCAL)) {
@@ -118,14 +117,24 @@ class WallpaperProviderService : Service() {
                 add(youtubeProvider)
             }
         }
+
+        // If filtering results in an empty list (no providers selected or enabled), 
+        // fall back to a safe default of all enabled providers.
+        return if (providers.isEmpty()) {
+            Timber.w("No providers selected for Projectivy, falling back to all enabled")
+            listOf(appleProvider, amazonProvider, comm1Provider, comm2Provider, localProvider, youtubeProvider)
+                .filter { it.enabled }
+        } else {
+            providers
+        }
     }
 
     private companion object {
-        const val PROJECTIVY_PROVIDER_APPLE = "APPLE"
-        const val PROJECTIVY_PROVIDER_AMAZON = "AMAZON"
-        const val PROJECTIVY_PROVIDER_COMM1 = "COMM1"
-        const val PROJECTIVY_PROVIDER_COMM2 = "COMM2"
-        const val PROJECTIVY_PROVIDER_LOCAL = "LOCAL"
+        const val PROJECTIVY_PROVIDER_APPLE = "apple"
+        const val PROJECTIVY_PROVIDER_AMAZON = "amazon"
+        const val PROJECTIVY_PROVIDER_COMM1 = "comm1"
+        const val PROJECTIVY_PROVIDER_COMM2 = "comm2"
+        const val PROJECTIVY_PROVIDER_LOCAL = "local"
         const val PROJECTIVY_PROVIDER_YOUTUBE = "youtube"
         const val WALLPAPER_REUSE_WINDOW_MS = 30_000L
         const val PROVIDER_FETCH_TIMEOUT_MS = 8_000L

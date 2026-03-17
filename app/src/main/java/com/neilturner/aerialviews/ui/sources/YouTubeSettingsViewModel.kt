@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -84,6 +85,12 @@ class YouTubeSettingsViewModel(
     fun triggerInitialProgress() {
         viewModelScope.launch {
             repository.publishProgress(0, 200)
+        }
+    }
+
+    fun refreshNow() {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.forceRefreshDirect()
         }
     }
 

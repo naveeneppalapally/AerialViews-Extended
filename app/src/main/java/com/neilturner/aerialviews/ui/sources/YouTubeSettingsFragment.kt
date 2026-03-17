@@ -187,8 +187,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         }
 
         findPreference<Preference>("yt_refresh_now")?.setOnPreferenceClickListener {
-            queueBackgroundRefresh(R.string.youtube_rebuilding_library, immediate = true)
-            viewModel.triggerInitialProgress()
+            viewModel.refreshNow()
             true
         }
 

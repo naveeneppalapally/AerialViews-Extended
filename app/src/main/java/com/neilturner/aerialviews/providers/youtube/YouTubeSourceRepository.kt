@@ -1089,7 +1089,7 @@ class YouTubeSourceRepository(
                             insertedInBatch++
                             
                             if (publishProgress) {
-                                _cacheLoadingProgress.emit(Pair(currentTotal + 1, TARGET_CACHE_SIZE))
+                                _cacheLoadingProgress.emit(Pair(currentTotal + 1, limit))
                             }
                         }
                     }
@@ -2442,17 +2442,17 @@ class YouTubeSourceRepository(
         private const val DEFAULT_CATEGORY_WINTER = true
 
         private const val TARGET_CACHE_SIZE = 200
-        private const val EXTRACTION_TARGET_SIZE = 200
+        private const val EXTRACTION_TARGET_SIZE = 300
         private const val MIN_HEALTHY_CACHE_SIZE = 150
         private const val TARGET_CANDIDATE_POOL_SIZE = 600
         private const val EXTRACTION_BATCH_SIZE = 4
         private const val CATEGORY_DELTA_QUERY_COUNT_PER_CATEGORY = 12
         private const val MAX_CATEGORY_DELTA_QUERY_COUNT = 36
-        private const val CATEGORY_DELTA_EXTRACTION_LIMIT = 200
+        private const val CATEGORY_DELTA_EXTRACTION_LIMIT = 300
         private const val MAX_STREAM_URL_REFRESHES_PER_WARM = 24
         private const val QUERY_SEARCH_BATCH_SIZE = 10
         private const val COLD_START_QUERY_POOL_SIZE = 10
-        private const val QUERY_POOL_SIZE = 20
+        private const val QUERY_POOL_SIZE = 25
         private const val FALLBACK_QUERY_POOL_SIZE = 12
         private const val SUPPLEMENTAL_QUERY_POOL_SIZE = 16
         private const val MAX_PLAY_HISTORY = 320
@@ -2480,8 +2480,8 @@ class YouTubeSourceRepository(
         private const val HISTORY_SEPARATOR = "|"
         private const val DEFAULT_CATEGORY_KEY = "__uncategorized__"
         private const val MIN_MAIN_SEARCH_UNIQUE_VIDEOS = 60
-        private const val MAX_VIDEOS_PER_CHANNEL = 5
-        private const val MAX_VIDEOS_PER_QUERY_BUCKET = 8
+        private const val MAX_VIDEOS_PER_CHANNEL = 7
+        private const val MAX_VIDEOS_PER_QUERY_BUCKET = 10
         private const val INITIAL_THEME_ROUND_ROBIN_CAP = 8
         private const val LAST_VIDEO_EXCLUSION_COUNT = 15
         private const val RELAXED_LAST_VIDEO_EXCLUSION_COUNT = 5

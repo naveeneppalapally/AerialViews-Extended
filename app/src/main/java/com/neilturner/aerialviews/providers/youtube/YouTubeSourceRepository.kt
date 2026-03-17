@@ -63,12 +63,13 @@ class YouTubeSourceRepository(
             Timber.tag(TAG).e(exception, "Forced library rebuild failed or timed out")
         } finally {
             val finalCount = cacheDao.countGoodEntries()
-            // ORDER MATTERS: Reset state FIRST, then emit count and clear progress LAST
-            isRefreshing = false
-            _isRefreshingFlow.value = false
+            // ORDER MATTERS: Set count FIRST, clear progress, THEN reset isRefreshing LAST
+            // so Fragment sees settled data when isRefreshing flips to false
             _cacheCount.value = finalCount
             sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
             _cacheLoadingProgress.emit(null)
+            isRefreshing = false
+            _isRefreshingFlow.value = false
             refreshMutex.unlock()
         }
     }
@@ -304,13 +305,12 @@ class YouTubeSourceRepository(
                 }
             } finally {
                 val finalCount = cacheDao.countGoodEntries()
-                // ORDER MATTERS: Reset state FIRST, then emit count and clear progress LAST
-                isRefreshing = false
-                _isRefreshingFlow.value = false
+                // ORDER MATTERS: Set count FIRST, clear progress, THEN reset isRefreshing LAST
                 _cacheCount.value = finalCount
                 sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
                 _cacheLoadingProgress.emit(null)
-                repositoryScope.launch { clearProgress() }
+                isRefreshing = false
+                _isRefreshingFlow.value = false
             }
 
             val filteredCount = currentFilteredCount()
@@ -614,12 +614,12 @@ class YouTubeSourceRepository(
             }
         } finally {
             val finalCount = cacheDao.countGoodEntries()
-            // ORDER MATTERS: Reset state FIRST, then emit count and clear progress LAST
-            isRefreshing = false
-            _isRefreshingFlow.value = false
+            // ORDER MATTERS: Set count FIRST, clear progress, THEN reset isRefreshing LAST
             _cacheCount.value = finalCount
             sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
             _cacheLoadingProgress.emit(null)
+            isRefreshing = false
+            _isRefreshingFlow.value = false
         }
     }
 

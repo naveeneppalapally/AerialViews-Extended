@@ -172,16 +172,18 @@ class YouTubeMediaProvider(
     private fun toAerialMedia(
         entry: YouTubeCacheEntity,
         useDirectPlaybackUrl: Boolean,
-    ): AerialMedia =
-        AerialMedia(
-            uri =
-                if (useDirectPlaybackUrl) {
-                    repository.playbackUrl(entry).toUri()
-                } else {
-                    entry.videoPageUrl.toUri()
-                },
+    ): AerialMedia {
+        val playbackUrl = if (useDirectPlaybackUrl) {
+            repository.playbackUrl(entry)
+        } else {
+            entry.videoPageUrl
+        }
+        
+        return AerialMedia(
+            uri = playbackUrl.toUri(),
             type = AerialMediaType.VIDEO,
             source = AerialMediaSource.YOUTUBE,
+            streamUrl = if (playbackUrl != entry.videoPageUrl) playbackUrl else "",
             metadata =
                 AerialMediaMetadata(
                     shortDescription = entry.title,
@@ -192,6 +194,7 @@ class YouTubeMediaProvider(
                         ),
                 ),
         )
+    }
 
     companion object {
         private const val INITIAL_CACHE_WARM_WAIT_MS = 1_500L

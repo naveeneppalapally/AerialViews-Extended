@@ -161,7 +161,7 @@ class WallpaperProviderService : Service() {
         const val PROJECTIVY_PROVIDER_YOUTUBE = "youtube"
         const val WALLPAPER_REUSE_WINDOW_MS = 30_000L
         const val PROVIDER_FETCH_TIMEOUT_MS = 8_000L
-        const val YOUTUBE_PROJECTIVY_START_SECONDS = 20
+        const val YOUTUBE_PROJECTIVY_START_SECONDS = 0
     }
 
     private fun buildWallpapers(): List<Wallpaper> {
@@ -233,7 +233,18 @@ class WallpaperProviderService : Service() {
         if (media.type != AerialMediaType.VIDEO) {
             return rawUri
         }
-        // Universal 20s offset for all Projectivy videos (YouTube or others)
+        
+        // If it's already a direct stream URL (googlevideo), don't add fragments
+        // as they can cause seek/re-resolution delays in some players.
+        if (rawUri.contains("googlevideo.com")) {
+            return rawUri
+        }
+
+        if (YOUTUBE_PROJECTIVY_START_SECONDS <= 0) {
+            return rawUri
+        }
+
+        // Universal offset for all Projectivy videos (YouTube or others)
         return if (rawUri.contains("#")) {
             "$rawUri&t=$YOUTUBE_PROJECTIVY_START_SECONDS"
         } else {

@@ -3,6 +3,7 @@ package com.neilturner.aerialviews.services.projectivy
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
+import android.util.Log
 import com.neilturner.aerialviews.models.enums.AerialMediaSource
 import com.neilturner.aerialviews.models.enums.AerialMediaType
 import com.neilturner.aerialviews.models.videos.AerialMedia
@@ -50,7 +51,9 @@ class WallpaperProviderService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        YouTubeFeature.initialize(applicationContext)
+        if (!YouTubeFeature.isInitialized()) {
+            YouTubeFeature.initialize(applicationContext)
+        }
     }
 
     override fun onBind(intent: Intent): IBinder = binder
@@ -94,8 +97,16 @@ class WallpaperProviderService : Service() {
                 Timber.i("Re-enabled YouTube provider for Projectivy wallpaper mode")
             }
             // Ensure YouTubeFeature is ready before using its provider.
-            YouTubeFeature.initialize(applicationContext)
+            if (!YouTubeFeature.isInitialized()) {
+                YouTubeFeature.initialize(applicationContext)
+            }
         }
+
+        val selected = ProjectivyPrefs.sharedProviders
+        Log.i("WallpaperProviderService", "Projectivy selected sources: $selected")
+        Log.i("WallpaperProviderService", "YouTube enabled: ${YouTubeVideoPrefs.enabled}")
+        val cacheSize = kotlinx.coroutines.runBlocking { YouTubeFeature.repository(applicationContext).getCacheSize() }
+        Log.i("WallpaperProviderService", "YouTube cache size: $cacheSize")
 
         val providers = mutableListOf<MediaProvider>().apply {
             if (selectedProviders.contains(PROJECTIVY_PROVIDER_APPLE) || ProjectivyApplePrefs.enabled) {

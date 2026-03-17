@@ -44,9 +44,14 @@ object YouTubeFeature {
 
     @Volatile
     private var repository: YouTubeSourceRepository? = null
+    private var initialized = false
+
+    fun isInitialized() = initialized
     private val featureScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     fun initialize(context: Context) {
+        if (initialized) return
+        initialized = true
         val appContext = context.applicationContext
         featureScope.launch(Dispatchers.IO) {
             try {

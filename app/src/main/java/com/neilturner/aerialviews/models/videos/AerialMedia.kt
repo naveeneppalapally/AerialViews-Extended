@@ -30,4 +30,5 @@ data class AerialExifMetadata(
     var state: String? = null,
     var country: String? = null,
     var description: String? = null,
+    var durationSeconds: Int? = null,
 )

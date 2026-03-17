@@ -1,12 +1,8 @@
 ---
-name: Feature request
-about: Suggest an idea for this app
-title: ''
-labels: enhancement
-assignees: theothernt
-
+name: Feature Request
+about: Suggest an idea or improvement
 ---
 
-**Describe the solution you'd like...**
-
-(please have a quick search and see if the feature/idea has been suggested before  - you can delete this bit)
+**What problem does this solve?**
+**Describe the feature:**
+**Any alternatives you considered?**

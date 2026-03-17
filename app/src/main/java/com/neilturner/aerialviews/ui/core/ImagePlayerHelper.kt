@@ -12,7 +12,6 @@ import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.mssmb2.SMB2CreateDisposition
 import com.hierynomus.mssmb2.SMB2ShareAccess
 import com.hierynomus.smbj.SMBClient
-import com.hierynomus.smbj.auth.AuthenticationContext
 import com.hierynomus.smbj.share.DiskShare
 import com.neilturner.aerialviews.BuildConfig
 import com.neilturner.aerialviews.models.enums.AerialMediaSource
@@ -31,6 +30,7 @@ import timber.log.Timber
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.util.EnumSet
+import java.util.concurrent.TimeUnit
 
 internal object ImagePlayerHelper {
     val logger: Logger? = if (BuildConfig.DEBUG) DebugLogger() else null
@@ -74,8 +74,12 @@ internal object ImagePlayerHelper {
     }
 
     fun streamFromWebDavFile(uri: Uri): InputStream? {
-        val baseClient = buildOkHttpClient()
-        val okHttpClient = baseClient.newBuilder().build()
+        val okHttpClient =
+            OkHttpClient
+                .Builder()
+                .callTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .build()
         val client = OkHttpSardine(okHttpClient)
         val (userName, password) = SambaHelper.parseUserInfo(uri)
         try {
@@ -93,22 +97,7 @@ internal object ImagePlayerHelper {
         uri: Uri,
     ): InputStream? =
         try {
-            // Handle file:// URIs directly, content:// URIs via ContentResolver
-            return when (uri.scheme) {
-                "file" -> {
-                    val path = uri.path ?: return null
-                    java.io.File(path).inputStream()
-                }
-
-                "content" -> {
-                    context.contentResolver.openInputStream(uri)
-                }
-
-                else -> {
-                    Timber.e("Unsupported URI scheme: ${uri.scheme}")
-                    null
-                }
-            }
+            context.contentResolver.openInputStream(uri)
         } catch (ex: Exception) {
             Timber.e(ex, "Exception while opening local file: ${ex.message}")
             FirebaseHelper.crashlyticsException(ex)
@@ -136,12 +125,49 @@ internal object ImagePlayerHelper {
             null
         }
 
+    fun streamFromMedia(
+        context: Context,
+        media: AerialMedia,
+    ): InputStream? =
+        when (media.source) {
+            AerialMediaSource.SAMBA -> streamFromSambaFile(media.uri)
+            AerialMediaSource.WEBDAV -> streamFromWebDavFile(media.uri)
+            AerialMediaSource.IMMICH -> streamFromImmichFile(media.uri)
+            else -> streamFromLocalFile(context, media.uri)
+        }
+
     fun streamFromSambaFile(uri: Uri): InputStream? {
         val startTime = System.currentTimeMillis()
-        val (hostName, shareName, path, authContext, config) = parseSambaParams(uri)
+        val hostName = uri.host.orEmpty()
+        val (userName, password) = SambaHelper.parseUserInfo(uri)
+        val domainName = uri.getQueryParameter("domain").orEmpty().ifEmpty { "WORKGROUP" }
+        val useEncryption = uri.getQueryParameter("enc")?.toBooleanStrictOrNull() ?: false
+        val smbDialects =
+            uri
+                .getQueryParameter("dialects")
+                .orEmpty()
+                .split(",")
+                .filter { it.isNotBlank() }
+                .toSet()
+        val shareNameAndPath = SambaHelper.parseShareAndPathName(uri)
+        val shareName = shareNameAndPath.first
+        val path = shareNameAndPath.second
+        val config = SambaHelper.buildSmbConfig(useEncryption, smbDialects)
         val smbClient = SMBClient(config)
-        return try {
-            val (session, share) = connectSamba(smbClient, hostName, shareName, authContext, startTime)
+        val authContext =
+            SambaHelper.buildAuthContext(
+                userName,
+                password,
+                domainName,
+            )
+
+        try {
+            val connectStartTime = System.currentTimeMillis()
+            val connection = smbClient.connect(hostName)
+            val session = connection?.authenticate(authContext)
+            val share = session?.connectShare(shareName) as DiskShare
+            Timber.d("SAMBA: Connected and authenticated in ${System.currentTimeMillis() - connectStartTime}ms")
+
             val openStartTime = System.currentTimeMillis()
             val file =
                 share.openFile(
@@ -155,13 +181,32 @@ internal object ImagePlayerHelper {
             Timber.d(
                 "SAMBA: Opened file in ${System.currentTimeMillis() - openStartTime}ms. Total setup time: ${System.currentTimeMillis() - startTime}ms",
             )
-            object : FilterInputStream(file.inputStream) {
+
+            return object : InputStream() {
+                private val wrappedStream = file.inputStream
+
+                override fun read(): Int = wrappedStream.read()
+
+                override fun read(b: ByteArray): Int = wrappedStream.read(b)
+
+                override fun read(
+                    b: ByteArray,
+                    off: Int,
+                    len: Int,
+                ): Int = wrappedStream.read(b, off, len)
+
+                override fun skip(n: Long): Long = wrappedStream.skip(n)
+
+                override fun available(): Int = wrappedStream.available()
+
                 override fun close() {
                     try {
-                        super.close()
+                        wrappedStream.close()
                         file.close()
                         share.close()
                         session.close()
+                        // connection.close()
+                        // smbClient.close()
                     } catch (ex: Exception) {
                         Timber.e(ex, "Error closing SMB resources: ${ex.message}")
                     }
@@ -171,59 +216,7 @@ internal object ImagePlayerHelper {
             Timber.e(ex, "Exception while opening Samba file: ${ex.message}")
             FirebaseHelper.crashlyticsException(ex)
             smbClient.close()
-            null
+            return null
         }
     }
-
-    private data class SambaParams(
-        val hostName: String,
-        val shareName: String,
-        val path: String,
-        val authContext: AuthenticationContext,
-        val config: com.hierynomus.smbj.SmbConfig,
-    )
-
-    private fun parseSambaParams(uri: Uri): SambaParams {
-        val hostName = uri.host.orEmpty()
-        val (userName, password) = SambaHelper.parseUserInfo(uri)
-        val domainName = uri.getQueryParameter("domain").orEmpty().ifEmpty { "WORKGROUP" }
-        val useEncryption = uri.getQueryParameter("enc")?.toBooleanStrictOrNull() ?: false
-        val smbDialects =
-            uri
-                .getQueryParameter("dialects")
-                .orEmpty()
-                .split(",")
-                .filter { it.isNotBlank() }
-                .toSet()
-        val (shareName, path) = SambaHelper.parseShareAndPathName(uri)
-        val config = SambaHelper.buildSmbConfig(useEncryption, smbDialects)
-        val authContext = SambaHelper.buildAuthContext(userName, password, domainName)
-        return SambaParams(hostName, shareName, path, authContext, config)
-    }
-
-    private fun connectSamba(
-        smbClient: SMBClient,
-        hostName: String,
-        shareName: String,
-        authContext: AuthenticationContext,
-        startTime: Long,
-    ): Pair<com.hierynomus.smbj.session.Session, DiskShare> {
-        val connectStartTime = System.currentTimeMillis()
-        val connection = smbClient.connect(hostName)
-        val session = connection.authenticate(authContext)
-        val share = session.connectShare(shareName) as DiskShare
-        Timber.d("SAMBA: Connected and authenticated in ${System.currentTimeMillis() - connectStartTime}ms")
-        return Pair(session, share)
-    }
-
-    fun streamFromMedia(
-        context: Context,
-        media: AerialMedia,
-    ): InputStream? =
-        when (media.source) {
-            AerialMediaSource.SAMBA -> streamFromSambaFile(media.uri)
-            AerialMediaSource.WEBDAV -> streamFromWebDavFile(media.uri)
-            AerialMediaSource.IMMICH -> streamFromImmichFile(media.uri)
-            else -> streamFromLocalFile(context, media.uri)
-        }
 }

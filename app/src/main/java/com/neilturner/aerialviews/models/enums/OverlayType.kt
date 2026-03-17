@@ -5,8 +5,6 @@ enum class OverlayType {
     CLOCK,
     METADATA1,
     METADATA2,
-    METADATA3,
-    METADATA4,
     WEATHER1,
 
     // WEATHER2,

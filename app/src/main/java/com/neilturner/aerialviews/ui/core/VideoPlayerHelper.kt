@@ -10,6 +10,8 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.dash.DashMediaSource
+import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
@@ -25,6 +27,7 @@ import com.neilturner.aerialviews.models.prefs.ImmichMediaPrefs
 import com.neilturner.aerialviews.models.videos.AerialMedia
 import com.neilturner.aerialviews.providers.samba.SambaDataSourceFactory
 import com.neilturner.aerialviews.providers.webdav.WebDavDataSourceFactory
+import com.neilturner.aerialviews.providers.youtube.NewPipeHelper
 import com.neilturner.aerialviews.services.philips.CustomRendererFactory
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
@@ -55,11 +58,24 @@ object VideoPlayerHelper {
     }
 
     @OptIn(UnstableApi::class)
-    fun getResizeMode(scale: VideoScale?): Int =
-        if (scale == VideoScale.SCALE_TO_FIT_WITH_CROPPING) {
+    fun getResizeMode(
+        scale: VideoScale?,
+        forceCrop: Boolean = false,
+    ): Int =
+        if (forceCrop || scale == VideoScale.SCALE_TO_FIT_WITH_CROPPING) {
             AspectRatioFrameLayout.RESIZE_MODE_ZOOM
         } else {
             AspectRatioFrameLayout.RESIZE_MODE_FIT
+        }
+
+    fun getVideoScalingMode(
+        scale: VideoScale?,
+        forceCrop: Boolean = false,
+    ): Int =
+        if (forceCrop || scale == VideoScale.SCALE_TO_FIT_WITH_CROPPING) {
+            C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+        } else {
+            C.VIDEO_SCALING_MODE_SCALE_TO_FIT
         }
 
     @OptIn(UnstableApi::class)
@@ -67,7 +83,13 @@ object VideoPlayerHelper {
         context: Context,
         prefs: GeneralPrefs,
     ): ExoPlayer {
-        val parametersBuilder = Parameters.Builder()
+        val parametersBuilder =
+            Parameters
+                .Builder()
+                .setPreferredTextLanguage(null)
+                .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .setDisabledTextTrackSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
 
         if (prefs.enableTunneling) {
             parametersBuilder
@@ -77,22 +99,27 @@ object VideoPlayerHelper {
         val trackSelector = DefaultTrackSelector(context)
         trackSelector.parameters = parametersBuilder.build()
 
-        var rendererFactory = DefaultRenderersFactory(context)
+        var rendererFactory: DefaultRenderersFactory = DefaultRenderersFactory(context)
+        rendererFactory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
         if (prefs.allowFallbackDecoders) {
             rendererFactory.setEnableDecoderFallback(true)
         }
 
         if (prefs.philipsDolbyVisionFix) {
             rendererFactory = CustomRendererFactory(context)
+            rendererFactory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
+            if (prefs.allowFallbackDecoders) {
+                rendererFactory.setEnableDecoderFallback(true)
+            }
         }
 
         val loadControl =
             DefaultLoadControl
                 .Builder()
                 .setBufferDurationsMs(
-                    10_000, // Minimum buffer duration
-                    20_000, // Maximum buffer duration
-                    3_000, // Buffer before initial playback
+                    30_000, // Minimum buffer duration
+                    180_000, // Maximum buffer duration
+                    2_500, // Buffer before initial playback
                     5_000, // Buffer after rebuffering
                 ).build()
 
@@ -103,6 +130,8 @@ object VideoPlayerHelper {
                 .setLoadControl(loadControl)
                 .setRenderersFactory(rendererFactory)
                 .build()
+
+        player.videoScalingMode = getVideoScalingMode(prefs.videoScale)
 
         if (prefs.enablePlaybackLogging) {
             player.addAnalyticsListener(EventLogger())
@@ -186,6 +215,38 @@ object VideoPlayerHelper {
                 player.setMediaSource(mediaSource)
             }
 
+            AerialMediaSource.YOUTUBE -> {
+                val dataSourceFactory =
+                    DefaultHttpDataSource
+                        .Factory()
+                        .setDefaultRequestProperties(NewPipeHelper.playbackRequestHeaders())
+                        .setAllowCrossProtocolRedirects(true)
+                        .setConnectTimeoutMs(TimeUnit.SECONDS.toMillis(30).toInt())
+                        .setReadTimeoutMs(TimeUnit.SECONDS.toMillis(30).toInt())
+
+                val mediaSource =
+                    when {
+                        media.uri.toString().contains("manifest/dash", ignoreCase = true) ||
+                            media.uri.toString().contains(".mpd", ignoreCase = true) ->
+                            DashMediaSource
+                                .Factory(dataSourceFactory)
+                                .createMediaSource(mediaItem)
+
+                        media.uri.toString().contains("manifest/hls", ignoreCase = true) ||
+                            media.uri.toString().contains(".m3u8", ignoreCase = true) ->
+                            HlsMediaSource
+                                .Factory(dataSourceFactory)
+                                .createMediaSource(mediaItem)
+
+                        else ->
+                            ProgressiveMediaSource
+                                .Factory(dataSourceFactory)
+                                .createMediaSource(mediaItem)
+                    }
+
+                player.setMediaSource(mediaSource)
+            }
+
             else -> {
                 player.setMediaItem(mediaItem)
             }
@@ -194,12 +255,16 @@ object VideoPlayerHelper {
 
     fun calculatePlaybackParameters(
         player: ExoPlayer,
+        media: AerialMedia,
         prefs: GeneralPrefs,
-        type: AerialMediaSource,
     ): Pair<Long, Long> {
+        val type = media.source
+        val metadataDurationMs = media.metadata.exif.durationSeconds?.toLong()?.times(1000) ?: 0L
+        val effectiveDuration = if (player.duration > 0) player.duration else metadataDurationMs
+        
         val maxVideoLength = prefs.maxVideoLength.toLong() * 1000
         val isLengthLimited = maxVideoLength >= TEN_SECONDS
-        val isShortVideo = player.duration < maxVideoLength
+        val isShortVideo = effectiveDuration < maxVideoLength
 
         if (type == AerialMediaSource.RTSP) {
             Timber.i("Calculating RTSP stream length...")
@@ -210,12 +275,12 @@ object VideoPlayerHelper {
         if (!isLengthLimited && prefs.randomStartPosition) {
             Timber.i("Calculating random start position...")
             val range = GeneralPrefs.randomStartPositionRange.toInt()
-            return calculateRandomStartPosition(player.duration, range)
+            return calculateRandomStartPosition(effectiveDuration, range)
         }
 
         if (isShortVideo && isLengthLimited && prefs.loopShortVideos) {
             Timber.i("Calculating looping short video...")
-            return calculateLoopingVideo(player.duration, maxVideoLength)
+            return calculateLoopingVideo(effectiveDuration, maxVideoLength)
         }
 
         if (!isShortVideo && isLengthLimited) {
@@ -223,9 +288,9 @@ object VideoPlayerHelper {
                 LimitLongerVideos.LIMIT -> {
                     Timber.i("Calculating long video type... obey limit, play until time limit")
                     val duration =
-                        if (maxVideoLength >= player.duration) {
+                        if (maxVideoLength >= effectiveDuration) {
                             Timber.i("Using video duration as limit (shorter than max!)")
-                            player.duration
+                            effectiveDuration
                         } else {
                             Timber.i("Using user limit")
                             maxVideoLength
@@ -235,19 +300,19 @@ object VideoPlayerHelper {
 
                 LimitLongerVideos.SEGMENT -> {
                     Timber.i("Calculating long video type... play random segment")
-                    return calculateRandomSegment(player.duration, maxVideoLength)
+                    return calculateRandomSegment(effectiveDuration, maxVideoLength)
                 }
 
                 else -> {
                     Timber.i("Calculating long video type... ignore limit, play full video")
-                    return Pair(0, player.duration)
+                    return Pair(0, effectiveDuration)
                 }
             }
         }
 
         // Use normal start + end/duration
         Timber.i("Calculating normal video type...")
-        return Pair(0, player.duration)
+        return Pair(0, effectiveDuration)
     }
 
     private fun calculateRandomStartPosition(

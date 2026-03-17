@@ -3,6 +3,8 @@ package com.neilturner.aerialviews.ui
 import android.app.Application
 import android.os.StrictMode
 import android.os.StrictMode.VmPolicy
+import androidx.preference.PreferenceManager
+import com.neilturner.aerialviews.models.prefs.AmazonVideoPrefs
 import com.neilturner.aerialviews.BuildConfig
 import com.neilturner.aerialviews.models.enums.OverlayType
 import com.neilturner.aerialviews.models.enums.VideoQuality
@@ -10,6 +12,8 @@ import com.neilturner.aerialviews.models.prefs.AppleVideoPrefs
 import com.neilturner.aerialviews.models.prefs.Comm1VideoPrefs
 import com.neilturner.aerialviews.models.prefs.Comm2VideoPrefs
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
+import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
+import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.utils.DeviceHelper
 import timber.log.Timber
 
@@ -37,20 +41,53 @@ class AerialApp : Application() {
 
             GeneralPrefs.checkForHevcSupport = true
         }
+
+        initializeSourceModeDefaults()
+        initializeProjectivyProviderDefaults()
+        YouTubeFeature.initialize(this)
+    }
+
+    private fun initializeSourceModeDefaults() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        if (!prefs.contains(KEY_SOURCE_MODE)) {
+            prefs.edit().putString(KEY_SOURCE_MODE, SOURCE_MODE_YOUTUBE).apply()
+            AppleVideoPrefs.enabled = false
+            AmazonVideoPrefs.enabled = false
+            Comm1VideoPrefs.enabled = false
+            Comm2VideoPrefs.enabled = false
+            YouTubeVideoPrefs.enabled = true
+        }
+
+        // Keep migration-safe baseline for old installs.
+        YouTubeVideoPrefs.minDurationMinutes = 0
+    }
+
+    private fun initializeProjectivyProviderDefaults() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        if (!prefs.contains(KEY_PROJECTIVY_SHARED_PROVIDERS)) {
+            prefs
+                .edit()
+                .putStringSet(
+                    KEY_PROJECTIVY_SHARED_PROVIDERS,
+                    setOf(
+                        PROJECTIVY_PROVIDER_AMAZON,
+                        PROJECTIVY_PROVIDER_COMM1,
+                        PROJECTIVY_PROVIDER_YOUTUBE,
+                    ),
+                ).apply()
+        }
     }
 
     private fun configureLogging() {
         val debugLogging = BuildConfig.DEBUG
 
         // Current backend for SMBJ logs is slf4j-simple.
-        System.setProperty("org.slf4j.simpleLogger.showDateTime", "false")
-        System.setProperty("org.slf4j.simpleLogger.showThreadName", "false")
-        System.setProperty("org.slf4j.simpleLogger.showLogName", "false")
-
-        // Change to debug when needed, very chatty!
+        System.setProperty("org.slf4j.simpleLogger.showDateTime", "true")
+        System.setProperty("org.slf4j.simpleLogger.showThreadName", "true")
+        System.setProperty("org.slf4j.simpleLogger.showLogName", "true")
         System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", if (debugLogging) "info" else "warn")
-        System.setProperty("org.slf4j.simpleLogger.log.com.hierynomus", if (debugLogging) "info" else "warn")
-        System.setProperty("org.slf4j.simpleLogger.log.org.apache.sshd", if (debugLogging) "info" else "warn")
+        System.setProperty("org.slf4j.simpleLogger.log.com.hierynomus", if (debugLogging) "debug" else "warn")
+        System.setProperty("org.slf4j.simpleLogger.log.org.apache.sshd", if (debugLogging) "debug" else "warn")
 
         // If Log4j is reintroduced as backend, keep status logging debug-only.
         System.setProperty("log4j2.debug", debugLogging.toString())
@@ -86,5 +123,14 @@ class AerialApp : Application() {
                 // .penaltyDeath()
                 .build(),
         )
+    }
+
+    companion object {
+        private const val KEY_SOURCE_MODE = "source_mode"
+        private const val SOURCE_MODE_YOUTUBE = "youtube"
+        private const val KEY_PROJECTIVY_SHARED_PROVIDERS = "projectivy_shared_providers"
+        private const val PROJECTIVY_PROVIDER_AMAZON = "AMAZON"
+        private const val PROJECTIVY_PROVIDER_COMM1 = "COMM1"
+        private const val PROJECTIVY_PROVIDER_YOUTUBE = "youtube"
     }
 }

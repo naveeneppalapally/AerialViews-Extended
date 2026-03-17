@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory app:title="This Application">
+        <Preference
+            app:title="AerialViews+"
+            app:summary="A fork of AerialViews by Neil McAlister.\nModified by naveeneppalapally.\nSource: github.com/naveeneppalapally/AerialViews-Plus"
+            app:selectable="false" />
+        <Preference
+            app:title="License"
+            app:summary="GNU General Public License v3 (GPL v3)\nThis app is free software. You may redistribute it under the terms of GPL v3."
+            app:selectable="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="Original Application">
+        <Preference
+            app:title="AerialViews"
+            app:summary="Author: Neil McAlister (theothernt)\ngithub.com/theothernt/AerialViews\nLicense: GNU General Public License (GPL)"
+            app:selectable="false" />
+        <Preference
+            app:title="Aerial Dream"
+            app:summary="Author: Daniel Cachapa\ngithub.com/cachapa/AerialDream\nLicense: GNU General Public License (GPL)"
+            app:selectable="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="Open Source Libraries">
+        <Preference
+            app:title="NewPipe Extractor"
+            app:summary="By TeamNewPipe\ngithub.com/TeamNewPipe/NewPipeExtractor\nLicense: GNU General Public License v3 (GPL v3)\nPurpose: On-device YouTube stream extraction"
+            app:selectable="false" />
+        <Preference
+            app:title="ExoPlayer"
+            app:summary="By Google\ngithub.com/google/ExoPlayer\nLicense: Apache 2.0\nPurpose: Video playback"
+            app:selectable="false" />
+        <Preference
+            app:title="WorkManager"
+            app:summary="By Google / Android Jetpack\nLicense: Apache 2.0\nPurpose: Background refresh scheduling"
+            app:selectable="false" />
+        <Preference
+            app:title="Room Database"
+            app:summary="By Google / Android Jetpack\nLicense: Apache 2.0\nPurpose: Local video cache"
+            app:selectable="false" />
+        <Preference
+            app:title="Hilt"
+            app:summary="By Google\nLicense: Apache 2.0\nPurpose: Dependency injection"
+            app:selectable="false" />
+        <Preference
+            app:title="Retrofit"
+            app:summary="By Square\nLicense: Apache 2.0\nPurpose: Network requests"
+            app:selectable="false" />
+        <Preference
+            app:title="Coil"
+            app:summary="By Coil Contributors\nLicense: Apache 2.0\nPurpose: Image loading"
+            app:selectable="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="Disclaimer">
+        <Preference
+            app:title="Not affiliated with YouTube or Google"
+            app:summary="This app uses NewPipe Extractor for on-device stream extraction. No YouTube account or API key is required. This app is for personal use only."
+            app:selectable="false" />
+        <Preference
+            app:title="Distribution"
+            app:summary="Sideload only. This app must NOT be uploaded to the Google Play Store by anyone except the original developer (theothernt)."
+            app:selectable="false" />
+        <Preference
+            app:title="No Warranty"
+            app:summary="This program is distributed without any warranty. See the GPL v3 license for details."
+            app:selectable="false" />
+    </PreferenceCategory>
+
+</PreferenceScreen>

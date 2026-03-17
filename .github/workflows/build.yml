@@ -1,0 +1,82 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g. 1.0.1)'
+        required: true
+        default: '1.0.0'
+      release_notes:
+        description: 'What changed in this release'
+        required: true
+        default: 'Bug fixes and improvements'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode \
+            > app/aerialviews-plus-release.jks
+
+      - name: Build signed release APK
+        run: ./gradlew --no-daemon :app:assembleGithubNonMinifiedRelease
+        env:
+          KEYSTORE_PATH: app/aerialviews-plus-release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Rename APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/github/nonMinifiedRelease/*.apk \
+             dist/AerialViews-Plus-v${{ github.event.inputs.version }}.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: AerialViews+ v${{ github.event.inputs.version }}
+          body: |
+            ## What's changed
+            ${{ github.event.inputs.release_notes }}
+
+            ## Installation
+            1. Download the APK below
+            2. Enable "Install unknown apps" on your Android TV
+            3. Install via file manager or ADB:
+               `adb install -r AerialViews-Plus-v${{ github.event.inputs.version }}.apk`
+
+            ## Notes
+            - Sideload only — not for Google Play Store
+            - If YouTube stops working, check NewPipe Extractor releases
+            - Source code: github.com/naveeneppalapally/AerialViews-Plus
+
+            **Full source:** https://github.com/naveeneppalapally/AerialViews-Plus
+          files: dist/*.apk
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean up keystore
+        run: rm -f app/aerialviews-plus-release.jks
+        if: always()

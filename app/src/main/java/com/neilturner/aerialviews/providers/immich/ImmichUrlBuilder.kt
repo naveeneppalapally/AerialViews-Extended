@@ -22,50 +22,49 @@ class ImmichUrlBuilder(
         isVideo: Boolean,
     ): Uri {
         val cleanedKey = resolvedSharedKey ?: cleanSharedLinkKey(prefs.pathName)
-        val url =
-            when (prefs.authType) {
-                ImmichAuthType.SHARED_LINK -> {
-                    val base =
-                        if (isVideo) {
-                            if (prefs.videoType == ImmichVideoType.TRANSCODED) {
-                                "$server/api/assets/$id/video/playback?key=$cleanedKey"
-                            } else {
-                                "$server/api/assets/$id/original?key=$cleanedKey"
-                            }
-                        } else {
-                            if (prefs.imageType == ImmichImageType.ORIGINAL) {
-                                "$server/api/assets/$id/original?key=$cleanedKey"
-                            } else {
-                                val size = if (prefs.imageType == ImmichImageType.FULLSIZE) "fullsize" else "preview"
-                                "$server/api/assets/$id/thumbnail?size=$size&key=$cleanedKey"
-                            }
-                        }
-                    if (prefs.password.isNotEmpty()) "$base&password=${prefs.password}" else base
-                }
-
-                // "fullsize" will use fullsize or reencoded pic as configured within Immich
-                // "preview" will use preview-reencoded pic as configured within Immich, 1440p by default
-                ImmichAuthType.API_KEY -> {
+        val url = when (prefs.authType) {
+            ImmichAuthType.SHARED_LINK -> {
+                val base =
                     if (isVideo) {
                         if (prefs.videoType == ImmichVideoType.TRANSCODED) {
-                            "$server/api/assets/$id/video/playback"
+                            "$server/api/assets/$id/video/playback?key=$cleanedKey"
                         } else {
-                            "$server/api/assets/$id/original"
+                            "$server/api/assets/$id/original?key=$cleanedKey"
                         }
                     } else {
                         if (prefs.imageType == ImmichImageType.ORIGINAL) {
-                            "$server/api/assets/$id/original"
+                            "$server/api/assets/$id/original?key=$cleanedKey"
                         } else {
                             val size = if (prefs.imageType == ImmichImageType.FULLSIZE) "fullsize" else "preview"
-                            "$server/api/assets/$id/thumbnail?size=$size"
+                            "$server/api/assets/$id/thumbnail?size=$size&key=$cleanedKey"
                         }
                     }
-                }
+                if (prefs.password.isNotEmpty()) "$base&password=${prefs.password}" else base
+            }
 
-                null -> {
-                    throw IllegalStateException("Invalid authentication type")
+            // "fullsize" will use fullsize or reencoded pic as configured within Immich
+            // "preview" will use preview-reencoded pic as configured within Immich, 1440p by default
+            ImmichAuthType.API_KEY -> {
+                if (isVideo) {
+                    if (prefs.videoType == ImmichVideoType.TRANSCODED) {
+                        "$server/api/assets/$id/video/playback"
+                    } else {
+                        "$server/api/assets/$id/original"
+                    }
+                } else {
+                    if (prefs.imageType == ImmichImageType.ORIGINAL) {
+                        "$server/api/assets/$id/original"
+                    } else {
+                        val size = if (prefs.imageType == ImmichImageType.FULLSIZE) "fullsize" else "preview"
+                        "$server/api/assets/$id/thumbnail?size=$size"
+                    }
                 }
             }
+
+            null -> {
+                throw IllegalStateException("Invalid authentication type")
+            }
+        }
         return uriFactory(url)
     }
 }

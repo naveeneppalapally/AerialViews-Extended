@@ -17,6 +17,89 @@
     </string-array>
     <string name="apple_videos_quality_default" translatable="false">VIDEO_1080_SDR</string>
 
+    <!-- YouTube -->
+    <string-array name="youtube_quality_entries" translatable="false">
+        <item>Highest Available</item>
+        <item>1440p</item>
+        <item>1080p</item>
+    </string-array>
+    <string-array name="youtube_quality_values" translatable="false">
+        <item>best</item>
+        <item>1440p</item>
+        <item>1080p</item>
+    </string-array>
+    <string-array name="youtube_quality_entries_uhd" translatable="false">
+        <item>Highest Available</item>
+        <item>4K</item>
+        <item>1440p</item>
+        <item>1080p</item>
+    </string-array>
+    <string-array name="youtube_quality_values_uhd" translatable="false">
+        <item>best</item>
+        <item>2160p</item>
+        <item>1440p</item>
+        <item>1080p</item>
+    </string-array>
+    <string-array name="youtube_quality_entries_1080p" translatable="false">
+        <item>Highest Available</item>
+        <item>1080p</item>
+    </string-array>
+    <string-array name="youtube_quality_values_1080p" translatable="false">
+        <item>best</item>
+        <item>1080p</item>
+    </string-array>
+    <string name="youtube_quality_default" translatable="false">best</string>
+    <string-array name="youtube_mix_weight_entries" translatable="false">
+        <item>Balanced mix</item>
+        <item>More YouTube</item>
+        <item>Mostly YouTube</item>
+    </string-array>
+    <string-array name="youtube_mix_weight_values" translatable="false">
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+    </string-array>
+    <string name="youtube_mix_weight_default" translatable="false">2</string>
+    <string-array name="youtube_min_duration_entries">
+        <item>No minimum*</item>
+        <item>1 minute</item>
+        <item>2 minutes</item>
+        <item>5 minutes</item>
+        <item>10 minutes</item>
+        <item>15 minutes</item>
+        <item>20 minutes</item>
+        <item>30 minutes</item>
+        <item>45 minutes</item>
+        <item>60 minutes</item>
+        <item>90 minutes</item>
+        <item>120 minutes</item>
+    </string-array>
+    <string-array name="youtube_min_duration_values" translatable="false">
+        <item>0</item>
+        <item>1</item>
+        <item>2</item>
+        <item>5</item>
+        <item>10</item>
+        <item>15</item>
+        <item>20</item>
+        <item>30</item>
+        <item>45</item>
+        <item>60</item>
+        <item>90</item>
+        <item>120</item>
+    </string-array>
+    <string-array name="source_mode_entries" translatable="false">
+        <item>AerialViews only</item>
+        <item>YouTube only</item>
+        <item>AerialViews + YouTube</item>
+    </string-array>
+    <string-array name="source_mode_values" translatable="false">
+        <item>aerial</item>
+        <item>youtube</item>
+        <item>combined</item>
+    </string-array>
+    <string name="source_mode_default" translatable="false">youtube</string>
+
     <!-- Estimated data usage per hour -->
     <string-array name="apple_videos_data_usage_values" translatable="false">
         <item>~3GB</item>
@@ -264,8 +347,6 @@
         <item>Clock</item>
         <item>Metadata #1</item>
         <item>Metadata #2</item>
-        <item>Metadata #3</item>
-        <item>Metadata #4</item>
         <item>Weather #1</item>
         <!--    <item>Weather #2</item>-->
         <item>Now Playing #1</item>
@@ -282,8 +363,6 @@
         <item>CLOCK</item>
         <item>METADATA1</item>
         <item>METADATA2</item>
-        <item>METADATA3</item>
-        <item>METADATA4</item>
         <item>WEATHER1</item>
         <!--    <item>WEATHER2</item>-->
         <item>MUSIC1</item>
@@ -1074,18 +1153,19 @@
         <item>Amazon Videos</item>
         <item>Jetson Creative Videos</item>
         <item>Robin Fourcade Videos</item>
-        <!--    <item>Local or USB storage</item>-->
+        <item>@string/projectivy_youtube_videos</item>
     </string-array>
     <string-array name="projectivy_shared_providers_values" translatable="false">
         <item>APPLE</item>
         <item>AMAZON</item>
         <item>COMM1</item>
         <item>COMM2</item>
-        <!--    <item>LOCAL</item>-->
+        <item>youtube</item>
     </string-array>
     <string-array name="projectivy_shared_providers_default" translatable="false">
         <item>AMAZON</item>
         <item>COMM1</item>
+        <item>youtube</item>
     </string-array>
 
     <!-- Overlay Corner Fade Selection -->

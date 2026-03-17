@@ -1,7 +1,7 @@
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation" tools:locale="en">
 
     <!-- General -->
-    <string name="app_name" translatable="false">Aerial Views</string>
+    <string name="app_name" translatable="false">AerialViews+</string>
     <string name="plugin_uuid" translatable="false">163adf9b-34bb-43df-915c-e8fe4a020bc2</string>
     <string name="loading_title">Loading…</string>
     <string name="loading_error">No videos or photos found, please check your settings</string>
@@ -48,6 +48,7 @@
     <string name="category_brightness">Brightness</string>
     <string name="category_animation">Animation</string>
     <string name="category_about">About</string>
+    <string name="category_quality">Quality</string>
     <string name="category_quality_and_scene_types">Quality &amp; Scene types</string>
     <string name="category_filters">Filters</string>
     <string name="category_scaling">Scaling</string>
@@ -130,7 +131,7 @@
     <string name="settings_system_options">Open system screensaver options</string>
 
     <string name="settings_system_options_error">Unable to open your device\'s screensaver options</string>
-    <string name="settings_system_options_removed">This feature was removed by the manufacturer\nPlease visit the Aerial Views website for more details</string>
+    <string name="settings_system_options_removed">This feature was removed by the manufacturer\nPlease visit the AerialViews+ website for more details</string>
 
     <!-- Main / Video Sources -->
     <string name="sources_apple_title">Videos by Apple</string>
@@ -150,6 +151,12 @@
 
     <string name="sources_custom_feed_title">Custom feeds</string>
     <string name="sources_custom_feed_summary">Add expansion packs from Jetson Creative or a custom feed of media with descriptions</string>
+
+    <string name="sources_youtube_title">YouTube search</string>
+    <string name="sources_youtube_summary">Search YouTube on-device and cache ambient videos for screensaver playback</string>
+    <string name="sources_mode_category_title">Playback mode</string>
+    <string name="sources_mode_title">Video source mode</string>
+    <string name="sources_mode_summary">Choose AerialViews only, YouTube only, or both together</string>
 
     <string name="sources_samba_title">SMB/Samba share</string>
     <string name="sources_samba_summary">Play videos &amp; photos from a local network share on a PC or NAS device</string>
@@ -186,6 +193,59 @@
     <string name="custom_media_urls_title">Feed URLs</string>
     <string name="custom_media_urls_summary">Separate multiple URLs with a comma</string>
     <string name="custom_media_urls_invalid">One or more URLs are invalid</string>
+
+    <!-- Main / Video Sources / YouTube -->
+    <string name="youtube_enabled_title">Use YouTube videos</string>
+    <string name="youtube_search_category_title">Search formula</string>
+    <string name="youtube_formula_info_title">Rotating query formula</string>
+    <string name="youtube_formula_info_summary">Builds rotating searches from the categories you enable below and refreshes the library in the background automatically.</string>
+    <string name="youtube_query_title">Base Search Theme</string>
+    <string name="youtube_query_default_value">4K aerial nature ambient</string>
+    <string name="youtube_content_categories_title">Content Categories</string>
+    <string name="youtube_content_categories_summary">Choose what types of videos appear</string>
+    <string name="youtube_category_nature_title">Nature and Landscapes</string>
+    <string name="youtube_category_nature_summary">Forests, mountains, rivers, countryside</string>
+    <string name="youtube_category_animals_title">Wildlife and Animals</string>
+    <string name="youtube_category_animals_summary">Wildlife documentaries, animal footage</string>
+    <string name="youtube_category_drone_title">Drone and Aerial</string>
+    <string name="youtube_category_drone_summary">Aerial footage, drone videos, flyovers</string>
+    <string name="youtube_category_ocean_title">Ocean and Underwater</string>
+    <string name="youtube_category_ocean_summary">Ocean waves, underwater, coral reefs</string>
+    <string name="youtube_category_space_title">Space and Earth</string>
+    <string name="youtube_category_space_summary">Earth from space, aurora, night sky</string>
+    <string name="youtube_category_cities_title">Cities and Urban</string>
+    <string name="youtube_category_cities_summary">City skylines, architecture, streets</string>
+    <string name="youtube_category_weather_title">Weather and Storms</string>
+    <string name="youtube_category_weather_summary">Storms, clouds, rain, lightning</string>
+    <string name="youtube_category_winter_title">Winter and Arctic</string>
+    <string name="youtube_category_winter_summary">Snow, ice, frozen landscapes</string>
+    <string name="youtube_categories_changed_notice">Updating your video library in the background with the new categories</string>
+    <string name="youtube_category_refresh_started">Fetching videos for new categories…</string>
+    <string name="youtube_playlist_category_title">Quality &amp; playback</string>
+    <string name="youtube_quality_title">Video Quality</string>
+    <string name="youtube_quality_summary">Always use Highest for best screensaver quality. Auto may reduce quality during busy network periods.</string>
+    <string name="youtube_mix_weight_title">YouTube mix level</string>
+    <string name="youtube_mix_weight_disabled_summary">Used only in AerialViews + YouTube mode</string>
+    <string name="youtube_count_pending_summary">Searching in background…</string>
+    <string name="youtube_shuffle_title">Shuffle Playback</string>
+    <string name="youtube_refresh_now_title">Refresh Now</string>
+    <string name="youtube_refresh_now_summary">Rebuild your YouTube library now</string>
+    <string name="youtube_cache_count_title">YouTube library</string>
+    <string name="youtube_cache_count_summary">Videos in library: %1$d</string>
+    <string name="youtube_cache_count_pending">Videos in library: Refreshing...</string>
+    <string name="youtube_cache_loading_overlay">Loading video library... %1$d of %2$d</string>
+    <string name="youtube_cache_full_toast">Video library is full (200 videos). Tap Refresh Now to rebuild with new categories.</string>
+    <string name="youtube_min_duration_title">Minimum video duration</string>
+    <string name="youtube_min_duration_summary">Videos shorter than this will be excluded</string>
+    <string name="youtube_cache_full_on_category_toast">Library full. New category will be included on next Refresh Now.</string>
+    <string name="youtube_rebuilding_library">Rebuilding library from scratch...</string>
+    <string name="youtube_videos_removed_toast">Removed %1$d videos. %2$d videos remaining.</string>
+    <string name="youtube_no_categories_selected_toast">No categories selected. Screensaver will use existing videos.</string>
+    <string name="youtube_min_duration_warning_toast">Very few videos are longer than 60 minutes. You may get fewer results.</string>
+    <string name="youtube_refresh_started">Refreshing YouTube library. This can take a minute.</string>
+    <string name="youtube_refresh_success">YouTube library updated: %1$d videos ready.</string>
+    <string name="youtube_refresh_failed">Refresh failed. Keeping current library.</string>
+    <string name="youtube_refresh_dialog_message">Refreshing YouTube library…</string>
 
     <!-- Main / Video Sources / Local+USB videos -->
     <string name="local_videos_enabled_title">Use Local or USB storage media</string>
@@ -389,6 +449,7 @@
 
     <string name="projectivy_select_videos_title">Select video sources</string>
     <string name="projectivy_select_videos_summary">Choose which video providers to share with Projectivy launcher</string>
+    <string name="projectivy_youtube_videos">YouTube Videos</string>
 
     <string name="settings_capabilities_title">Device Capabilities</string>
     <string name="settings_capabilities_summary">View video codecs, resolution support, and other capabilities</string>
@@ -407,6 +468,8 @@
     <string name="projectivy_amazon_videos_options_title">Amazon video options</string>
     <string name="projectivy_comm1_videos_options_title">Jetson Creative video options</string>
     <string name="projectivy_comm2_videos_options_title">Robin Fourcade video options</string>
+    <string name="projectivy_youtube_videos_options_title">YouTube video options</string>
+    <string name="projectivy_youtube_videos_options_summary">Configure YouTube search and playback settings</string>
 
     <!-- Main / Settings / Overlays -->
     <string name="appearance_top_row_title">Top Row</string>
@@ -466,7 +529,7 @@
     <string name="nowplaying_shorten_track_name_title">Shorten track names</string>
     <string name="nowplaying_shorten_track_name_summary">Remove common suffixes like \"- Original Mix\" or \"(Remastered)\"</string>
 
-    <string name="nowplaying_toast_text">Please enable Aerial Views in: Special app access > Notification access</string>
+    <string name="nowplaying_toast_text">Please enable AerialViews+ in: Special app access > Notification access</string>
 
     <!-- Main / Settings / Overlays / Weather -->
     <string name="weather_location_title">Location</string>
@@ -491,10 +554,6 @@
     <string name="appearance_metadata_slot1_summary">Select and reorder metadata fields</string>
     <string name="appearance_metadata_slot2_title">Metadata #2</string>
     <string name="appearance_metadata_slot2_summary">Select and reorder metadata fields</string>
-    <string name="appearance_metadata_slot3_title">Metadata #3</string>
-    <string name="appearance_metadata_slot3_summary">Select and reorder metadata fields</string>
-    <string name="appearance_metadata_slot4_title">Metadata #4</string>
-    <string name="appearance_metadata_slot4_summary">Select and reorder metadata fields</string>
     <string name="appearance_metadata_fields_title">Configure fields</string>
 
     <string name="overlay_metadata_videos_title">Video metadata</string>
@@ -612,12 +671,12 @@
     <string name="appearance_video_scale_title">Video scaling</string>
     <string name="appearance_photo_scale_landscape_title">Landscape Photo scaling</string>
     <string name="appearance_photo_scale_portrait_title">Portrait Photo scaling</string>
+    <string name="appearance_photo_bilinear_filtering_title">Bilinear Filtering</string>
+    <string name="appearance_photo_bilinear_filtering_summary">Applies high-quality filtering when resizing photos to reduce aliasing (jagged edges)</string>
     <string name="category_background_blur">Background blur</string>
     <string name="appearance_photo_background_blur_title">Enable background blur</string>
     <string name="appearance_photo_background_blur_summary">Show a blurred version of the photo behind the foreground image to fill empty areas</string>
     <string name="appearance_photo_background_blur_opacity_title">Blur opacity</string>
-    <string name="appearance_photo_background_blur_intensity_title">Blur intensity</string>
-    <string name="appearance_photo_background_blur_intensity_summary">Adjusts the blur radius for both modern and legacy blur</string>
 
     <!-- Main / Settings / Appearance / Progress Bar -->
     <string name="progress_bar_location_title">Location on screen</string>
@@ -804,7 +863,7 @@
     <string name="settings_export_summary1">Only settings which have been changed from the defaults will be exported</string>
 
     <string name="settings_import_summary1">To import settings, please use a File Manager app to open the backup settings file</string>
-    <string name="settings_import_summary2">This will invoke Aerial Views or give an option to do so</string>
+    <string name="settings_import_summary2">This will invoke AerialViews+ or give an option to do so</string>
     <string name="settings_import_summary3">When successful, you will be asked to confirm the settings import</string>
 
     <string name="settings_export_successful">Settings exported successfully</string>

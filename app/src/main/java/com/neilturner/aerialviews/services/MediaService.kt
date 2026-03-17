@@ -1,6 +1,7 @@
 package com.neilturner.aerialviews.services
 
 import android.content.Context
+import androidx.preference.PreferenceManager
 import com.neilturner.aerialviews.models.MediaPlaylist
 import com.neilturner.aerialviews.models.enums.AerialMediaSource
 import com.neilturner.aerialviews.models.enums.AerialMediaType
@@ -18,6 +19,7 @@ import com.neilturner.aerialviews.models.prefs.SambaMediaPrefs
 import com.neilturner.aerialviews.models.prefs.SambaMediaPrefs2
 import com.neilturner.aerialviews.models.prefs.WebDavMediaPrefs
 import com.neilturner.aerialviews.models.prefs.WebDavMediaPrefs2
+import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.providers.AmazonMediaProvider
 import com.neilturner.aerialviews.providers.AppleMediaProvider
 import com.neilturner.aerialviews.providers.Comm1MediaProvider
@@ -28,6 +30,7 @@ import com.neilturner.aerialviews.providers.custom.CustomFeedProvider
 import com.neilturner.aerialviews.providers.immich.ImmichMediaProvider
 import com.neilturner.aerialviews.providers.samba.SambaMediaProvider
 import com.neilturner.aerialviews.providers.webdav.WebDavMediaProvider
+import com.neilturner.aerialviews.providers.youtube.YouTubeMediaProvider
 import com.neilturner.aerialviews.services.MediaServiceHelper.addMetadataToManifestVideos
 import com.neilturner.aerialviews.services.MediaServiceHelper.buildMediaList
 import com.neilturner.aerialviews.utils.TimeOfDayHelper
@@ -53,13 +56,23 @@ class MediaService(
         providers.add(ImmichMediaProvider(context, ImmichMediaPrefs))
         providers.add(AppleMediaProvider(context, AppleVideoPrefs))
         providers.add(CustomFeedProvider(context, CustomFeedPrefs))
+        providers.add(YouTubeMediaProvider(context))
         providers.sortBy { it.type == ProviderSourceType.REMOTE }
     }
 
     suspend fun fetchMedia(): MediaPlaylist =
         withContext(Dispatchers.IO) {
+            normalizeYouTubeSourceModeIfNeeded()
+
             // Build media list from all providers
-            val media = buildMediaList(providers)
+            var media = buildMediaList(providers)
+            if (media.isEmpty()) {
+                val youtubeOnlyMedia = tryYouTubeFallback()
+                if (youtubeOnlyMedia.isNotEmpty()) {
+                    Timber.i("Recovered empty playlist using direct YouTube fallback (%s items)", youtubeOnlyMedia.size)
+                    media = youtubeOnlyMedia
+                }
+            }
 
             // Split into videos and photos
             var (videos, photos) = media.partition { it.type == AerialMediaType.VIDEO }
@@ -71,18 +84,20 @@ class MediaService(
                 val numPhotos = photos.size
                 videos =
                     videos.distinctBy { videos ->
-                        if (videos.source != AerialMediaSource.IMMICH) {
-                            videos.uri.filename.lowercase()
-                        } else {
-                            videos.uri
+                        when (videos.source) {
+                            AerialMediaSource.IMMICH,
+                            AerialMediaSource.YOUTUBE,
+                            -> videos.uri.toString().lowercase()
+
+                            else -> videos.uri.filename.lowercase()
                         }
                     }
                 photos =
                     photos.distinctBy { photo ->
-                        if (photo.source != AerialMediaSource.IMMICH) {
-                            photo.uri.filename.lowercase()
+                        if (photo.source == AerialMediaSource.IMMICH) {
+                            photo.uri.toString().lowercase()
                         } else {
-                            photo.uri
+                            photo.uri.filename.lowercase()
                         }
                     }
                 Timber.i("Duplicates removed: videos ${numVideos - videos.size}, photos ${numPhotos - photos.size}")
@@ -98,8 +113,17 @@ class MediaService(
 
             // Discard unmatched manifest videos
             if (GeneralPrefs.ignoreNonManifestVideos) {
-                Timber.i("Removing ${unmatchedVideos.size} non-manifest videos")
-                unmatchedVideos = emptyList()
+                val (youtubeVideos, otherUnmatchedVideos) =
+                    unmatchedVideos.partition { video ->
+                        video.source == AerialMediaSource.YOUTUBE
+                    }
+                if (otherUnmatchedVideos.isNotEmpty()) {
+                    Timber.i("Removing ${otherUnmatchedVideos.size} non-manifest videos")
+                }
+                if (youtubeVideos.isNotEmpty()) {
+                    Timber.i("Preserving ${youtubeVideos.size} YouTube videos while ignoreNonManifestVideos is enabled")
+                }
+                unmatchedVideos = youtubeVideos
             }
 
             var filteredMedia = unmatchedVideos + matchedVideos + unmatchedPhotos + matchedPhotos
@@ -150,11 +174,65 @@ class MediaService(
             }
 
             if (GeneralPrefs.shuffleVideos) {
-                filteredMedia = filteredMedia.shuffled()
-                Timber.i("Shuffling media items")
+                val youtubeMixWeight = YouTubeVideoPrefs.mixWeight.toIntOrNull() ?: 1
+                filteredMedia = MediaServiceHelper.applyYouTubeMixWeight(filteredMedia, youtubeMixWeight)
+                Timber.i("Shuffling media items with YouTube mix weight %s", youtubeMixWeight)
             }
 
             Timber.i("Total media items: ${filteredMedia.size}")
-            return@withContext MediaPlaylist(filteredMedia)
+            return@withContext MediaPlaylist(
+                filteredMedia,
+                reshuffleOnWrap = GeneralPrefs.shuffleVideos,
+            )
         }
+
+    private fun normalizeYouTubeSourceModeIfNeeded() {
+        val sourceMode =
+            PreferenceManager
+                .getDefaultSharedPreferences(context)
+                .getString(KEY_SOURCE_MODE, SOURCE_MODE_YOUTUBE)
+                ?.trim()
+                ?.lowercase()
+                ?: SOURCE_MODE_YOUTUBE
+        if (sourceMode != SOURCE_MODE_YOUTUBE) {
+            return
+        }
+
+        var changed = false
+        if (!YouTubeVideoPrefs.enabled) {
+            YouTubeVideoPrefs.enabled = true
+            changed = true
+        }
+        if (AppleVideoPrefs.enabled) {
+            AppleVideoPrefs.enabled = false
+            changed = true
+        }
+        if (AmazonVideoPrefs.enabled) {
+            AmazonVideoPrefs.enabled = false
+            changed = true
+        }
+        if (Comm1VideoPrefs.enabled) {
+            Comm1VideoPrefs.enabled = false
+            changed = true
+        }
+        if (Comm2VideoPrefs.enabled) {
+            Comm2VideoPrefs.enabled = false
+            changed = true
+        }
+        if (changed) {
+            Timber.i("Normalized providers for source_mode=youtube (YouTube on, default aerial providers off)")
+        }
+    }
+
+    private suspend fun tryYouTubeFallback() =
+        runCatching {
+            YouTubeMediaProvider(context).fetchMedia()
+        }.onFailure { exception ->
+            Timber.w(exception, "YouTube fallback fetch failed")
+        }.getOrDefault(emptyList())
+
+    companion object {
+        private const val KEY_SOURCE_MODE = "source_mode"
+        private const val SOURCE_MODE_YOUTUBE = "youtube"
+    }
 }

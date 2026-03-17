@@ -184,8 +184,8 @@ class OverlayHelper(
         return Pair(leftIds, rightIds)
     }
 
-    private fun getOverlay(overlay: OverlayType): View? =
-        when (overlay) {
+    private fun getOverlay(overlay: OverlayType): View? {
+        return when (overlay) {
             OverlayType.CLOCK -> {
                 ClockOverlay(context).apply {
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, prefs.clockSize.toFloat())
@@ -206,22 +206,6 @@ class OverlayHelper(
                     type = overlay
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, prefs.overlayMetadata2Size.toFloat())
                     typeface = FontHelper.getTypeface(context, prefs.fontTypeface, prefs.overlayMetadata2Weight)
-                }
-            }
-
-            OverlayType.METADATA3 -> {
-                MetadataOverlay(context).apply {
-                    type = overlay
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, prefs.overlayMetadata3Size.toFloat())
-                    typeface = FontHelper.getTypeface(context, prefs.fontTypeface, prefs.overlayMetadata3Weight)
-                }
-            }
-
-            OverlayType.METADATA4 -> {
-                MetadataOverlay(context).apply {
-                    type = overlay
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, prefs.overlayMetadata4Size.toFloat())
-                    typeface = FontHelper.getTypeface(context, prefs.fontTypeface, prefs.overlayMetadata4Weight)
                 }
             }
 
@@ -308,7 +292,8 @@ class OverlayHelper(
             }
 
             else -> {
-                null
+	            null
             }
         }
+    }
 }

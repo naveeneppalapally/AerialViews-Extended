@@ -21,12 +21,12 @@ android {
     var betaVersion = ""
     val keyProps = loadProperties("secrets.properties")
     defaultConfig {
-        applicationId = "com.neilturner.aerialviews"
+        applicationId = "com.naveen.aerialviewsplus"
         minSdk = 23 // Android v6
         targetSdk = 36
-        versionCode = 105
-        versionName = "1.8.2"
-        betaVersion = "-beta15"
+        versionCode = 102
+        versionName = "1.1.0"
+        betaVersion = "-beta12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -37,6 +37,7 @@ android {
         val openWeather = keyProps.getProperty("openWeatherDebug", "")
         buildConfigField("String", "OPEN_WEATHER", "\"$openWeather\"")
         buildConfigField("String", "BUILD_TIME", "\"${System.currentTimeMillis()}\"")
+        buildConfigField("boolean", "ENABLE_YOUTUBE_LOGS", "false")
     }
 
     compileOptions {
@@ -76,6 +77,14 @@ android {
             isMinifyEnabled = false
             // isPseudoLocalesEnabled = true
         }
+        create("nonMinifiedRelease") {
+            initWith(getByName("release"))
+            isDebuggable = false
+            isMinifyEnabled = false
+            isShrinkResources = false
+            buildConfigField("boolean", "ENABLE_YOUTUBE_LOGS", "false")
+            matchingFallbacks += listOf("release")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -95,17 +104,34 @@ android {
                 excludes.add("META-INF/LICENSE")
                 excludes.add("META-INF/NOTICE")
                 excludes.add("META-INF/*.kotlin_module")
+                // JANSI: Windows/Mac/Linux native libs bundled by slf4j-simple — useless on Android
+                excludes.add("org/fusesource/jansi/internal/native/**")
+                // BouncyCastle PQC binary data — not used on Android
+                excludes.add("org/bouncycastle/pqc/crypto/picnic/**")
+                excludes.add("org/bouncycastle/pqc/crypto/lms/**")
+                // Redundant license/notice files from dependencies
+                excludes.add("META-INF/DEPENDENCIES")
+                excludes.add("META-INF/LICENSE.txt")
+                excludes.add("META-INF/NOTICE.txt")
+                excludes.add("META-INF/AL2.0")
+                excludes.add("META-INF/LGPL2.1")
+                excludes.add("META-INF/ASL2.0")
+                excludes.add("META-INF/*.SF")
+                excludes.add("META-INF/*.RSA")
+                excludes.add("META-INF/*.DSA")
             }
         }
     }
 
     signingConfigs {
         create("release") {
-            val releaseProps = loadProperties("signing/release.properties")
-            storeFile = releaseProps["storeFile"]?.let { file(it) }
-            storePassword = releaseProps["storePassword"] as String?
-            keyAlias = releaseProps["keyAlias"] as String?
-            keyPassword = releaseProps["keyPassword"] as String?
+            storeFile = file(
+                System.getenv("KEYSTORE_PATH")
+                    ?: "${System.getProperty("user.home")}/.android/aerialviews-plus-release.jks",
+            )
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
+            keyAlias = System.getenv("KEY_ALIAS") ?: "aerialviewsplus"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: ""
         }
         create("legacy") {
             val releaseProps = loadProperties("signing/legacy.properties")
@@ -119,7 +145,7 @@ android {
     flavorDimensions += "version"
     productFlavors {
         create("github") {
-            signingConfig = signingConfigs.getByName("legacy")
+            signingConfig = signingConfigs.getByName("release")
             dimension = "version"
         }
         create("beta") {
@@ -179,10 +205,18 @@ dependencies {
 
     implementation(libs.bundles.ktor)
     implementation(libs.bundles.exoplayer)
+    implementation(libs.media3.dash)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
     implementation(libs.sardine.android)
     implementation(libs.smbj)
     implementation(libs.timber)
     implementation(libs.slf4j.simple)
+    implementation(libs.work.runtime.ktx)
+    implementation(libs.newpipe.extractor) {
+        exclude(group = "com.google.protobuf", module = "protobuf-javalite")
+    }
+    ksp(libs.room.compiler)
 
     debugImplementation(libs.leakcanary)
 

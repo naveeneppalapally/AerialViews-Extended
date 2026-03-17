@@ -1,66 +1,51 @@
-# Aerial Views
+# AerialViews+
 
-[![Latest GitHub release](https://img.shields.io/github/v/release/theothernt/AerialViews.svg?logo=github&label=GitHub&cacheSeconds=3600)](https://github.com/theothernt/AerialViews/releases/latest)
-[![Google Play Downloads](https://playbadges.pavi2410.com/badge/downloads?id=com.neilturner.aerialviews&pretty)](https://play.google.com/store/apps/details?id=com.neilturner.aerialviews)
-[![GitHub Downloads](https://img.shields.io/github/downloads/theothernt/AerialViews/total?color=blue&label=Downloads&logo=github)](https://github.com/theothernt/AerialViews/releases/latest)
-[![Amazon Fire TV](https://img.shields.io/static/v1?style=flat&color=FC4C02&label=Amazon%20Appstore&message=10k%2B)](https://www.amazon.com/gp/product/B0B4PPSNT6)
+[![Latest GitHub release](https://img.shields.io/github/v/release/naveeneppalapally/AerialViews-Plus.svg?logo=github&label=GitHub&cacheSeconds=3600)](https://github.com/naveeneppalapally/AerialViews-Plus/releases/latest)
+[![GitHub Downloads](https://img.shields.io/github/downloads/naveeneppalapally/AerialViews-Plus/total?color=blue&label=Downloads&logo=github)](https://github.com/naveeneppalapally/AerialViews-Plus/releases/latest)
+[![License](https://img.shields.io/:license-gpl%20v3-lightgrey.svg?style=flat)](https://raw.githubusercontent.com/naveeneppalapally/AerialViews-Plus/main/LICENSE)
+[![API](https://img.shields.io/badge/API-23%2B-lightgrey.svg?style=flat)](https://android-arsenal.com/api?level=23)
 
-[![API](https://img.shields.io/badge/API-22%2B-lightgrey.svg?style=flat)](https://android-arsenal.com/api?level=22)
-[![License](https://img.shields.io/:license-gpl%20v3-lightgrey.svg?style=flat)](https://raw.githubusercontent.com/theothernt/AerialViews/master/LICENSE)
+A fork of AerialViews that adds YouTube as a native video source.
+Plays fresh 4K nature, aerial, and ambient videos from YouTube directly on your Android TV, no API key, no server, no login required.
 
-A screensaver for Android/Google TV devices and phones including Nvidia Shield, Fire TV, and Google TV Streamer.
+## Everything from AerialViews
 
-Inspired by Apple TV's beautiful video screensaver!
-
-*Please read if you have an [Nvidia Shield](#frequently-asked-questions) or [a recent Google TV device.](#how-to-set-aerial-views-as-the-default-screensaver)*
-
-## Features include...
-
-* 4K Dolby Vision (HDR) videos, if your TV supports it
+* 4K Dolby Vision (HDR) videos if your TV supports it
 * Over 250 videos from Apple, Amazon, Jetson Creative and Robin Fourcade
-* Show videos & photos from USB storage, [Immich server](https://immich.app/), Samba, WebDAV or custom feeds
-* Place overlays in the corners of the screen such as clock, description/location, music playing, date, custom message
-* Alternate the position of overlays to avoid burn-in on QD/OLED TVs
-* Many playlist options to limit media length or loop certain videos
-* Use the D-Pad or swipe (on phones, tablets, etc) to skip media, skip songs, change speed, seek, pause and more
-* Refresh rate switching 24fps, 50fps, etc content
+* USB, Immich, Samba, WebDAV, and custom feed support
+* Clock, date, location, now playing, and custom text overlays
+* Burn-in protection by alternating overlay positions
+* Playlist controls, shuffle, skip, and media length limits
+* Refresh rate switching for 24fps, 50fps content
 
-## Support the project
+## New in this fork
 
-If you enjoy using the app, please consider [buying me a coffee](https://ko-fi.com/theothernt).
+* YouTube as a native video source (no API key, no server)
+* On-device search using NewPipe Extractor
+* Video local cache with automatic daily refresh
+* Diversity engine so the same video never repeats
+* Stream URL auto-renewal before YouTube links expire
+* YouTube mixed with built-in sources in the same playlist
+* Background refresh via WorkManager
 
-[![Ko-fi badge](docs/images/kofi_badge.png)](https://ko-fi.com/theothernt)
+## Installation
 
-## How to get Aerial Views...
+1. Download the latest APK from the [Releases tab](https://github.com/naveeneppalapally/AerialViews-Plus/releases/latest).
+2. Enable `Install unknown apps` on your Android TV.
+3. Install the APK with a file manager on your device.
 
-[![Google Play Store badge](https://play.google.com/intl/en_us/badges/images/badge_new.png)](https://play.google.com/store/apps/details?id=com.neilturner.aerialviews) &nbsp;&nbsp;
-[<img alt="Amazon Appstore badge" src="https://images-na.ssl-images-amazon.com/images/G/01/mobile-apps/devportal2/res/images/amazon-appstore-badge-english-black.png" width="153">](http://www.amazon.com/gp/mas/dl/android?p=com.neilturner.aerialviews)
+Or install via ADB:
 
-Or [download the APK from the Releases page](https://github.com/theothernt/AerialViews/releases) and install it manually
+```sh
+adb install -r AerialViews-Plus-v1.1.0.apk
+```
 
-## Want to Contribute?
+## How to set AerialViews+ as the default screensaver
 
-Aerial Views is an open-source project — contributions are welcome! Whether it’s a bug fix, new feature, or improving translations, feel free to [open an issue](https://github.com/theothernt/AerialViews/issues) or submit a pull request.
-
-And please get in contact before submitting pull requests, thanks!
-
-## Translations
-
-If Aerial Views is not available in your language but you have some free time to help translate menu text and video descriptions, please get in touch!
-
-We use the [Lokalise](https://lokalise.com/) platform to coordinate translations for Aerial Views and thank them for their support of this open-source project.
-
-[![Lokalise logo](docs/images/lokalise_logo.png)](https://lokalise.com/)
-
-## Where to download videos for offline/local playback
-
-Download curated videos from...
-
-* [Apple](https://aerial-videos.netlify.app/#apple) (114 videos)
-* [Jetson Creative](https://aerial-videos.netlify.app/#jetson-creative) (20 community videos)
-* [Robin Fourcade](https://aerial-videos.netlify.app/#robin-fourcade) (18 community videos)
-
-## How to set Aerial Views as the default screensaver
+> These setup instructions are taken directly from the original 
+> [AerialViews](https://github.com/theothernt/AerialViews) by 
+> [Neil McAlister](https://github.com/theothernt) and are reproduced 
+> here with credit and thanks. The steps are identical for this fork.
 
 Since 2023, nearly all devices that ship with Google TV, running Android TV 12 or later, have no user-interface to change the screensaver to a 3rd party one...
 
@@ -75,7 +60,7 @@ But it can be done manually. Here is an overview of the steps...
 1. Enable Developer mode, enable USB debugging, then find the IP address of your device
 2. Use a Mac, iPhone, PC or Android phone with the required software or app
 3. Connect to your Android/Google/Fire TV device
-4. Run two ADB commands, one to set Aerial Views as the default screensaver, the other to set how long it takes the screensaver to start
+4. Run two ADB commands, one to set AerialViews+ as the default screensaver, the other to set how long it takes the screensaver to start
 
 The full instructions are below, please click or tap to expand each step.
 
@@ -118,33 +103,33 @@ Next, find the IP address of your device and make a note of it. Navigate to the 
 <summary>Allow Auto Launch on TCL TVs</summary>
 &nbsp;
 
-If you have a TCL TV with Google TV, you need to allow the Auto Launch permission so that Aerial Views can be launched from the background when the screensaver starts.
+If you have a TCL TV with Google TV, you need to allow the Auto Launch permission so that AerialViews+ can be launched from the background when the screensaver starts.
 
-Otherwise, the screensaver cannot be started, either automatically, or manually via the Screensaver menu shortcut, unless the Aerial Views app has been recently opened (see [#191](https://github.com/theothernt/AerialViews/issues/191) for details).
+Otherwise, the screensaver cannot be started, either automatically, or manually via the Screensaver menu shortcut, unless the AerialViews+ app has been recently opened (see [#191](https://github.com/theothernt/AerialViews/issues/191) for details).
 
 1. Open the __Safety Guard__ app on your TV
 2. Navigate to `Permission Shield > Auto Launch Permission`
 3. Change the `Auto manager` at the top to `Closed` - this allows you to manually select which apps can auto-launch instead of the system deciding automatically
-4. Scroll to __Aerial Views__ and change it to `Opened`
+4. Scroll to __AerialViews+__ and change it to `Opened`
 
 Not all TCL TVs have the same software and features. If the above __Safety Guard__ app does not exist on your TV, the following ADB command might help…
 
-Android TV v13 or less:
+Android <v14:
 
 ```sh
-appops set com.neilturner.aerialviews APP_AUTO_START allow
+appops set com.naveen.aerialviewsplus APP_AUTO_START allow
 ```
 
-Android TV v14 or greater
+Androind >=v14
 
 ```sh
-appops set com.neilturner.aerialviews AUTO_START allow
+appops set com.naveen.aerialviewsplus AUTO_START allow
 ```
 
 You can confirm the available options:
 
 ```sh
-appops get com.neilturner.aerialviews
+appops get com.naveen.aerialviewsplus
 
 # Returns
 WAKE_LOCK: allow; time=+5m55s466ms ago; duration=+2s889ms
@@ -178,7 +163,7 @@ After pressing return, you should see something like this
 
 ```sh
 Android Debug Bridge version 1.0.41
-Version  31.0.0p1-android-tools
+Version 31.0.0p1-android-tools
 ```
 
 Now you can execute ADB commands.
@@ -207,7 +192,7 @@ After pressing return, you should see something like this
 
 ```sh
 Android Debug Bridge version 1.0.41
-Version  34.0.0p1-android-tools
+Version 34.0.0p1-android-tools
 ```
 
 Now you can execute ADB commands.
@@ -232,7 +217,7 @@ After pressing return, you should see something like this
 
 ```sh
 Android Debug Bridge version 1.0.41
-Version  35.0.0-11411520
+Version 35.0.0-11411520
 ```
 
 Now you can execute ADB commands.
@@ -258,7 +243,7 @@ After pressing return, you should see something like this
 
 ```sh
 Android Debug Bridge version 1.0.41
-Version  35.0.0-11411520
+Version 35.0.0-11411520
 ```
 
 </details>
@@ -289,7 +274,7 @@ You should be connected to your CCwGTV device with ADB. Now you can run `adb she
 </details>
 
 <details>
-<summary>ADB command - set Aerial Views as the default screensaver</summary>
+<summary>ADB command - set AerialViews+ as the default screensaver</summary>
 &nbsp;
 
 Connect to your Android TV device and start a command shell...
@@ -306,10 +291,10 @@ adb shell
 
 :information_source: *The first time you connect to your Android TV device, you will probably see a confirmation dialogue asking to "allow" the connection*
 
-Next, set Aerial Views as the default screensaver with this command…
+Next, set AerialViews+ as the default screensaver with this command…
 
 ```sh
-settings put secure screensaver_components com.neilturner.aerialviews/.ui.screensaver.DreamActivity
+settings put secure screensaver_components com.naveen.aerialviewsplus/.ui.screensaver.DreamActivity
 ```
 
 Optional: Confirm that the command was run successfully, as there is no confirmation when the command above is run.
@@ -321,7 +306,7 @@ settings get secure screensaver_components
 If set correctly, you should see... 
 
 ```sh
-com.neilturner.aerialviews/.ui.screensaver.DreamActivity
+com.naveen.aerialviewsplus/.ui.screensaver.DreamActivity
 ```
 
 </details>
@@ -330,12 +315,12 @@ com.neilturner.aerialviews/.ui.screensaver.DreamActivity
 <summary>ADB command - extra command for Fire TV + Fire OS 7.6.x.x</summary>
 &nbsp;
 
-Recent updates to Fire OS mean extra commands are required for Aerial Views to function properly as the default screensaver.
+Recent updates to Fire OS mean extra commands are required for AerialViews+ to function properly as the default screensaver.
 
 Like with previous ADB commands, connect to your Android TV device and start a command shell. Then run the following commands...
 
 ```sh
-settings put secure screensaver_default_component com.neilturner.aerialviews/.ui.screensaver.DreamActivity
+settings put secure screensaver_default_component com.naveen.aerialviewsplus/.ui.screensaver.DreamActivity
 settings put secure contextual_screen_off_timeout 300000 
 settings put secure screensaver_enabled 1
 ```
@@ -346,7 +331,7 @@ settings put secure screensaver_enabled 1
 <summary>ADB command - extra command for Fire TV + Fire OS 8.1.x.x</summary>
 &nbsp;
 
-Fire OS 8.x introduces a new Ambient Experience screensaver. This must also be disabled for a 3rd party screensaver, like Aerial Views, to run normally.
+Fire OS 8.x introduces a new Ambient Experience screensaver. This must also be disabled for a 3rd party screensaver, like AerialViews+, to run normally.
 
 To disable the Ambient Experience, run this ADB command...
 
@@ -379,7 +364,7 @@ settings put system screen_off_timeout 600000
 <summary>How to revert back to the default screensaver</summary>
 &nbsp;
 
-For whatever reason, if you would like to stop using Aerial Views and revert back to the original screensaver, there are two options…
+For whatever reason, if you would like to stop using AerialViews+ and revert back to the original screensaver, there are two options…
 
 * Reset your device. Doing so will also reset the screensaver preference
 * Use an ADB commands to enable the default screensaver, depending on your device
@@ -419,101 +404,113 @@ Please make sure to enable **Developer Mode** and **USB/Networking Debugging**. 
 
 </details>
 
-## Frequently asked questions
+## How YouTube Works
+
+When YouTube is enabled as a source, the app builds a rotating set of search queries on-device and uses NewPipe Extractor to find and resolve playable video streams, with no Google account needed, no API key, and nothing sent to a custom server.
+
+Results are cached locally for about 24 hours. Stream URLs are refreshed automatically before they expire, and a background job keeps the cache warm overnight. If a refresh fails, the app falls back to the last working cache so playback never stops.
+
+## About the YouTube Videos
+
+Unlike the built-in Apple and Amazon videos in AerialViews, which are
+a fixed, hand-picked collection, the YouTube source in this fork pulls
+fresh content automatically. It is a different experience, and it helps
+to know what to expect.
+
+**What you will see:**
+- New videos appear regularly as the cache refreshes daily
+- Content changes week to week as search results rotate
+- A wide variety of locations, seasons, and subjects over time
+
+**What keeps it feeling consistent:**
+- Only videos longer than 8 minutes are included, with no short clips
+- Keywords like "ambient", "no music", and "no talking" filter out videos with narration, intros, or background music
+- AI-generated videos are filtered out by title, channel name, and duration patterns
+- Channel caps (max 3 videos per channel) prevent any single creator from dominating the playlist
+- Location diversity caps prevent the same place appearing back to back
+- Play history tracking means you will not see the same video twice in a short period
+
+The original AerialViews videos are carefully curated and always
+look cinematic and consistent. The YouTube source trades that
+stability for variety and freshness, so you get new content every
+day instead of the same 250 videos forever. Some videos will be
+better than others. If a video looks out of place, the app moves
+on automatically after it finishes.
+
+If you want the stable, curated experience, enable Apple or 
+Amazon sources alongside YouTube or instead of it. All sources 
+can be mixed in the same playlist.
+
+## FAQ
 
 Please click or tap to expand each item below...
 
 <details>
-<summary>Playing local media on the Nvidia Shield </summary>
+<summary>YouTube stopped working suddenly</summary>
 &nbsp;
 
-If your device is running Android 11 (Shield Experience 9+) and you want to play videos from a USB storage device, make sure the following setting is enabled:
+NewPipe Extractor occasionally breaks when YouTube updates its internal API. This is fixed by updating the NewPipe version.
 
-`Settings > Device Preferences > Storage > Scan for
-media automatically`
-
-To change the default screensaver on your Nvidia Shield, use the following menu:
-
-`Settings > Device Preferences > Screen saver`
-
+Check [github.com/TeamNewPipe/NewPipeExtractor/releases](https://github.com/TeamNewPipe/NewPipeExtractor/releases) for the latest version and open an issue on this repo. It is usually fixed within a few days.
 </details>
 
 <details>
-<summary>Fire TV and Frame Rate Switching</summary>
+<summary>Some videos are skipped</summary>
 &nbsp;
 
-Fire OS has no menu to allow advanced permissions for apps, so it must be done manually with an ADB command...
-
-```sh
-adb shell appops set com.neilturner.aerialviews SYSTEM_ALERT_WINDOW allow
-```
-
+Videos may be skipped due to age restrictions, regional blocks, deleted uploads, or unavailable stream quality. The app moves on to the next video automatically.
 </details>
 
 <details>
-<summary>HDR videos don't seem to play, I only see black screen...</summary>
+<summary>Can I use this on Nvidia Shield?</summary>
 &nbsp;
 
-Apple's videos only support Dolby Vision HDR. Even if your TV supports HDR, it might not support Dolby Vision.
-
-Here are some things to try...
-
-* Find the make and model of your TV, search online for a product page for that device and it should list the supported HDR modes (there are a few!)
-
-* If you use a Nvidia Shield, please [follow their instructions on how to enable (or confirm) that Dolby Vision playback is possible](https://www.nvidia.com/en-us/shield/support/shield-tv/enable-dolby-vision-hdr10-on-shield/)
-
-* Confirm that Dolby Vision playback works in other apps like Netflix, Disney+, or Amazon Prime Video
-
+Yes. Go to `Settings > Device Preferences > Screen saver` and select AerialViews+.
 </details>
 
 <details>
-<summary>How to launch Aerial Views from other apps</summary>
+<summary>Why is this not on the Play Store?</summary>
 &nbsp;
 
-Android screensaver use a special intent (DreamService) which cannot be called by 3rd party apps, only the OS itself.
-
-Instead, Aerial Views uses a standard intent which can be called by 3rd party to launch the 'Test screensaver' (Activity) which works in the same way as launching the screensaver.
-
-To do this, launch the following intent in apps like [Button Mapper](https://play.google.com/store/apps/details?id=flar2.homebutton) or [tvQuickActions](https://play.google.com/store/apps/details?id=dev.vodik7.tvquickactions.free)
-
-```sh
-com.neilturner.aerialviews/.ui.screensaver.TestActivity
-```
-
-If you are using Fully Kiosk, try the following...
-
-```sh
-intent://#Intent;component=com.neilturner.aerialviews/.ui.screensaver.TestActivity;end
-```
-
+The original AerialViews license prohibits any fork from being uploaded to the Play Store. Sideloading is the only option.
 </details>
 
 <details>
-<summary>How to launch into the screensaver when opening Aerial Views</summary>
+<summary>Does this replace AerialViews or work alongside it?</summary>
 &nbsp;
 
-When Aerial Views is launched, it starts in the Settings menu.
-
-If you want to launch into the screensaver directly, the equivalent of selecting "Test screensaver settings", you must enable to following option:
-
-`Settings > Appearance > Startup > Start screensaver on launch`
-
-Then you must assign an "Exit to settings" action to a d-pad, button press or swipe on one of these screens:
-
-`Settings > D-Pad/Remote, Tap & Swipe Gestures > D-Pad, Button Press, etc`
-
+It replaces it. Install one or the other, not both. All original features are included in this fork.
 </details>
 
-## Weather data
+## Building from Source
 
-Thanks to [OpenWeather](https://openweathermap.org/) for providing weather data to this and other open-source projects.
+Clone the repo and open it in Android Studio.
+The project requires JDK 21 and Android Studio Hedgehog or newer.
 
-[![OpenWeather logo](docs/images/openweather_logo.png)](https://openweathermap.org/)
+The GitHub Actions workflow builds the APK automatically
+when a release is triggered. If you just want the APK,
+download it from the Releases tab instead.
+
+## Contributing
+
+Pull requests are welcome. This fork is maintained with AI assistance, so turnaround on complex fixes may take a few days.
+
+For NewPipe breakage: just open an issue with your device model and Android version. The fix is almost always a one-line version bump in `gradle/libs.versions.toml`.
+
+Please open an issue before submitting a pull request for larger changes.
 
 ## About
 
-Aerial Views is primarily developed by Neil Turner. It is based on [Aerial Dream](https://github.com/cachapa/AerialDream), which was created by Daniel Cachapa in late 2015.
+AerialViews+ is based on [AerialViews](https://github.com/theothernt/AerialViews) by Neil McAlister, which itself is based on [Aerial Dream](https://github.com/cachapa/AerialDream) by Daniel Cachapa, created in late 2015. This fork was created to add YouTube as a video source without requiring any external server or API key.
 
-Aerial Views started in early 2020 as a fork with a couple of fixes and features to improve the experience on an old Sony Android TV. Around this time, Aerial Dream was not in active development anymore.
+## Credits
 
-Shortly after putting the code on GitHub, others found the fork and started requesting new builds with fixes and additional features. This led to the eventual release of Aerial Views on the Google Play Store in 2022, and later, the Amazon Appstore.
+See [CREDITS.md](./CREDITS.md) for full attribution.
+
+## License
+
+GPL v3, see [LICENSE](./LICENSE).
+
+## Disclaimer
+
+This fork is not affiliated with YouTube, Google, or Apple. It uses NewPipe Extractor for on-device stream extraction and is distributed for personal sideload use only.

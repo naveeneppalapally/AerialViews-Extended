@@ -2442,13 +2442,13 @@ class YouTubeSourceRepository(
         private const val DEFAULT_CATEGORY_WINTER = true
 
         private const val TARGET_CACHE_SIZE = 200
-        private const val EXTRACTION_TARGET_SIZE = 280
+        private const val EXTRACTION_TARGET_SIZE = 200
         private const val MIN_HEALTHY_CACHE_SIZE = 150
         private const val TARGET_CANDIDATE_POOL_SIZE = 600
         private const val EXTRACTION_BATCH_SIZE = 4
         private const val CATEGORY_DELTA_QUERY_COUNT_PER_CATEGORY = 12
         private const val MAX_CATEGORY_DELTA_QUERY_COUNT = 36
-        private const val CATEGORY_DELTA_EXTRACTION_LIMIT = 90
+        private const val CATEGORY_DELTA_EXTRACTION_LIMIT = 200
         private const val MAX_STREAM_URL_REFRESHES_PER_WARM = 24
         private const val QUERY_SEARCH_BATCH_SIZE = 10
         private const val COLD_START_QUERY_POOL_SIZE = 10

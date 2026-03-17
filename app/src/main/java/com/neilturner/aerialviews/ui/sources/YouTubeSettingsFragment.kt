@@ -105,8 +105,8 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             YouTubeFeature.repository(requireContext()).cacheLoadingProgress.collect { progress ->
                 Log.d(TAG, "YouTube progress observer: $progress")
                 if (progress != null) {
-                    val (current, _) = progress
-                    updateVideoCount(liveCount = current)
+                    val (current, total) = progress
+                    updateVideoCount(liveCount = current, targetCount = total)
                 } else {
                     // Progress is null -> refresh finished or cancelled.
                     refreshInProgress = false
@@ -313,7 +313,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         }
     }
 
-    private fun updateVideoCount(liveCount: Int? = null, staticCount: Int? = null) {
+    private fun updateVideoCount(liveCount: Int? = null, staticCount: Int? = null, targetCount: Int? = null) {
         val targetPreference = findPreference<Preference>("yt_enabled") ?: return
         
         // Use live progress if available, otherwise use provided staticCount, 
@@ -332,7 +332,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                 null
             }
             
-        updateCacheCountPreference(displayCount)
+        updateCacheCountPreference(displayCount, targetCount ?: YOUTUBE_LIBRARY_TARGET_COUNT)
     }
 
     private fun isCountPending(): Boolean =
@@ -370,13 +370,13 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         }
     }
 
-    private fun updateCacheCountPreference(cachedCount: Int?) {
+    private fun updateCacheCountPreference(cachedCount: Int?, targetCount: Int = YOUTUBE_LIBRARY_TARGET_COUNT) {
         val cacheCountPreference = findPreference<Preference>(PREFERENCE_CACHE_COUNT) ?: return
         cacheCountPreference.summary =
             if (refreshInProgress && cachedCount != null && cachedCount < 0) {
                 getString(R.string.youtube_refresh_searching)
-            } else if (refreshInProgress && cachedCount != null && cachedCount >= 0 && cachedCount < YOUTUBE_LIBRARY_TARGET_COUNT) {
-                getString(R.string.youtube_cache_loading_overlay, cachedCount, YOUTUBE_LIBRARY_TARGET_COUNT)
+            } else if (refreshInProgress && cachedCount != null && cachedCount >= 0 && cachedCount < targetCount) {
+                getString(R.string.youtube_cache_loading_overlay, cachedCount, targetCount)
             } else if (cachedCount != null && cachedCount >= 0) {
                 getString(R.string.youtube_cache_count_summary, cachedCount)
             } else if (refreshInProgress) {

@@ -265,14 +265,12 @@ class YouTubeSourceRepository(
 
             var removedCount = 0
             var insertedCount = 0
-            val initialExistingEntries = cacheDao.getAllGood()
 
             try {
                 _isRefreshingFlow.value = true
                 isRefreshing = true
-                // Emit initial progress to show "of 200" overlay
-                _cacheLoadingProgress.emit(Pair(initialExistingEntries.size, TARGET_CACHE_SIZE))
-                
+
+                // Step 1: Remove videos from disabled categories
                 removedCount =
                     if (removedCategories.isNotEmpty()) {
                         applyCurrentCategoryFilterInternal()
@@ -280,21 +278,29 @@ class YouTubeSourceRepository(
                         0
                     }
 
-                val currentCount = cacheDao.countGoodEntries()
-                if (addedCategories.isNotEmpty() && currentCount >= TARGET_CACHE_SIZE) {
+                // Step 2: Get the REAL post-deletion count
+                val countAfterRemoval = cacheDao.countGoodEntries()
+
+                // Step 3: Emit progress using REAL post-deletion count
+                _cacheLoadingProgress.emit(Pair(countAfterRemoval, TARGET_CACHE_SIZE))
+
+                // Step 4: Determine if we need to backfill
+                val needsBackfill = countAfterRemoval < TARGET_CACHE_SIZE
+                // Use ALL remaining enabled categories for backfill, or just newly added ones
+                val categoriesToFill = if (needsBackfill) currentEnabled else addedCategories
+
+                if (categoriesToFill.isNotEmpty() && countAfterRemoval < TARGET_CACHE_SIZE) {
+                    val postDeletionEntries = cacheDao.getAllGood()
+                    val backfillLimit = TARGET_CACHE_SIZE - countAfterRemoval
+                    insertedCount = addEntriesForCategories(
+                        categoryKeys = categoriesToFill,
+                        existingEntries = postDeletionEntries,
+                        initialCount = countAfterRemoval,
+                        extractionLimit = backfillLimit,
+                    )
+                } else if (addedCategories.isNotEmpty() && countAfterRemoval >= TARGET_CACHE_SIZE) {
                     _cacheFullEvent.value = true
                 }
-
-                insertedCount =
-                    if (addedCategories.isNotEmpty()) {
-                        addEntriesForCategories(
-                            categoryKeys = addedCategories,
-                            existingEntries = initialExistingEntries,
-                            initialCount = initialExistingEntries.size,
-                        )
-                    } else {
-                        0
-                    }
             } finally {
                 val finalCount = cacheDao.countGoodEntries()
                 _cacheCount.value = finalCount
@@ -315,7 +321,7 @@ class YouTubeSourceRepository(
             Log.i(
                 TAG,
                 "Applied category delta refresh (added=${addedCategories.size}, removed=${removedCategories.size}, " +
-                    "inserted=$insertedCount, removedRows=$removedCount, remaining=$dbCount)",
+                    "backfilled=$insertedCount, removedRows=$removedCount, remaining=$dbCount)",
             )
             DeltaRefreshResult(
                 removedCount = removedCount,
@@ -1774,8 +1780,9 @@ class YouTubeSourceRepository(
         categoryKeys: Set<String>,
         existingEntries: List<YouTubeCacheEntity>,
         initialCount: Int,
+        extractionLimit: Int = CATEGORY_DELTA_EXTRACTION_LIMIT,
     ): Int {
-        if (categoryKeys.isEmpty()) {
+        if (categoryKeys.isEmpty() || extractionLimit <= 0) {
             return 0
         }
 
@@ -1807,7 +1814,7 @@ class YouTubeSourceRepository(
         val rankedCandidates =
             rankCandidatesWithStyleBalance(filteredCandidates)
                 .let(::deduplicateCandidatesByTitle)
-                .let { applyCandidateDiversityCaps(it, CATEGORY_DELTA_EXTRACTION_LIMIT) }
+                .let { applyCandidateDiversityCaps(it, extractionLimit) }
         if (rankedCandidates.isEmpty()) {
             return 0
         }
@@ -1817,9 +1824,9 @@ class YouTubeSourceRepository(
                 items = rankedCandidates,
                 cachedAt = cachedAt,
                 preferredQuality = preferredQuality(),
-                limit = CATEGORY_DELTA_EXTRACTION_LIMIT,
+                limit = extractionLimit,
                 publishMinimumCache = false,
-                publishProgress = true, // We now want progress for delta refresh
+                publishProgress = true,
                 initialCount = initialCount,
             )
         if (extractedEntries.isEmpty()) {

@@ -63,11 +63,12 @@ class YouTubeSourceRepository(
             Timber.tag(TAG).e(exception, "Forced library rebuild failed or timed out")
         } finally {
             val finalCount = cacheDao.countGoodEntries()
+            // ORDER MATTERS: Reset state FIRST, then emit count and clear progress LAST
+            isRefreshing = false
+            _isRefreshingFlow.value = false
             _cacheCount.value = finalCount
             sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
             _cacheLoadingProgress.emit(null)
-            isRefreshing = false
-            _isRefreshingFlow.value = false
             refreshMutex.unlock()
         }
     }
@@ -303,11 +304,12 @@ class YouTubeSourceRepository(
                 }
             } finally {
                 val finalCount = cacheDao.countGoodEntries()
+                // ORDER MATTERS: Reset state FIRST, then emit count and clear progress LAST
+                isRefreshing = false
+                _isRefreshingFlow.value = false
                 _cacheCount.value = finalCount
                 sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
                 _cacheLoadingProgress.emit(null)
-                isRefreshing = false
-                _isRefreshingFlow.value = false
                 repositoryScope.launch { clearProgress() }
             }
 
@@ -316,7 +318,6 @@ class YouTubeSourceRepository(
                 clearPreResolvedEntry()
             }
             val dbCount = cacheDao.countGoodEntries()
-            updateCachedCount(dbCount)
             markCategoryStateFresh(dbCount)
             Log.i(
                 TAG,
@@ -613,11 +614,12 @@ class YouTubeSourceRepository(
             }
         } finally {
             val finalCount = cacheDao.countGoodEntries()
+            // ORDER MATTERS: Reset state FIRST, then emit count and clear progress LAST
+            isRefreshing = false
+            _isRefreshingFlow.value = false
             _cacheCount.value = finalCount
             sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
             _cacheLoadingProgress.emit(null)
-            isRefreshing = false
-            _isRefreshingFlow.value = false
         }
     }
 

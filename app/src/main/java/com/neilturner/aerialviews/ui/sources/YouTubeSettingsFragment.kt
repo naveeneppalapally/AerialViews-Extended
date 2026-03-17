@@ -108,9 +108,8 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                     val (current, total) = progress
                     updateVideoCount(liveCount = current, targetCount = total)
                 } else {
-                    // Progress is null -> refresh finished or cancelled.
-                    refreshInProgress = false
-                    // Reset both rows to their static/final states.
+                    // Progress is null -> refresh finished. Just update the display.
+                    // refreshInProgress is managed exclusively by isRefreshingFlow collector.
                     updateVideoCount()
                 }
             }

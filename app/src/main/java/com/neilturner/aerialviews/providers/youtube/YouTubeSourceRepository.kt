@@ -1080,17 +1080,12 @@ class YouTubeSourceRepository(
                     }
                     if (toInsert.isNotEmpty()) {
                         entries += toInsert
-                        var insertedInBatch = 0
-                        for (video in toInsert) {
-                            val currentTotal = initialCount + entries.size - toInsert.size + insertedInBatch
-                            if (currentTotal >= TARGET_CACHE_SIZE) break
-                            
-                            cacheDao.insertAll(listOf(video))
-                            insertedInBatch++
-                            
-                            if (publishProgress) {
-                                _cacheLoadingProgress.emit(Pair(currentTotal + 1, limit))
-                            }
+                        
+                        if (publishProgress) {
+                            val currentTotal = initialCount + entries.size
+                            _cacheLoadingProgress.emit(
+                                Pair(currentTotal.coerceAtMost(TARGET_CACHE_SIZE), TARGET_CACHE_SIZE)
+                            )
                         }
                     }
                 }

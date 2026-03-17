@@ -626,11 +626,11 @@ object NewPipeHelper {
 
         val floor =
             when {
-                streamHeight(stream) >= 2160 -> 10_000_000
-                streamHeight(stream) >= 1440 -> 7_000_000
-                streamHeight(stream) >= 1080 -> 3_800_000
-                streamHeight(stream) >= 720 -> 1_500_000
-                streamHeight(stream) >= 480 -> 900_000
+                streamHeight(stream) >= 2160 -> 12_000_000
+                streamHeight(stream) >= 1440 -> 8_000_000
+                streamHeight(stream) >= 1080 -> 4_500_000
+                streamHeight(stream) >= 720 -> 2_500_000
+                streamHeight(stream) >= 480 -> 1_200_000
                 else -> 0
             }
         return bitrate >= floor
@@ -831,8 +831,7 @@ object NewPipeHelper {
             screenHeight >= 2160 -> 2160
             screenHeight >= 1440 -> 1440
             screenHeight >= 1080 -> 1080
-            screenHeight >= 720 -> 720
-            else -> 720
+            else -> 1080 // Default to 1080p target even on 720p screens for better supersampled quality
         }
 
     private fun preferredHeightForQuality(preferredQuality: String): Int {
@@ -1055,7 +1054,7 @@ object NewPipeHelper {
             "artificial",
         )
     private val SUSPICIOUS_EXACT_DURATIONS = setOf(3600, 7200, 10800, 14400, 21600)
-    private const val MIN_PREFERRED_PROGRESSIVE_HEIGHT = 720
+    private const val MIN_PREFERRED_PROGRESSIVE_HEIGHT = 1080
     private val RESOLUTION_PRIORITY = listOf(2160, 1440, 1080, 720, 480)
     private val CODEC_PRIORITY = listOf("vp9", "vp09", "avc1", "avc", "av01", "av1")
     private val REJECTED_LOW_QUALITY_ITAGS = setOf(18, 36, 133, 134, 135, 160) // itag 18 is 360p, 133 is 240p, 134 is 360p, 135 is 480p, 160 is 144p. Added 36 (240p).

@@ -16,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
@@ -618,7 +619,7 @@ class YouTubeSourceRepository(
     private suspend fun searchRefreshCandidates(refreshPlan: RefreshPlan): List<SearchCandidate> {
         // Emit "Searching" state (negative progress) to separate search from extraction UI
         _cacheLoadingProgress.emit(Pair(-1, TARGET_CACHE_SIZE))
-        
+        delay(300)
         val mainSearchResults =
             searchCandidateVideos(
                 queries = refreshPlan.queryPool,
@@ -1073,13 +1074,16 @@ class YouTubeSourceRepository(
                     }
                     if (toInsert.isNotEmpty()) {
                         entries += toInsert
-                        var insertedCount = cacheDao.countGoodEntries()
+                        var insertedInBatch = 0
                         for (video in toInsert) {
-                            if (insertedCount >= TARGET_CACHE_SIZE) break
+                            val currentTotal = initialCount + entries.size - toInsert.size + insertedInBatch
+                            if (currentTotal >= TARGET_CACHE_SIZE) break
+                            
                             cacheDao.insertAll(listOf(video))
-                            insertedCount++
+                            insertedInBatch++
+                            
                             if (publishProgress) {
-                                _cacheLoadingProgress.emit(Pair(insertedCount, TARGET_CACHE_SIZE))
+                                _cacheLoadingProgress.emit(Pair(currentTotal + 1, TARGET_CACHE_SIZE))
                             }
                         }
                     }

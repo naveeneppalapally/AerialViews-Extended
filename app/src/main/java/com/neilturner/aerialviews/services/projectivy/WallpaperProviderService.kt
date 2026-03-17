@@ -166,7 +166,7 @@ class WallpaperProviderService : Service() {
         const val PROJECTIVY_PROVIDER_LOCAL = "local"
         const val PROJECTIVY_PROVIDER_YOUTUBE = "youtube"
         const val WALLPAPER_REUSE_WINDOW_MS = 30_000L
-        const val PROVIDER_FETCH_TIMEOUT_MS = 8_000L
+        const val PROVIDER_FETCH_TIMEOUT_MS = 5_000L
         const val YOUTUBE_PROJECTIVY_START_SECONDS = 20
     }
 
@@ -184,7 +184,7 @@ class WallpaperProviderService : Service() {
                 synchronized(wallpaperCacheLock) {
                     val now = System.currentTimeMillis()
                     if (cachedWallpapers.isNotEmpty() && now - cachedWallpapersAt < WALLPAPER_REUSE_WINDOW_MS) {
-                        return@runBlocking cachedWallpapers
+                        return@runBlocking if (ProjectivyPrefs.shuffleVideos) cachedWallpapers.shuffled() else cachedWallpapers
                     }
                 }
 

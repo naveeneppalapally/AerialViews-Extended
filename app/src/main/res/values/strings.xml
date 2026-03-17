@@ -246,6 +246,7 @@
     <string name="youtube_refresh_success">YouTube library updated: %1$d videos ready.</string>
     <string name="youtube_refresh_failed">Refresh failed. Keeping current library.</string>
     <string name="youtube_refresh_dialog_message">Refreshing YouTube library…</string>
+    <string name="youtube_refresh_already_in_progress_toast">YouTube refresh is already in progress</string>
 
     <!-- Main / Video Sources / Local+USB videos -->
     <string name="local_videos_enabled_title">Use Local or USB storage media</string>

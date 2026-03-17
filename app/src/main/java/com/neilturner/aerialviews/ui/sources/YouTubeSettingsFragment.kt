@@ -148,6 +148,13 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                             Toast.LENGTH_LONG,
                         )
                     }
+                    YouTubeSettingsViewModel.YouTubeSettingsEvent.RefreshAlreadyInProgress -> {
+                        ToastHelper.show(
+                            requireContext(),
+                            R.string.youtube_refresh_already_in_progress_toast,
+                            Toast.LENGTH_SHORT,
+                        )
+                    }
                 }
             }
         }

@@ -39,6 +39,7 @@ class YouTubeSettingsViewModel(
 
         data object AllCategoriesDisabled : YouTubeSettingsEvent
         data object LibraryFullOnCategory : YouTubeSettingsEvent
+        data object RefreshAlreadyInProgress : YouTubeSettingsEvent
     }
 
     init {
@@ -72,6 +73,7 @@ class YouTubeSettingsViewModel(
             _refreshState.value = RefreshState.Loading
             // Diagnostic: immediately emit 0% progress to confirm the flow and observer are working
             repository.publishProgress(0, 200)
+
             
             _refreshState.value =
                 try {
@@ -91,6 +93,12 @@ class YouTubeSettingsViewModel(
     }
 
     fun refreshNow() {
+        if (isRefreshing.value) {
+            viewModelScope.launch {
+                _events.emit(YouTubeSettingsEvent.RefreshAlreadyInProgress)
+            }
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
             repository.triggerFullLibraryRebuild()
         }

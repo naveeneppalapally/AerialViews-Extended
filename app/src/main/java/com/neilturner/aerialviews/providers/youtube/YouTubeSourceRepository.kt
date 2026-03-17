@@ -255,7 +255,9 @@ class YouTubeSourceRepository(
             try {
                 _isRefreshingFlow.value = true
                 isRefreshing = true
-
+                // Emit initial progress to show "of 200" overlay
+                _cacheLoadingProgress.emit(Pair(initialExistingEntries.size, TARGET_CACHE_SIZE))
+                
                 removedCount =
                     if (removedCategories.isNotEmpty()) {
                         applyCurrentCategoryFilterInternal()

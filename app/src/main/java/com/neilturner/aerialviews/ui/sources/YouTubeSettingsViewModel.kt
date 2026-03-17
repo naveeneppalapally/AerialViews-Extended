@@ -49,6 +49,15 @@ class YouTubeSettingsViewModel(
                 _cacheSize.value = count
             }
         }
+        viewModelScope.launch {
+            repository.refreshEvents.collect { event ->
+                when (event) {
+                    com.neilturner.aerialviews.providers.youtube.YouTubeSourceRepository.RefreshEvent.AlreadyInProgress -> {
+                        _events.emit(YouTubeSettingsEvent.RefreshAlreadyInProgress)
+                    }
+                }
+            }
+        }
         refreshCacheSize()
     }
 

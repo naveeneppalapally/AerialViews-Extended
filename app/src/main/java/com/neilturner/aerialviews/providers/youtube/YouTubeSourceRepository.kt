@@ -20,6 +20,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,22 +46,29 @@ class YouTubeSourceRepository(
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     
     suspend fun triggerFullLibraryRebuild() {
-        if (refreshMutex.isLocked) return
-        refreshMutex.withLock {
+        if (!refreshMutex.tryLock()) {
+            _isRefreshingFlow.value = true // Ensure UI sees it's locked
+            _refreshEvents.emit(RefreshEvent.AlreadyInProgress)
+            return
+        }
+        try {
             isRefreshing = true
             _isRefreshingFlow.value = true
-            try {
+            withTimeout(5 * 60 * 1000L) { // 5-minute safety timeout
                 _cacheLoadingProgress.emit(Pair(0, TARGET_CACHE_SIZE))
                 cacheDao.clearAll()
                 performLoadFreshSearchResults(replaceExistingCache = true)
-            } finally {
-                val finalCount = cacheDao.countGoodEntries()
-                _cacheCount.value = finalCount
-                sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
-                _cacheLoadingProgress.emit(null)
-                isRefreshing = false
-                _isRefreshingFlow.value = false
             }
+        } catch (exception: Exception) {
+            Timber.tag(TAG).e(exception, "Forced library rebuild failed or timed out")
+        } finally {
+            val finalCount = cacheDao.countGoodEntries()
+            _cacheCount.value = finalCount
+            sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
+            _cacheLoadingProgress.emit(null)
+            isRefreshing = false
+            _isRefreshingFlow.value = false
+            refreshMutex.unlock()
         }
     }
 
@@ -73,8 +81,14 @@ class YouTubeSourceRepository(
     val cacheFullEvent: StateFlow<Boolean> = _cacheFullEvent.asStateFlow()
     private val _cacheLoadingProgress = MutableSharedFlow<Pair<Int, Int>?>(replay = 1, extraBufferCapacity = 64)
     val cacheLoadingProgress: SharedFlow<Pair<Int, Int>?> = _cacheLoadingProgress.asSharedFlow()
-    private val _isRefreshingFlow = MutableStateFlow(false)
     val isRefreshingFlow: StateFlow<Boolean> = _isRefreshingFlow.asStateFlow()
+    private val _isRefreshingFlow = MutableStateFlow(false)
+    private val _refreshEvents = MutableSharedFlow<RefreshEvent>(extraBufferCapacity = 16)
+    val refreshEvents: SharedFlow<RefreshEvent> = _refreshEvents.asSharedFlow()
+    
+    sealed interface RefreshEvent {
+        data object AlreadyInProgress : RefreshEvent
+    }
 
     fun publishProgress(current: Int, total: Int) {
         _cacheLoadingProgress.tryEmit(Pair(current, total))
@@ -565,28 +579,30 @@ class YouTubeSourceRepository(
         return try {
             isRefreshing = true
             _isRefreshingFlow.value = true
-            val refreshPlan = buildRefreshPlan()
-            val searchResults = searchRefreshCandidates(refreshPlan)
-            val extractedEntries =
-                extractRefreshEntries(
-                    refreshPlan = refreshPlan,
-                    searchResults = searchResults,
-                    replaceExistingCache = replaceExistingCache,
-                    initialCount = refreshPlan.existingEntries.size,
-                )
-            val entries = mergeRefreshedEntries(refreshPlan, extractedEntries, replaceExistingCache)
-            persistFreshEntries(refreshPlan, entries)
-            entries
+            withTimeout(5 * 60 * 1000L) { // 5-minute safety timeout
+                val refreshPlan = buildRefreshPlan()
+                val searchResults = searchRefreshCandidates(refreshPlan)
+                val extractedEntries =
+                    extractRefreshEntries(
+                        refreshPlan = refreshPlan,
+                        searchResults = searchResults,
+                        replaceExistingCache = replaceExistingCache,
+                        initialCount = refreshPlan.existingEntries.size,
+                    )
+                val entries = mergeRefreshedEntries(refreshPlan, extractedEntries, replaceExistingCache)
+                persistFreshEntries(refreshPlan, entries)
+                entries
+            }
         } catch (exception: Exception) {
             val fallbackEntries = filteredExistingEntries(cacheDao.getAllGood())
             if (fallbackEntries.isNotEmpty()) {
-                Timber.tag(TAG).w(exception, "Using filtered cached YouTube entries after refresh failure")
+                Timber.tag(TAG).w(exception, "Using filtered cached YouTube entries after refresh failure or timeout")
                 updateCachedCount(fallbackEntries.size)
                 fallbackEntries
             } else {
                 throw when (exception) {
                     is YouTubeSourceException -> exception
-                    else -> YouTubeSourceException("Failed to refresh YouTube videos", exception)
+                    else -> YouTubeSourceException("Failed to refresh YouTube videos or timed out", exception)
                 }
             }
         } finally {

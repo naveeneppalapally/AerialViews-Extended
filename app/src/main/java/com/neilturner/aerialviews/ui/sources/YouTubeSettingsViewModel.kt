@@ -75,7 +75,8 @@ class YouTubeSettingsViewModel(
             
             _refreshState.value =
                 try {
-                    repository.forceRefresh().let(RefreshState::Success)
+                    val count = repository.forceRefresh()
+                    RefreshState.Success(count)
                 } catch (exception: Exception) {
                     Timber.e(exception, "YouTube refresh failed")
                     RefreshState.Error
@@ -91,7 +92,7 @@ class YouTubeSettingsViewModel(
 
     fun refreshNow() {
         viewModelScope.launch(Dispatchers.IO) {
-            repository.forceRefreshDirect()
+            repository.triggerFullLibraryRebuild()
         }
     }
 

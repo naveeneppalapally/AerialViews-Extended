@@ -33,6 +33,8 @@ import tv.projectivy.plugin.wallpaperprovider.api.Event
 import tv.projectivy.plugin.wallpaperprovider.api.IWallpaperProviderService
 import tv.projectivy.plugin.wallpaperprovider.api.Wallpaper
 import tv.projectivy.plugin.wallpaperprovider.api.WallpaperDisplayMode
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import tv.projectivy.plugin.wallpaperprovider.api.WallpaperType
 
 class WallpaperProviderService : Service() {
@@ -48,6 +50,10 @@ class WallpaperProviderService : Service() {
 
     @Volatile
     private var cachedWallpapersAt: Long = 0L
+    
+    private val wallpaperCacheLock = Any()
+    private val wallpaperBuildMutex = Mutex()
+
 
     override fun onCreate() {
         super.onCreate()
@@ -161,70 +167,76 @@ class WallpaperProviderService : Service() {
         const val PROJECTIVY_PROVIDER_YOUTUBE = "youtube"
         const val WALLPAPER_REUSE_WINDOW_MS = 30_000L
         const val PROVIDER_FETCH_TIMEOUT_MS = 8_000L
-        const val YOUTUBE_PROJECTIVY_START_SECONDS = 0
+        const val YOUTUBE_PROJECTIVY_START_SECONDS = 20
     }
 
     private fun buildWallpapers(): List<Wallpaper> {
-        val enabledProviders = getEnabledProviders()
-        Timber.i("Enabled providers: %s", enabledProviders.size)
+        synchronized(wallpaperCacheLock) {
+            val now = System.currentTimeMillis()
+            if (cachedWallpapers.isNotEmpty() && now - cachedWallpapersAt < WALLPAPER_REUSE_WINDOW_MS) {
+                return cachedWallpapers
+            }
+        }
 
-        val aerialMediaList =
-            runBlocking {
-                supervisorScope {
+        return runBlocking {
+            wallpaperBuildMutex.withLock {
+                // Double check cache inside mutex
+                synchronized(wallpaperCacheLock) {
+                    val now = System.currentTimeMillis()
+                    if (cachedWallpapers.isNotEmpty() && now - cachedWallpapersAt < WALLPAPER_REUSE_WINDOW_MS) {
+                        return@runBlocking cachedWallpapers
+                    }
+                }
+
+                val enabledProviders = getEnabledProviders()
+                Timber.i("Enabled providers for Projectivy: %s", enabledProviders.size)
+
+                val aerialMediaList = supervisorScope {
                     enabledProviders
                         .filter { it.enabled }
                         .map { provider ->
                             async(Dispatchers.IO) {
                                 val startedAt = System.currentTimeMillis()
-                                val media =
-                                    runCatching {
-                                        withTimeoutOrNull(PROVIDER_FETCH_TIMEOUT_MS) {
-                                            provider.fetchMedia()
-                                        } ?: emptyList()
-                                    }.onFailure { exception ->
-                                        Timber.w(exception, "Projectivy provider failed: %s", provider.javaClass.simpleName)
-                                    }.getOrDefault(emptyList())
+                                val media = runCatching {
+                                    withTimeoutOrNull(PROVIDER_FETCH_TIMEOUT_MS) {
+                                        provider.fetchMedia()
+                                    } ?: emptyList()
+                                }.onFailure { exception ->
+                                    Timber.w(exception, "Projectivy provider failed: %s", provider.javaClass.simpleName)
+                                }.getOrDefault(emptyList())
 
-                                if (media.isEmpty()) {
-                                    Timber.i(
-                                        "Projectivy provider %s returned no media (elapsed=%sms)",
-                                        provider.javaClass.simpleName,
-                                        System.currentTimeMillis() - startedAt,
-                                    )
-                                } else {
-                                    Timber.i(
-                                        "Projectivy provider %s returned %s items (elapsed=%sms)",
-                                        provider.javaClass.simpleName,
-                                        media.size,
-                                        System.currentTimeMillis() - startedAt,
-                                    )
+                                if (media.isNotEmpty()) {
+                                    Timber.i("Projectivy provider %s returned %s items (elapsed=%sms)",
+                                        provider.javaClass.simpleName, media.size, System.currentTimeMillis() - startedAt)
                                 }
                                 media
                             }
-                        }.awaitAll()
-                        .flatten()
+                        }.awaitAll().flatten()
                 }
-            }.let { mediaList ->
-                Timber.log(2, "Wallpaper media items: %s", mediaList.size)
-                if (ProjectivyPrefs.shuffleVideos) {
-                    mediaList.shuffled()
-                } else {
-                    mediaList
-                }
-            }
 
-        return aerialMediaList.map { media ->
-            val wallpaperType =
-                when (media.type) {
-                    AerialMediaType.VIDEO -> WallpaperType.VIDEO
-                    AerialMediaType.IMAGE -> WallpaperType.IMAGE
+                val wallpapers = aerialMediaList.map { media ->
+                    val wallpaperType = when (media.type) {
+                        AerialMediaType.VIDEO -> WallpaperType.VIDEO
+                        AerialMediaType.IMAGE -> WallpaperType.IMAGE
+                    }
+                    Wallpaper(
+                        wallpaperUri(media),
+                        wallpaperType,
+                        WallpaperDisplayMode.CROP,
+                        title = media.metadata.shortDescription,
+                    )
+                }.sortedByDescending { it.uri.contains("googlevideo.com") } // Prioritize fresh direct links
+                .take(25) // Limit to 25 to avoid overwhelming the launcher
+                .let { list ->
+                    if (ProjectivyPrefs.shuffleVideos) list.shuffled() else list
                 }
-            Wallpaper(
-                wallpaperUri(media),
-                wallpaperType,
-                WallpaperDisplayMode.CROP,
-                title = media.metadata.shortDescription,
-            )
+
+                synchronized(wallpaperCacheLock) {
+                    cachedWallpapers = wallpapers
+                    cachedWallpapersAt = System.currentTimeMillis()
+                }
+                wallpapers
+            }
         }
     }
 
@@ -233,18 +245,14 @@ class WallpaperProviderService : Service() {
         if (media.type != AerialMediaType.VIDEO) {
             return rawUri
         }
-        
-        // If it's already a direct stream URL (googlevideo), don't add fragments
-        // as they can cause seek/re-resolution delays in some players.
-        if (rawUri.contains("googlevideo.com")) {
-            return rawUri
-        }
 
         if (YOUTUBE_PROJECTIVY_START_SECONDS <= 0) {
             return rawUri
         }
 
         // Universal offset for all Projectivy videos (YouTube or others)
+        // We append this even to direct stream URLs (googlevideo) as it's the only way 
+        // to tell the launcher's player where to start.
         return if (rawUri.contains("#")) {
             "$rawUri&t=$YOUTUBE_PROJECTIVY_START_SECONDS"
         } else {

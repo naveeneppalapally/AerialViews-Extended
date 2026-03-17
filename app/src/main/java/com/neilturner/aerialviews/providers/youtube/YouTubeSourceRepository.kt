@@ -42,6 +42,27 @@ class YouTubeSourceRepository(
     private val sharedPreferences: SharedPreferences,
 ) {
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    
+    suspend fun triggerFullLibraryRebuild() {
+        if (refreshMutex.isLocked) return
+        refreshMutex.withLock {
+            isRefreshing = true
+            _isRefreshingFlow.value = true
+            try {
+                _cacheLoadingProgress.emit(Pair(0, TARGET_CACHE_SIZE))
+                cacheDao.clearAll()
+                loadFreshSearchResults(replaceExistingCache = true)
+            } finally {
+                val finalCount = cacheDao.countGoodEntries()
+                _cacheCount.value = finalCount
+                sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
+                _cacheLoadingProgress.emit(null)
+                isRefreshing = false
+                _isRefreshingFlow.value = false
+            }
+        }
+    }
+
     private val backgroundWarmInFlight = AtomicBoolean(false)
     private val lastBackgroundWarmAt = AtomicLong(0L)
     private val preResolvedLock = Any()
@@ -232,38 +253,39 @@ class YouTubeSourceRepository(
             val initialExistingEntries = cacheDao.getAllGood()
 
             try {
-                refreshMutex.withLock {
-                    isRefreshing = true
-                    removedCount =
-                        if (removedCategories.isNotEmpty()) {
-                            applyCurrentCategoryFilterInternal()
-                        } else {
-                            0
-                        }
+                _isRefreshingFlow.value = true
+                isRefreshing = true
 
-                    val currentCount = cacheDao.countGoodEntries()
-
-                    if (addedCategories.isNotEmpty() && currentCount >= TARGET_CACHE_SIZE) {
-                        _cacheFullEvent.value = true
+                removedCount =
+                    if (removedCategories.isNotEmpty()) {
+                        applyCurrentCategoryFilterInternal()
+                    } else {
+                        0
                     }
 
-                    insertedCount =
-                        if (addedCategories.isNotEmpty()) {
-                            addEntriesForCategories(
-                                categoryKeys = addedCategories,
-                                existingEntries = initialExistingEntries,
-                                initialCount = initialExistingEntries.size,
-                            )
-                        } else {
-                            0
-                        }
+                val currentCount = cacheDao.countGoodEntries()
+                if (addedCategories.isNotEmpty() && currentCount >= TARGET_CACHE_SIZE) {
+                    _cacheFullEvent.value = true
                 }
+
+                insertedCount =
+                    if (addedCategories.isNotEmpty()) {
+                        addEntriesForCategories(
+                            categoryKeys = addedCategories,
+                            existingEntries = initialExistingEntries,
+                            initialCount = initialExistingEntries.size,
+                        )
+                    } else {
+                        0
+                    }
             } finally {
                 val finalCount = cacheDao.countGoodEntries()
                 _cacheCount.value = finalCount
                 sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
                 _cacheLoadingProgress.emit(null)
                 isRefreshing = false
+                _isRefreshingFlow.value = false
+                repositoryScope.launch { clearProgress() }
             }
 
             val filteredCount = currentFilteredCount()
@@ -514,26 +536,6 @@ class YouTubeSourceRepository(
         withContext(Dispatchers.IO) {
             loadFreshSearchResults(replaceExistingCache)
         }
-
-    suspend fun forceRefreshDirect() {
-        if (refreshMutex.isLocked) return
-        refreshMutex.withLock {
-            isRefreshing = true
-            _isRefreshingFlow.value = true
-            try {
-                _cacheLoadingProgress.emit(Pair(0, TARGET_CACHE_SIZE))
-                cacheDao.clearAll()
-                loadFreshSearchResults(replaceExistingCache = true)
-            } finally {
-                val finalCount = cacheDao.countGoodEntries()
-                _cacheCount.value = finalCount
-                sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
-                _cacheLoadingProgress.emit(null)
-                isRefreshing = false
-                _isRefreshingFlow.value = false
-            }
-        }
-    }
 
     suspend fun forceRefresh(): Int =
         withContext(Dispatchers.IO) {

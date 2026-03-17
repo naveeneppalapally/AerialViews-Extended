@@ -239,7 +239,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         val supportedValues = qualityPreference.entryValues?.map { it.toString() }.orEmpty()
         val currentValue = qualityPreference.value
         if (currentValue !in supportedValues || currentValue == "720p") {
-            val highestSupported = supportedValues.firstOrNull() ?: YouTubeSourceRepository.DEFAULT_QUALITY
+            val highestSupported = supportedValues.firstOrNull() ?: "best"
             qualityPreference.value = highestSupported
             Log.d(TAG, "Reset quality to $highestSupported (was: $currentValue, not optimal for this display)")
         }
@@ -366,12 +366,14 @@ class YouTubeSettingsFragment : MenuStateFragment() {
     private fun updateCacheCountPreference(cachedCount: Int?) {
         val cacheCountPreference = findPreference<Preference>(PREFERENCE_CACHE_COUNT) ?: return
         cacheCountPreference.summary =
-            if (cachedCount != null && cachedCount >= 0 && cachedCount < YOUTUBE_LIBRARY_TARGET_COUNT) {
+            if (refreshInProgress && cachedCount != null && cachedCount >= 0 && cachedCount < YOUTUBE_LIBRARY_TARGET_COUNT) {
                 getString(R.string.youtube_cache_loading_overlay, cachedCount, YOUTUBE_LIBRARY_TARGET_COUNT)
             } else if (cachedCount != null && cachedCount >= 0) {
                 getString(R.string.youtube_cache_count_summary, cachedCount)
-            } else {
+            } else if (refreshInProgress) {
                 getString(R.string.youtube_cache_count_pending)
+            } else {
+                null
             }
     }
 

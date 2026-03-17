@@ -1090,7 +1090,7 @@ class ScreenController(
         const val YOUTUBE_PLAYLIST_RETRY_DELAY_MS: Long = 5_000
         const val YOUTUBE_FORCE_REFRESH_EVERY_ATTEMPTS: Int = 3
         const val LOADING_FADE_OUT: Long = 300 // Fade out loading text
-        const val LOADING_DELAY: Long = 400 // Delay before fading out loading view
+        const val LOADING_DELAY: Long = 100 // Delay before fading out loading view
         const val ERROR_DELAY: Long = 2000 // Delay before loading next item, after error
     }
 }

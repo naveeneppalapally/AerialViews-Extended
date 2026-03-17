@@ -11,6 +11,7 @@ data class AerialMedia(
     var type: AerialMediaType = AerialMediaType.VIDEO,
     var source: AerialMediaSource = AerialMediaSource.UNKNOWN,
     var metadata: AerialMediaMetadata = AerialMediaMetadata(),
+    var streamUrl: String = "",
 )
 
 data class AerialMediaMetadata(

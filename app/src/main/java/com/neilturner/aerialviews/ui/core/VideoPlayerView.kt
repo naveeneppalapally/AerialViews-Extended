@@ -271,6 +271,11 @@ class VideoPlayerView
                     if (!state.ready) {
                         listener?.onVideoPrepared()
                         state.ready = true
+                        
+                        // Pre-resolve next video immediately when current starts
+                        mainScope.launch(Dispatchers.IO) {
+                            YouTubeFeature.repository(context).preResolveNext(this)
+                        }
                     }
 
                     setupAlmostFinishedRunnable()
@@ -353,9 +358,14 @@ class VideoPlayerView
 
                 val resolveStartedAt = SystemClock.elapsedRealtime()
                 val streamUrl =
-                    withTimeoutOrNull(YOUTUBE_STREAM_RESOLVE_TIMEOUT_MS) {
-                        repository.resolveVideoUrl(mediaUrl)
-                    } ?: throw IllegalStateException("Timed out resolving YouTube stream URL")
+                    if (media.streamUrl.isNotBlank()) {
+                        Log.i("VideoPlayerView", "Using cached streamUrl directly")
+                        media.streamUrl
+                    } else {
+                        withTimeoutOrNull(YOUTUBE_STREAM_RESOLVE_TIMEOUT_MS) {
+                            repository.resolveVideoUrl(mediaUrl)
+                        } ?: throw IllegalStateException("Timed out resolving YouTube stream URL")
+                    }
                 val resolveDurationMs = SystemClock.elapsedRealtime() - resolveStartedAt
                 logFirstYouTubeResolveTiming(
                     durationMs = resolveDurationMs,
@@ -580,7 +590,7 @@ class VideoPlayerView
             const val CHANGE_PLAYBACK_SPEED_DELAY: Long = 2000
             const val CHANGE_PLAYBACK_START_END_DELAY: Long = 4000
             const val YOUTUBE_INTRO_SKIP_MIN_DURATION_MS: Long = 60_000
-            const val YOUTUBE_INTRO_SKIP_MS: Long = 20_000
+            const val YOUTUBE_INTRO_SKIP_MS: Long = 5_000
             const val YOUTUBE_INTRO_SKIP_END_GUARD_MS: Long = 20_000
             const val YOUTUBE_STREAM_RESOLVE_TIMEOUT_MS: Long = 15_000
             private val RESOLVE_LOG_LOCK = Any()

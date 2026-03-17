@@ -119,7 +119,7 @@ object VideoPlayerHelper {
                 .setBufferDurationsMs(
                     30_000, // Minimum buffer duration
                     180_000, // Maximum buffer duration
-                    2_500, // Buffer before initial playback
+                    2_000, // Buffer before initial playback
                     5_000, // Buffer after rebuffering
                 ).build()
 

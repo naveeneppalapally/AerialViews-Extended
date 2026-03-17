@@ -87,6 +87,7 @@ class YouTubeSourceRepository(
         withContext(Dispatchers.IO) {
             consumeAnyPreResolvedEntry()?.let { cachedEntry ->
                 if (!cachedEntry.isBad && isUsableCachedStream(cachedEntry)) {
+                    Log.i(TAG, "Using pre-resolved URL instantly")
                     recordPlayback(cachedEntry)
                     maybeWarmSearchCacheNearPlaylistEnd()
                     preResolveNext(repositoryScope)

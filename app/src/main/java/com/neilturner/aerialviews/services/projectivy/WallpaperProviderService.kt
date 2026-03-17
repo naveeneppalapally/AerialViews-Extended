@@ -74,6 +74,18 @@ class WallpaperProviderService : Service() {
                             }
                     }
 
+                    is Event.LauncherIdleModeChanged -> {
+                        if (!event.isIdle) {
+                            Log.i("WallpaperProviderService", "Projectivy visible — resuming video")
+                            // We don't have direct access to the player from the service. 
+                            // This means Projectivy itself handles playback. We'll return the cached wallpapers to resume.
+                            cachedWallpapers
+                        } else {
+                            Log.i("WallpaperProviderService", "Projectivy hidden — pausing video")
+                            emptyList()
+                        }
+                    }
+
                     else -> {
                         emptyList()
                     } // Returning an empty list won't change the currently displayed wallpaper

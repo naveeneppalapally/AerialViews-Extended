@@ -52,7 +52,7 @@ class YouTubeSourceRepository(
             try {
                 _cacheLoadingProgress.emit(Pair(0, TARGET_CACHE_SIZE))
                 cacheDao.clearAll()
-                loadFreshSearchResults(replaceExistingCache = true)
+                performLoadFreshSearchResults(replaceExistingCache = true)
             } finally {
                 val finalCount = cacheDao.countGoodEntries()
                 _cacheCount.value = finalCount
@@ -548,6 +548,14 @@ class YouTubeSourceRepository(
     private suspend fun loadFreshSearchResults(
         replaceExistingCache: Boolean = false,
     ): List<YouTubeCacheEntity> {
+        return refreshMutex.withLock {
+            performLoadFreshSearchResults(replaceExistingCache)
+        }
+    }
+
+    private suspend fun performLoadFreshSearchResults(
+        replaceExistingCache: Boolean = false,
+    ): List<YouTubeCacheEntity> {
         if (enabledCategoryKeys().isEmpty()) {
             Timber.tag(TAG).w(
                 "All YouTube categories are disabled; using fallback discovery categories to avoid an empty playlist",
@@ -555,22 +563,20 @@ class YouTubeSourceRepository(
         }
 
         return try {
-            refreshMutex.withLock {
-                isRefreshing = true
-                _isRefreshingFlow.value = true
-                val refreshPlan = buildRefreshPlan()
-                val searchResults = searchRefreshCandidates(refreshPlan)
-                val extractedEntries =
-                    extractRefreshEntries(
-                        refreshPlan = refreshPlan,
-                        searchResults = searchResults,
-                        replaceExistingCache = replaceExistingCache,
-                        initialCount = refreshPlan.existingEntries.size,
-                    )
-                val entries = mergeRefreshedEntries(refreshPlan, extractedEntries, replaceExistingCache)
-                persistFreshEntries(refreshPlan, entries)
-                entries
-            }
+            isRefreshing = true
+            _isRefreshingFlow.value = true
+            val refreshPlan = buildRefreshPlan()
+            val searchResults = searchRefreshCandidates(refreshPlan)
+            val extractedEntries =
+                extractRefreshEntries(
+                    refreshPlan = refreshPlan,
+                    searchResults = searchResults,
+                    replaceExistingCache = replaceExistingCache,
+                    initialCount = refreshPlan.existingEntries.size,
+                )
+            val entries = mergeRefreshedEntries(refreshPlan, extractedEntries, replaceExistingCache)
+            persistFreshEntries(refreshPlan, entries)
+            entries
         } catch (exception: Exception) {
             val fallbackEntries = filteredExistingEntries(cacheDao.getAllGood())
             if (fallbackEntries.isNotEmpty()) {

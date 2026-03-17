@@ -78,6 +78,17 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.isRefreshing.collect { isRefreshing ->
+                if (isRefreshing) {
+                    markRefreshInProgress()
+                } else {
+                    refreshInProgress = false
+                    updateVideoCount()
+                }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
             YouTubeFeature.repository(requireContext()).cacheFullEvent.collect { isFull ->
                 if (isFull) {
                     ToastHelper.show(

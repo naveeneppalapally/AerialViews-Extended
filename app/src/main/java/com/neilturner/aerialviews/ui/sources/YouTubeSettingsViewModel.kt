@@ -26,6 +26,7 @@ class YouTubeSettingsViewModel(
 
     val refreshState: StateFlow<RefreshState> = _refreshState.asStateFlow()
     val cacheSize: StateFlow<Int> = _cacheSize.asStateFlow()
+    val isRefreshing: StateFlow<Boolean> = repository.isRefreshingFlow
 
     private val _events = kotlinx.coroutines.flow.MutableSharedFlow<YouTubeSettingsEvent>()
     val events: kotlinx.coroutines.flow.SharedFlow<YouTubeSettingsEvent> = _events.asSharedFlow()

@@ -207,9 +207,10 @@ class WallpaperProviderService : Service() {
 
     private fun wallpaperUri(media: AerialMedia): String {
         val rawUri = media.uri.toString()
-        if (media.type != AerialMediaType.VIDEO || media.source != AerialMediaSource.YOUTUBE) {
+        if (media.type != AerialMediaType.VIDEO) {
             return rawUri
         }
+        // Universal 20s offset for all Projectivy videos (YouTube or others)
         return if (rawUri.contains("#")) {
             "$rawUri&t=$YOUTUBE_PROJECTIVY_START_SECONDS"
         } else {

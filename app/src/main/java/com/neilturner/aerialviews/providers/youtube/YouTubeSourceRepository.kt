@@ -51,6 +51,8 @@ class YouTubeSourceRepository(
     val cacheFullEvent: StateFlow<Boolean> = _cacheFullEvent.asStateFlow()
     private val _cacheLoadingProgress = MutableSharedFlow<Pair<Int, Int>?>(replay = 1, extraBufferCapacity = 64)
     val cacheLoadingProgress: SharedFlow<Pair<Int, Int>?> = _cacheLoadingProgress.asSharedFlow()
+    private val _isRefreshingFlow = MutableStateFlow(false)
+    val isRefreshingFlow: StateFlow<Boolean> = _isRefreshingFlow.asStateFlow()
 
     fun publishProgress(current: Int, total: Int) {
         _cacheLoadingProgress.tryEmit(Pair(current, total))
@@ -516,6 +518,7 @@ class YouTubeSourceRepository(
         if (refreshMutex.isLocked) return
         refreshMutex.withLock {
             isRefreshing = true
+            _isRefreshingFlow.value = true
             try {
                 _cacheLoadingProgress.emit(Pair(0, TARGET_CACHE_SIZE))
                 cacheDao.clearAll()
@@ -526,6 +529,7 @@ class YouTubeSourceRepository(
                 sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
                 _cacheLoadingProgress.emit(null)
                 isRefreshing = false
+                _isRefreshingFlow.value = false
             }
         }
     }
@@ -547,6 +551,7 @@ class YouTubeSourceRepository(
         return try {
             refreshMutex.withLock {
                 isRefreshing = true
+                _isRefreshingFlow.value = true
                 val refreshPlan = buildRefreshPlan()
                 val searchResults = searchRefreshCandidates(refreshPlan)
                 val extractedEntries =
@@ -578,6 +583,7 @@ class YouTubeSourceRepository(
             sharedPreferences.edit { putString(KEY_COUNT, finalCount.toString()) }
             _cacheLoadingProgress.emit(null)
             isRefreshing = false
+            _isRefreshingFlow.value = false
         }
     }
 

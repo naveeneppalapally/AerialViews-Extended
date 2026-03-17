@@ -616,6 +616,9 @@ class YouTubeSourceRepository(
     }
 
     private suspend fun searchRefreshCandidates(refreshPlan: RefreshPlan): List<SearchCandidate> {
+        // Emit "Searching" state (negative progress) to separate search from extraction UI
+        _cacheLoadingProgress.emit(Pair(-1, TARGET_CACHE_SIZE))
+        
         val mainSearchResults =
             searchCandidateVideos(
                 queries = refreshPlan.queryPool,
@@ -2437,11 +2440,11 @@ class YouTubeSourceRepository(
         private const val MAX_CATEGORY_DELTA_QUERY_COUNT = 36
         private const val CATEGORY_DELTA_EXTRACTION_LIMIT = 90
         private const val MAX_STREAM_URL_REFRESHES_PER_WARM = 24
-        private const val QUERY_SEARCH_BATCH_SIZE = 5
+        private const val QUERY_SEARCH_BATCH_SIZE = 10
         private const val COLD_START_QUERY_POOL_SIZE = 10
-        private const val QUERY_POOL_SIZE = 50
-        private const val FALLBACK_QUERY_POOL_SIZE = 16
-        private const val SUPPLEMENTAL_QUERY_POOL_SIZE = 24
+        private const val QUERY_POOL_SIZE = 20
+        private const val FALLBACK_QUERY_POOL_SIZE = 12
+        private const val SUPPLEMENTAL_QUERY_POOL_SIZE = 16
         private const val MAX_PLAY_HISTORY = 320
         private const val MIN_PLAY_HISTORY_SIZE = 24
         private const val MAX_PLAY_HISTORY_FACTOR_PER_CACHE = 0.70

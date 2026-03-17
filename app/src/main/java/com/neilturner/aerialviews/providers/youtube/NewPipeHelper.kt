@@ -508,10 +508,10 @@ object NewPipeHelper {
 
             DecoderSupport.UNSUPPORTED ->
                 when (codecFamily) {
-                    CodecFamily.VP9 -> 5_000
-                    CodecFamily.AVC -> 5_100
-                    CodecFamily.AV1 -> 5_200
-                    CodecFamily.OTHER -> 5_300
+                    CodecFamily.VP9 -> 2_000 // Heavily penalize but still allow if no other choice
+                    CodecFamily.AVC -> 2_100
+                    CodecFamily.AV1 -> 5_200 // AV1 is risky on some TV chips, keep high penalty
+                    CodecFamily.OTHER -> 3_300
                 }
         }
     }
@@ -838,16 +838,17 @@ object NewPipeHelper {
     private fun preferredHeightForQuality(preferredQuality: String): Int {
         val quality = preferredQuality.lowercase(Locale.US)
         return when {
-            quality == "best" -> 0
+            quality == "best" -> 2160 // Target 4K if available for 'best'
             quality.contains("2160") || quality.contains("4k") -> 2160
             quality.contains("1440") -> 1440
             quality.contains("1080") -> 1080
             quality.contains("720") -> 720
-            else -> 0
+            else -> 1080 // Default to 1080p if not specified
         }
     }
 
-    private fun maxTargetHeight(targetHeight: Int): Int = ((targetHeight * 1.1f).toInt()).coerceAtLeast(targetHeight)
+    private fun maxTargetHeight(targetHeight: Int): Int =
+        if (targetHeight <= 1080) 2160 else ((targetHeight * 1.2f).toInt()).coerceAtLeast(targetHeight)
 
     private fun minimumAllowedHeight(targetHeight: Int): Int =
         when {
@@ -1057,7 +1058,7 @@ object NewPipeHelper {
     private const val MIN_PREFERRED_PROGRESSIVE_HEIGHT = 720
     private val RESOLUTION_PRIORITY = listOf(2160, 1440, 1080, 720, 480)
     private val CODEC_PRIORITY = listOf("vp9", "vp09", "avc1", "avc", "av01", "av1")
-    private val REJECTED_LOW_QUALITY_ITAGS = setOf(18, 133, 134, 135, 160)
+    private val REJECTED_LOW_QUALITY_ITAGS = setOf(18, 36, 133, 134, 135, 160) // itag 18 is 360p, 133 is 240p, 134 is 360p, 135 is 480p, 160 is 144p. Added 36 (240p).
     private val TOP_LIST_TITLE_BLACKLIST =
         listOf(
             "top 10",

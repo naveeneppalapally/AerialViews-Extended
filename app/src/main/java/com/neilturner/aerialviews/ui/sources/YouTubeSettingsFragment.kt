@@ -373,7 +373,9 @@ class YouTubeSettingsFragment : MenuStateFragment() {
     private fun updateCacheCountPreference(cachedCount: Int?) {
         val cacheCountPreference = findPreference<Preference>(PREFERENCE_CACHE_COUNT) ?: return
         cacheCountPreference.summary =
-            if (refreshInProgress && cachedCount != null && cachedCount >= 0 && cachedCount < YOUTUBE_LIBRARY_TARGET_COUNT) {
+            if (refreshInProgress && cachedCount != null && cachedCount < 0) {
+                getString(R.string.youtube_refresh_searching)
+            } else if (refreshInProgress && cachedCount != null && cachedCount >= 0 && cachedCount < YOUTUBE_LIBRARY_TARGET_COUNT) {
                 getString(R.string.youtube_cache_loading_overlay, cachedCount, YOUTUBE_LIBRARY_TARGET_COUNT)
             } else if (cachedCount != null && cachedCount >= 0) {
                 getString(R.string.youtube_cache_count_summary, cachedCount)

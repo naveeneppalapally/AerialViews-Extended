@@ -81,8 +81,8 @@ class YouTubeSourceRepository(
     val cacheFullEvent: StateFlow<Boolean> = _cacheFullEvent.asStateFlow()
     private val _cacheLoadingProgress = MutableSharedFlow<Pair<Int, Int>?>(replay = 1, extraBufferCapacity = 64)
     val cacheLoadingProgress: SharedFlow<Pair<Int, Int>?> = _cacheLoadingProgress.asSharedFlow()
-    val isRefreshingFlow: StateFlow<Boolean> = _isRefreshingFlow.asStateFlow()
     private val _isRefreshingFlow = MutableStateFlow(false)
+    val isRefreshingFlow: StateFlow<Boolean> = _isRefreshingFlow.asStateFlow()
     private val _refreshEvents = MutableSharedFlow<RefreshEvent>(extraBufferCapacity = 16)
     val refreshEvents: SharedFlow<RefreshEvent> = _refreshEvents.asSharedFlow()
     
@@ -2454,7 +2454,7 @@ class YouTubeSourceRepository(
 
         private const val TARGET_CACHE_SIZE = 200
         private const val EXTRACTION_TARGET_SIZE = 300
-        private const val MIN_HEALTHY_CACHE_SIZE = 150
+        private const val MIN_HEALTHY_CACHE_SIZE = 200
         private const val TARGET_CANDIDATE_POOL_SIZE = 600
         private const val EXTRACTION_BATCH_SIZE = 4
         private const val CATEGORY_DELTA_QUERY_COUNT_PER_CATEGORY = 12
@@ -2470,7 +2470,7 @@ class YouTubeSourceRepository(
         private const val MIN_PLAY_HISTORY_SIZE = 24
         private const val MAX_PLAY_HISTORY_FACTOR_PER_CACHE = 0.70
         private const val MAX_RECENT_REFRESH_IDS = 960
-        private const val MIN_HEALTHY_CANDIDATE_POOL_SIZE = 120
+        private const val MIN_HEALTHY_CANDIDATE_POOL_SIZE = 250
         private const val SEARCH_PREWARM_REMAINING_ITEMS = 30
         private const val SMALL_CACHE_SIZE_THRESHOLD = 60
         private const val MIN_SMALL_CACHE_PREWARM_THRESHOLD = 8
@@ -2490,10 +2490,10 @@ class YouTubeSourceRepository(
         private const val MIN_ACCEPTABLE_CACHED_STREAM_HEIGHT = 720
         private const val HISTORY_SEPARATOR = "|"
         private const val DEFAULT_CATEGORY_KEY = "__uncategorized__"
-        private const val MIN_MAIN_SEARCH_UNIQUE_VIDEOS = 60
+        private const val MIN_MAIN_SEARCH_UNIQUE_VIDEOS = 180
         private const val MAX_VIDEOS_PER_CHANNEL = 7
         private const val MAX_VIDEOS_PER_QUERY_BUCKET = 10
-        private const val INITIAL_THEME_ROUND_ROBIN_CAP = 8
+        private const val INITIAL_THEME_ROUND_ROBIN_CAP = 40
         private const val LAST_VIDEO_EXCLUSION_COUNT = 15
         private const val RELAXED_LAST_VIDEO_EXCLUSION_COUNT = 5
         private const val LAST_THEME_EXCLUSION_COUNT = 3

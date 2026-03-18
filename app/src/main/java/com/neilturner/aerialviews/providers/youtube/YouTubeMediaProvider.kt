@@ -143,7 +143,7 @@ class YouTubeMediaProvider(
     }
 
     private fun buildBootstrapMedia(): MutableList<AerialMedia> =
-        STARTUP_BOOTSTRAP_VIDEO_URLS.map { videoPageUrl ->
+        STARTUP_BOOTSTRAP_VIDEO_URLS.shuffled().map { videoPageUrl ->
             val videoId = extractBootstrapVideoId(videoPageUrl)
             AerialMedia(
                 uri = videoPageUrl.toUri(),

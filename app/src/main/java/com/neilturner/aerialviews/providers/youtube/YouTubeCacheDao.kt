@@ -51,8 +51,8 @@ interface YouTubeCacheDao {
     @Query("SELECT * FROM youtube_cache WHERE videoPageUrl = :videoPageUrl LIMIT 1")
     fun getByVideoPageUrl(videoPageUrl: String): YouTubeCacheEntity?
 
-    @Query("UPDATE youtube_cache SET isBad = 1 WHERE videoId = :videoId")
-    fun markAsBad(videoId: String)
+    @Query("UPDATE youtube_cache SET isBad = 1 WHERE videoId = :videoId AND isBad = 0")
+    fun markAsBad(videoId: String): Int
 
     @Query("UPDATE youtube_cache SET lastPlayedAt = :timestamp WHERE videoId = :videoId")
     fun markAsPlayed(
@@ -64,15 +64,13 @@ interface YouTubeCacheDao {
     fun resetPlayHistory()
 
     @Query(
-        "DELETE FROM youtube_cache WHERE isBad = 0 AND durationSeconds > 0 AND durationSeconds < :minDurationSeconds",
-    )
-    fun deleteByDuration(minDurationSeconds: Int): Int
-
-    @Query(
         "DELETE FROM youtube_cache " +
             "WHERE isBad = 0 AND categoryKey IS NOT NULL AND categoryKey != '' AND categoryKey NOT IN (:allowedCategoryKeys)",
     )
     fun deleteByNotInCategories(allowedCategoryKeys: List<String>): Int
+
+    @Query("DELETE FROM youtube_cache WHERE videoId IN (:videoIds)")
+    fun deleteByVideoIds(videoIds: List<String>): Int
 
     @Query(
         "SELECT * FROM youtube_cache " +

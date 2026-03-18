@@ -235,19 +235,22 @@
     <string name="youtube_cache_count_pending">Videos in library: Refreshing...</string>
     <string name="youtube_cache_loading_overlay">Loading video library... %1$d of %2$d</string>
     <string name="youtube_cache_full_toast">Video library is full (200 videos). Tap Refresh Now to rebuild with new categories.</string>
-    <string name="youtube_min_duration_title">Minimum video duration</string>
-    <string name="youtube_min_duration_summary">Videos shorter than this will be excluded</string>
+    <string name="youtube_playback_length_mode_title">Long-video behavior</string>
+    <string name="youtube_playback_length_mode_summary">How YouTube videos longer than the limit should play</string>
+    <string name="youtube_playback_max_minutes_title">YouTube play length limit</string>
+    <string name="youtube_playback_max_minutes_summary">Maximum play time per YouTube video</string>
+    <string name="youtube_playback_max_minutes_disabled_summary">Disabled when Long-video behavior is Play full video</string>
     <string name="youtube_cache_full_on_category_toast">Library full. New category will be included on next Refresh Now.</string>
     <string name="youtube_rebuilding_library">Rebuilding library from scratch...</string>
     <string name="youtube_videos_removed_toast">Removed %1$d videos. %2$d videos remaining.</string>
+    <string name="youtube_videos_added_toast">Added %1$d videos. %2$d videos in library.</string>
     <string name="youtube_no_categories_selected_toast">No categories selected. Screensaver will use existing videos.</string>
-    <string name="youtube_min_duration_warning_toast">Very few videos are longer than 60 minutes. You may get fewer results.</string>
     <string name="youtube_refresh_started">Refreshing YouTube library. This can take a minute.</string>
     <string name="youtube_refresh_success">YouTube library updated: %1$d videos ready.</string>
     <string name="youtube_refresh_failed">Refresh failed. Keeping current library.</string>
     <string name="youtube_refresh_dialog_message">Refreshing YouTube library…</string>
     <string name="youtube_refresh_searching">Searching for videos…</string>
-    <string name="youtube_refresh_already_in_progress_toast">YouTube refresh is already in progress</string>
+    <string name="youtube_refresh_already_in_progress_toast">YouTube refresh is already in progress. Your Refresh Now request is queued.</string>
 
     <!-- Main / Video Sources / Local+USB videos -->
     <string name="local_videos_enabled_title">Use Local or USB storage media</string>

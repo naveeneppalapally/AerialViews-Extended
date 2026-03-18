@@ -13,6 +13,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
+import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters
@@ -24,6 +25,7 @@ import com.neilturner.aerialviews.models.enums.LimitLongerVideos
 import com.neilturner.aerialviews.models.enums.VideoScale
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
 import com.neilturner.aerialviews.models.prefs.ImmichMediaPrefs
+import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.models.videos.AerialMedia
 import com.neilturner.aerialviews.providers.samba.SambaDataSourceFactory
 import com.neilturner.aerialviews.providers.webdav.WebDavDataSourceFactory
@@ -157,6 +159,7 @@ object VideoPlayerHelper {
     fun setupMediaSource(
         player: ExoPlayer,
         media: AerialMedia,
+        startPositionMs: Long = C.TIME_UNSET,
     ) {
         val mediaItem = MediaItem.fromUri(media.uri)
         when (media.source) {
@@ -165,7 +168,7 @@ object VideoPlayerHelper {
                     ProgressiveMediaSource
                         .Factory(SambaDataSourceFactory())
                         .createMediaSource(mediaItem)
-                player.setMediaSource(mediaSource)
+                setMediaSourceWithOptionalStart(player, mediaSource, startPositionMs)
             }
 
             AerialMediaSource.RTSP -> {
@@ -175,7 +178,7 @@ object VideoPlayerHelper {
                         .setDebugLoggingEnabled(true)
                         .setForceUseRtpTcp(true)
                         .createMediaSource(mediaItem)
-                player.setMediaSource(mediaSource)
+                setMediaSourceWithOptionalStart(player, mediaSource, startPositionMs)
             }
 
             AerialMediaSource.IMMICH -> {
@@ -203,7 +206,7 @@ object VideoPlayerHelper {
                         .Factory(dataSourceFactory)
                         .createMediaSource(mediaItem)
 
-                player.setMediaSource(mediaSource)
+                setMediaSourceWithOptionalStart(player, mediaSource, startPositionMs)
                 Timber.d("Setting up Immich media source with URI: ${media.uri}")
             }
 
@@ -212,7 +215,7 @@ object VideoPlayerHelper {
                     ProgressiveMediaSource
                         .Factory(WebDavDataSourceFactory())
                         .createMediaSource(mediaItem)
-                player.setMediaSource(mediaSource)
+                setMediaSourceWithOptionalStart(player, mediaSource, startPositionMs)
             }
 
             AerialMediaSource.YOUTUBE -> {
@@ -244,12 +247,28 @@ object VideoPlayerHelper {
                                 .createMediaSource(mediaItem)
                     }
 
-                player.setMediaSource(mediaSource)
+                setMediaSourceWithOptionalStart(player, mediaSource, startPositionMs)
             }
 
             else -> {
-                player.setMediaItem(mediaItem)
+                if (startPositionMs > 0L) {
+                    player.setMediaItem(mediaItem, startPositionMs)
+                } else {
+                    player.setMediaItem(mediaItem)
+                }
             }
+        }
+    }
+
+    private fun setMediaSourceWithOptionalStart(
+        player: ExoPlayer,
+        mediaSource: MediaSource,
+        startPositionMs: Long,
+    ) {
+        if (startPositionMs > 0L) {
+            player.setMediaSource(mediaSource, startPositionMs)
+        } else {
+            player.setMediaSource(mediaSource)
         }
     }
 
@@ -261,8 +280,9 @@ object VideoPlayerHelper {
         val type = media.source
         val metadataDurationMs = media.metadata.exif.durationSeconds?.toLong()?.times(1000) ?: 0L
         val effectiveDuration = if (player.duration > 0) player.duration else metadataDurationMs
-        
-        val maxVideoLength = prefs.maxVideoLength.toLong() * 1000
+
+        val playbackPolicy = resolvePlaybackPolicy(type, prefs)
+        val maxVideoLength = playbackPolicy.maxVideoLengthMs
         val isLengthLimited = maxVideoLength >= TEN_SECONDS
         val isShortVideo = effectiveDuration < maxVideoLength
 
@@ -272,7 +292,7 @@ object VideoPlayerHelper {
             return Pair(0, duration)
         }
 
-        if (!isLengthLimited && prefs.randomStartPosition) {
+        if (!isLengthLimited && playbackPolicy.randomStartEnabled) {
             Timber.i("Calculating random start position...")
             val range = GeneralPrefs.randomStartPositionRange.toInt()
             return calculateRandomStartPosition(effectiveDuration, range)
@@ -284,7 +304,7 @@ object VideoPlayerHelper {
         }
 
         if (!isShortVideo && isLengthLimited) {
-            when (prefs.limitLongerVideos) {
+            when (playbackPolicy.limitMode) {
                 LimitLongerVideos.LIMIT -> {
                     Timber.i("Calculating long video type... obey limit, play until time limit")
                     val duration =
@@ -314,6 +334,48 @@ object VideoPlayerHelper {
         Timber.i("Calculating normal video type...")
         return Pair(0, effectiveDuration)
     }
+
+    private fun resolvePlaybackPolicy(
+        mediaSource: AerialMediaSource,
+        prefs: GeneralPrefs,
+    ): PlaybackPolicy {
+        if (mediaSource != AerialMediaSource.YOUTUBE) {
+            return PlaybackPolicy(
+                maxVideoLengthMs = prefs.maxVideoLength.toLongOrNull()?.times(1000L) ?: 0L,
+                limitMode = prefs.limitLongerVideos,
+                randomStartEnabled = prefs.randomStartPosition,
+            )
+        }
+
+        val youtubeMode = YouTubeVideoPrefs.playbackLengthMode.trim().lowercase()
+        val youtubeMaxLengthMs = YouTubeVideoPrefs.playbackMaxMinutes.toLong() * 60L * 1000L
+        return when (youtubeMode) {
+            "full" ->
+                PlaybackPolicy(
+                    maxVideoLengthMs = 0L,
+                    limitMode = LimitLongerVideos.IGNORE,
+                    randomStartEnabled = false,
+                )
+            "segment" ->
+                PlaybackPolicy(
+                    maxVideoLengthMs = youtubeMaxLengthMs,
+                    limitMode = LimitLongerVideos.SEGMENT,
+                    randomStartEnabled = false,
+                )
+            else ->
+                PlaybackPolicy(
+                    maxVideoLengthMs = youtubeMaxLengthMs,
+                    limitMode = LimitLongerVideos.LIMIT,
+                    randomStartEnabled = false,
+                )
+        }
+    }
+
+    private data class PlaybackPolicy(
+        val maxVideoLengthMs: Long,
+        val limitMode: LimitLongerVideos?,
+        val randomStartEnabled: Boolean,
+    )
 
     private fun calculateRandomStartPosition(
         duration: Long,

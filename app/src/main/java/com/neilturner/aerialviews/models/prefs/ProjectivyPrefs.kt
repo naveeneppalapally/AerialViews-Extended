@@ -15,12 +15,18 @@ object ProjectivyPrefs : KotprefModel() {
     val sharedProviders by stringSetPref("projectivy_shared_providers") {
         context.resources.getStringArray(R.array.projectivy_shared_providers_default).toSet()
     }
+
+    fun hasProvider(providerKey: String): Boolean =
+        sharedProviders.any { provider ->
+            provider.equals(providerKey, ignoreCase = true)
+        }
 }
 
 object ProjectivyApplePrefs : KotprefModel(), ProviderPreferences {
     override val kotprefName = "${context.packageName}_preferences"
 
-    override var enabled = ProjectivyPrefs.sharedProviders.contains("APPLE")
+    override val enabled: Boolean
+        get() = ProjectivyPrefs.hasProvider("APPLE")
     override var quality by nullableEnumValuePref(VideoQuality.VIDEO_1080_SDR, "projectivy_apple_videos_quality")
     var count by stringPref("-1", "projectivy_apple_videos_count")
 
@@ -36,7 +42,8 @@ object ProjectivyApplePrefs : KotprefModel(), ProviderPreferences {
 object ProjectivyAmazonPrefs : KotprefModel(), ProviderPreferences {
     override val kotprefName = "${context.packageName}_preferences"
 
-    override var enabled = ProjectivyPrefs.sharedProviders.contains("AMAZON")
+    override val enabled: Boolean
+        get() = ProjectivyPrefs.hasProvider("AMAZON")
     override var quality by nullableEnumValuePref(VideoQuality.VIDEO_1080_SDR, "projectivy_amazon_videos_quality")
     var count by stringPref("-1", "projectivy_amazon_videos_count")
 
@@ -52,7 +59,8 @@ object ProjectivyAmazonPrefs : KotprefModel(), ProviderPreferences {
 object ProjectivyComm1Prefs : KotprefModel(), ProviderPreferences {
     override val kotprefName = "${context.packageName}_preferences"
 
-    override var enabled = ProjectivyPrefs.sharedProviders.contains("COMM1")
+    override val enabled: Boolean
+        get() = ProjectivyPrefs.hasProvider("COMM1")
     override var quality by nullableEnumValuePref(VideoQuality.VIDEO_1080_SDR, "projectivy_comm1_videos_quality")
     var count by stringPref("-1", "projectivy_comm1_videos_count")
 
@@ -68,7 +76,8 @@ object ProjectivyComm1Prefs : KotprefModel(), ProviderPreferences {
 object ProjectivyComm2Prefs : KotprefModel(), ProviderPreferences {
     override val kotprefName = "${context.packageName}_preferences"
 
-    override var enabled = ProjectivyPrefs.sharedProviders.contains("COMM2")
+    override val enabled: Boolean
+        get() = ProjectivyPrefs.hasProvider("COMM2")
     override var quality by nullableEnumValuePref(VideoQuality.VIDEO_1080_SDR, "projectivy_comm2_videos_quality")
     var count by stringPref("-1", "projectivy_comm2_videos_count")
 
@@ -85,7 +94,7 @@ object ProjectivyLocalMediaPrefs : KotprefModel(), LocalProviderPreferences {
     override val kotprefName = "${context.packageName}_preferences"
 
     override val enabled: Boolean
-        get() = ProjectivyPrefs.sharedProviders.contains("LOCAL")
+        get() = ProjectivyPrefs.hasProvider("LOCAL")
 
     override var searchType by nullableEnumValuePref(SearchType.MEDIA_STORE, "projectivy_local_videos_search_type")
     override var mediaType by nullableEnumValuePref(ProviderMediaType.VIDEOS, "projectivy_local_media_type")

@@ -31,10 +31,10 @@ object QueryFormulaEngine {
         val categoryNature: Boolean = true,
         val categoryAnimals: Boolean = true,
         val categoryDrone: Boolean = true,
-        val categoryCities: Boolean = false,
+        val categoryCities: Boolean = true,
         val categorySpace: Boolean = true,
         val categoryOcean: Boolean = true,
-        val categoryWeather: Boolean = false,
+        val categoryWeather: Boolean = true,
         val categoryWinter: Boolean = true,
     ) {
         fun isEnabled(category: ContentCategory): Boolean =
@@ -643,10 +643,39 @@ object QueryFormulaEngine {
                 QueryCategory.NATURE
             }
 
-    fun categoryForQuery(query: String): ContentCategory? =
+    fun categoryForQuery(query: String): ContentCategory? {
+        val normalizedQuery = query.trim().lowercase()
+        if (normalizedQuery.isBlank()) {
+            return null
+        }
+
         categoryConfigs.entries.firstOrNull { (_, config) ->
-            query in config.queries
-        }?.key
+            config.queries.any { configuredQuery ->
+                normalizedQuery == configuredQuery.lowercase()
+            }
+        }?.key?.let { return it }
+
+        // Most generated variants append suffixes to base queries; map by prefix to keep category ownership.
+        categoryConfigs.entries.firstOrNull { (_, config) ->
+            config.queries.any { configuredQuery ->
+                val normalizedConfigured = configuredQuery.lowercase()
+                normalizedQuery.startsWith("$normalizedConfigured ")
+            }
+        }?.key?.let { return it }
+
+        val inferredByKeywords =
+            categoryConfigs.entries
+                .map { (category, config) ->
+                    val titleMatches = config.titleKeywords.count { keyword -> normalizedQuery.contains(keyword.lowercase()) }
+                    val preferredMatches = config.preferredTitleKeywords.count { keyword -> normalizedQuery.contains(keyword.lowercase()) }
+                    val uploaderMatches = config.uploaderKeywords.count { keyword -> normalizedQuery.contains(keyword.lowercase()) }
+                    category to (titleMatches + preferredMatches * 2 + uploaderMatches * 2)
+                }.maxByOrNull { (_, score) -> score }
+                ?.takeIf { (_, score) -> score > 0 }
+                ?.first
+
+        return inferredByKeywords
+    }
 
     fun enabledCategories(prefs: CategoryPreferences): List<ContentCategory> =
         ContentCategory.entries.filter(prefs::isEnabled).ifEmpty { defaultPools().keys.toList() }

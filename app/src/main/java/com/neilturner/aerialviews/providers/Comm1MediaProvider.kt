@@ -22,6 +22,7 @@ class Comm1MediaProvider(
     override val type = ProviderSourceType.REMOTE
     val metadata = mutableMapOf<String, Pair<String, Map<Int, String>>>()
     val videos = mutableListOf<AerialMedia>()
+    private var lastVideoSignature: String = ""
 
     override val enabled: Boolean
         get() = prefs.enabled
@@ -29,7 +30,11 @@ class Comm1MediaProvider(
     override suspend fun fetchTest(): String = ""
 
     override suspend fun fetchMedia(): List<AerialMedia> {
-        if (metadata.isEmpty()) buildVideoAndMetadata()
+        val videoSignature = currentVideoSignature()
+        if (metadata.isEmpty() || videos.isEmpty() || videoSignature != lastVideoSignature) {
+            buildVideoAndMetadata()
+            lastVideoSignature = videoSignature
+        }
         return videos
     }
 
@@ -39,6 +44,9 @@ class Comm1MediaProvider(
     }
 
     private suspend fun buildVideoAndMetadata() {
+        metadata.clear()
+        videos.clear()
+
         val quality = prefs.quality
         val strings = parseJsonMap(context, R.raw.comm1_strings)
         val wrapper = parseJson<Comm1Videos>(context, R.raw.comm1)
@@ -80,4 +88,15 @@ class Comm1MediaProvider(
         Timber.i("${metadata.count()} metadata items found")
         Timber.i("${videos.count()} $quality videos found")
     }
+
+    private fun currentVideoSignature(): String =
+        buildString {
+            append(prefs.enabled)
+            append('|')
+            append(prefs.quality)
+            append('|')
+            append(prefs.scene.sorted().joinToString(","))
+            append('|')
+            append(prefs.timeOfDay.sorted().joinToString(","))
+        }
 }

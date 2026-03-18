@@ -5,460 +5,313 @@
 [![License](https://img.shields.io/:license-gpl%20v3-lightgrey.svg?style=flat)](https://raw.githubusercontent.com/naveeneppalapally/AerialViews-Plus/main/LICENSE)
 [![API](https://img.shields.io/badge/API-23%2B-lightgrey.svg?style=flat)](https://android-arsenal.com/api?level=23)
 
-A fork of AerialViews that adds YouTube as a native video source.
-Plays fresh 4K nature, aerial, and ambient videos from YouTube directly on your Android TV, no API key, no server, no login required.
+A fork of [AerialViews](https://github.com/theothernt/AerialViews) that adds YouTube as a native video source. Plays fresh 4K nature, aerial, and ambient videos from YouTube directly on your Android TV. No API key, no account, no server required.
 
 ## Everything from AerialViews
 
-* 4K Dolby Vision (HDR) videos if your TV supports it
-* Over 250 videos from Apple, Amazon, Jetson Creative and Robin Fourcade
-* USB, Immich, Samba, WebDAV, and custom feed support
-* Clock, date, location, now playing, and custom text overlays
-* Burn-in protection by alternating overlay positions
-* Playlist controls, shuffle, skip, and media length limits
-* Refresh rate switching for 24fps, 50fps content
+- 4K Dolby Vision (HDR) videos if your TV supports it
+- Over 250 videos from Apple, Amazon, Jetson Creative and Robin Fourcade
+- USB, Immich, Samba, WebDAV, and custom feed support
+- Clock, date, location, now playing, and custom text overlays
+- Burn-in protection by alternating overlay positions
+- Playlist controls, shuffle, skip, and media length limits
+- Refresh rate switching for 24fps and 50fps content
 
 ## New in this fork
 
-* YouTube as a native video source (no API key, no server)
-* On-device search using NewPipe Extractor
-* Video local cache with automatic daily refresh
-* Diversity engine so the same video never repeats
-* Stream URL auto-renewal before YouTube links expire
-* YouTube mixed with built-in sources in the same playlist
-* Background refresh via WorkManager
+- YouTube as a native video source, no API key or account needed
+- On-device search using [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor) v0.26.0
+- Local cache of up to 200 videos, refreshed daily in the background
+- 8 content categories: Nature, Wildlife, Drone, Ocean, Space, Cities, Weather, Winter
+- Filters out AI-generated videos, vlogs, and talking head content
+- Videos never repeat within a 7-day window
+- Stream URLs auto-renewed before YouTube links expire
+- YouTube mixes with built-in sources in the same playlist
+- Projectivy Launcher integration
 
 ## Installation
 
-1. Download the latest APK from the [Releases tab](https://github.com/naveeneppalapally/AerialViews-Plus/releases/latest).
-2. Enable `Install unknown apps` on your Android TV.
-3. Install the APK with a file manager on your device.
+1. Download the latest APK from the [Releases tab](https://github.com/naveeneppalapally/AerialViews-Plus/releases/latest)
+2. On your Android TV, enable `Install unknown apps` in Settings
+3. Transfer the APK to your TV and install it with a file manager
 
-Or install via ADB:
+> Play Protect may show a warning during install. Tap **Install anyway**. This is normal for all sideloaded apps. Source code is fully open above.
 
-```sh
-adb install -r AerialViews-Plus-v1.1.0.apk
-```
+This app is not on the Play Store and never will be. See the FAQ for why.
 
 ## How to set AerialViews+ as the default screensaver
 
-> These setup instructions are taken directly from the original 
-> [AerialViews](https://github.com/theothernt/AerialViews) by 
-> [Neil McAlister](https://github.com/theothernt) and are reproduced 
+> These setup instructions are taken directly from the original
+> [AerialViews](https://github.com/theothernt/AerialViews) by
+> [Neil McAlister](https://github.com/theothernt) and are reproduced
 > here with credit and thanks. The steps are identical for this fork.
 
-Since 2023, nearly all devices that ship with Google TV, running Android TV 12 or later, have no user-interface to change the screensaver to a 3rd party one...
+Since 2023, most devices running Google TV (Android TV 12 or later) have no interface to change the screensaver to a third-party app. This includes:
 
-* __Chromecast with Google TV, Google TV Streamer__
-* __Recent MECOOL devices__
-* __Recent TCL, Philips, and Sony TVs__
-* __onn. Google TV devices (excluding the 2021 model)__
-* __Fire TV (won't work with Fire OS 8.1 and above)__
+- Chromecast with Google TV, Google TV Streamer
+- Recent MECOOL devices
+- Recent TCL, Philips, and Sony TVs
+- onn. Google TV devices (excluding the 2021 model)
+- Fire TV (does not work with Fire OS 8.1 and above)
 
-But it can be done manually. Here is an overview of the steps...
+It can still be done using ADB commands. The steps are:
 
-1. Enable Developer mode, enable USB debugging, then find the IP address of your device
-2. Use a Mac, iPhone, PC or Android phone with the required software or app
-3. Connect to your Android/Google/Fire TV device
-4. Run two ADB commands, one to set AerialViews+ as the default screensaver, the other to set how long it takes the screensaver to start
+1. Enable Developer mode and USB debugging on your TV
+2. Find the IP address of your TV
+3. Connect from your phone, Mac, or PC
+4. Run two ADB commands to set AerialViews+ as the screensaver
 
-The full instructions are below, please click or tap to expand each step.
+Full instructions are below. Click or tap each section to expand.
 
-Another option is to use the *TDUK Screensaver Manager* app. Details on the app are below.
+Another option is the [TDUK Screensaver Manager](https://play.google.com/store/apps/details?id=com.tduk.scrmgr) app, which handles this without ADB commands.
 
 <details>
-<summary>Enable Developer Mode on your Android/Google TV</summary>
+<summary>Enable Developer Mode on Android/Google TV</summary>
 &nbsp;
 
-Navigate to the Settings menu on your device, then to the About screen. Depending on the device…
+Navigate to Settings, then the About screen. Depending on your device:
 
-`Settings > System > About` or
-`Settings > Device Preferences > About`
+`Settings > System > About` or `Settings > Device Preferences > About`
 
-Scroll down to __Build__ and select __Build__ several times until you get the message "You are now a developer!"
+Scroll to **Build** and select it several times until you see "You are now a developer!"
 
-Return to __Settings__ or __Settings > System__ and look for the newly enabled __Developer options__ page.
+Return to Settings and find the newly enabled **Developer options** page. Enable **USB debugging**.
 
-On the __Developer options__ page, look for the __USB debugging__ option and enable it.
-
-Next, find the __IP address__ of your device. Try looking in the Network & Internet settings of the device, check the properties of the current LAN or WIFI connection - that should list the current IP address eg. 192.168.1.105
+Then find the IP address of your device in `Settings > Network & Internet`.
 </details>
 
 <details>
 <summary>Enable Developer Mode on Fire Stick/TV</summary>
 &nbsp;
 
-Open __Settings__, then navigate to __My Fire TV__ then the __About__ screen.
+Open **Settings**, then go to **My Fire TV > About**.
 
-Highlight your device name and press the action button on your remote seven times.
+Highlight your device name and press the action button seven times until you see "You are now a developer".
 
-You'll now see a message confirming "You are now a developer", and it'll unlock the __Developer Options__ in the previous menu.
+Go to **Developer Options** and enable **ADB debugging**.
 
-Navigate to the __Developer Options__ page, look for the __ADB debugging__ option and enable it.
-
-Next, find the IP address of your device and make a note of it. Navigate to the __About__ then __Network__ screen, which will show your current IP address eg. 192.168.1.120
+Find your IP address at **About > Network**.
 </details>
 
 <details>
 <summary>Allow Auto Launch on TCL TVs</summary>
 &nbsp;
 
-If you have a TCL TV with Google TV, you need to allow the Auto Launch permission so that AerialViews+ can be launched from the background when the screensaver starts.
+TCL TVs with Google TV require an extra Auto Launch permission, otherwise the screensaver cannot start automatically.
 
-Otherwise, the screensaver cannot be started, either automatically, or manually via the Screensaver menu shortcut, unless the AerialViews+ app has been recently opened (see [#191](https://github.com/theothernt/AerialViews/issues/191) for details).
+1. Open the **Safety Guard** app on your TV
+2. Go to `Permission Shield > Auto Launch Permission`
+3. Set **Auto manager** at the top to `Closed`
+4. Find **AerialViews+** and set it to `Opened`
 
-1. Open the __Safety Guard__ app on your TV
-2. Navigate to `Permission Shield > Auto Launch Permission`
-3. Change the `Auto manager` at the top to `Closed` - this allows you to manually select which apps can auto-launch instead of the system deciding automatically
-4. Scroll to __AerialViews+__ and change it to `Opened`
+If Safety Guard is not on your TV, use this ADB command instead.
 
-Not all TCL TVs have the same software and features. If the above __Safety Guard__ app does not exist on your TV, the following ADB command might help…
-
-Android <v14:
-
+Android below v14:
 ```sh
 appops set com.naveen.aerialviewsplus APP_AUTO_START allow
 ```
 
-Androind >=v14
-
+Android v14 and above:
 ```sh
 appops set com.naveen.aerialviewsplus AUTO_START allow
 ```
-
-You can confirm the available options:
-
-```sh
-appops get com.naveen.aerialviewsplus
-
-# Returns
-WAKE_LOCK: allow; time=+5m55s466ms ago; duration=+2s889ms
-READ_MEDIA_IMAGES: allow; time=+1m43s406ms ago
-READ_MEDIA_VISUAL_USER_SELECTED: allow; time=+1m43s408ms ago
-AUTO_START: ignore; rejectTime=+7m6s72ms ago
-```
-
 </details>
 
 <details>
 <summary>Connect using an iPhone</summary>
 &nbsp;
 
-Find an iPhone app that is capable of running ADB commands, [such as iSH Shell](https://ish.app/), which is free.
-
-Once installed, run the app and install the Android Tools with the following commands…
+Download [iSH Shell](https://ish.app/) from the App Store (free), then install ADB:
 
 ```sh
 apk update
 apk add android-tools
 ```
 
-To check if the ADB command is working, try typing…
-
+Verify it works:
 ```sh
-adb version 
+adb version
 ```
-
-After pressing return, you should see something like this
-
-```sh
-Android Debug Bridge version 1.0.41
-Version 31.0.0p1-android-tools
-```
-
-Now you can execute ADB commands.
 </details>
 
 <details>
 <summary>Connect using an Android phone</summary>
 &nbsp;
 
-Find an Android app that is capable of running ADB commands, [such as Remote Termux](https://play.google.com/store/apps/details?id=com.termux), which is free.
-
-Once installed, run the app and install the Android Tools with the following commands…
+Download [Termux](https://play.google.com/store/apps/details?id=com.termux) from the Play Store (free), then install ADB:
 
 ```sh
 pkg update
 pkg install android-tools
 ```
 
-To check if the ADB command is working, try typing…
-
+Verify it works:
 ```sh
-adb version 
+adb version
 ```
-
-After pressing return, you should see something like this
-
-```sh
-Android Debug Bridge version 1.0.41
-Version 34.0.0p1-android-tools
-```
-
-Now you can execute ADB commands.
-
 </details>
 
 <details>
 <summary>Connect using a Mac</summary>
 &nbsp;
 
-Download the official [SDK Platform Tools](https://developer.android.com/studio/releases/platform-tools) for Mac.
+Download [SDK Platform Tools](https://developer.android.com/studio/releases/platform-tools) for Mac, extract the ZIP, then open Terminal in that folder.
 
-Extract the files from the ZIP archive to a folder. Then open a Terminal or Command Prompt and navigate to the folder.
-
-To check if the ADB command is working, try typing…
-
+Verify it works:
 ```sh
 adb version
 ```
-
-After pressing return, you should see something like this
-
-```sh
-Android Debug Bridge version 1.0.41
-Version 35.0.0-11411520
-```
-
-Now you can execute ADB commands.
 </details>
 
 <details>
-<summary>Connect using a PC with Windows</summary>
+<summary>Connect using a PC</summary>
 &nbsp;
 
-Download the official [SDK Platform Tools](https://developer.android.com/studio/releases/platform-tools) for Windows.
+Download [SDK Platform Tools](https://developer.android.com/studio/releases/platform-tools) for Windows, extract the ZIP, then open Command Prompt in that folder.
 
-An alternate option is [Tiny ADB and Fastboot Tool (Portable version)](https://androidmtk.com/tiny-adb-and-fastboot-tool) but they both work in the same way.
-
-Extract the files from the ZIP archive to a folder. Then open a Terminal or Command Prompt and navigate to the folder.
-
-To check if the ADB command is working, try typing…
-
+Verify it works:
 ```sh
 adb version
 ```
-
-After pressing return, you should see something like this
-
-```sh
-Android Debug Bridge version 1.0.41
-Version 35.0.0-11411520
-```
-
 </details>
 
 <details>
-<summary>Extra steps for Chromecast with Google TV HD &amp; 4K</summary>
-
-Since the update to Android TV 14, the Chromecast with Google TV (CCwGTV) has a bug which affects ADB. Normally, ADB uses port 5555 but on the CCwGTV the port is randomised.
-
-This means the `adb connect <ip_address>` command will likely fail with a 'connection refused' message.
-
-As a work-around, we can use the wireless debugging connection...
-
-1. In `Settings > System > Developer options > Wireless debugging`, select Pair device with pairing code
-
-2. Run the command: `adb pair <ip_address>:<port>`
-
-3. The IP and port are displayed on the TV upon selecting Pair device with pairing code
-
-4. ADB then asks for the pairing code displayed on the screen.
-
-5. Once entered, you should see a message confirming that wireless debugging is connected.
-
-You should be connected to your CCwGTV device with ADB. Now you can run `adb shell` and the other commands in the instructions that follow.
-
-:information_source: *There are other ways to fix this issue, like using a feature in tvQuickActions Pro. [See TDUK's video for more details.](https://www.youtube.com/watch?v=WVRBXktSw0c)*
-
-</details>
-
-<details>
-<summary>ADB command - set AerialViews+ as the default screensaver</summary>
+<summary>ADB command - set AerialViews+ as the screensaver</summary>
 &nbsp;
 
-Connect to your Android TV device and start a command shell...
-
+Connect to your TV over the network:
 ```sh
-adb connect <ip_address>
+adb connect [your TV IP address]
 ```
 
-:information_source: *Use the IP address of your device from earlier steps, it should be something like 192.168.1.98*
-
-```sh
-adb shell
-```
-
-:information_source: *The first time you connect to your Android TV device, you will probably see a confirmation dialogue asking to "allow" the connection*
-
-Next, set AerialViews+ as the default screensaver with this command…
-
+Then run:
 ```sh
 settings put secure screensaver_components com.naveen.aerialviewsplus/.ui.screensaver.DreamActivity
+settings put secure screensaver_enabled 1
 ```
 
-Optional: Confirm that the command was run successfully, as there is no confirmation when the command above is run.
-
+To confirm it worked:
 ```sh
 settings get secure screensaver_components
 ```
 
-If set correctly, you should see... 
-
+You should see:
 ```sh
 com.naveen.aerialviewsplus/.ui.screensaver.DreamActivity
 ```
-
 </details>
 
 <details>
-<summary>ADB command - extra command for Fire TV + Fire OS 7.6.x.x</summary>
+<summary>ADB command - extra steps for Fire TV and Fire OS 7.6.x</summary>
 &nbsp;
-
-Recent updates to Fire OS mean extra commands are required for AerialViews+ to function properly as the default screensaver.
-
-Like with previous ADB commands, connect to your Android TV device and start a command shell. Then run the following commands...
 
 ```sh
 settings put secure screensaver_default_component com.naveen.aerialviewsplus/.ui.screensaver.DreamActivity
-settings put secure contextual_screen_off_timeout 300000 
+settings put secure contextual_screen_off_timeout 300000
 settings put secure screensaver_enabled 1
 ```
-
 </details>
 
 <details>
-<summary>ADB command - extra command for Fire TV + Fire OS 8.1.x.x</summary>
+<summary>ADB command - extra steps for Fire TV and Fire OS 8.1.x</summary>
 &nbsp;
 
-Fire OS 8.x introduces a new Ambient Experience screensaver. This must also be disabled for a 3rd party screensaver, like AerialViews+, to run normally.
-
-To disable the Ambient Experience, run this ADB command...
+Fire OS 8.x has a built-in Ambient Experience that must be disabled first:
 
 ```sh
 settings put secure amazon_ambient_enabled 0
 ```
 
-Then reboot your Fire TV for the setting to take effect.
-
+Reboot your Fire TV, then set AerialViews+ as the screensaver using the commands above.
 </details>
 
 <details>
 <summary>ADB command - change the screensaver timeout</summary>
 &nbsp;
 
-To change the default timeout use this command with a value in milliseconds. So, 5 minutes is 300000, 10 minutes is 600000 and so on.
+The value is in milliseconds. 5 minutes is 300000, 10 minutes is 600000.
 
 ```sh
 settings put system screen_off_timeout 600000
 ```
 
-:information_source: *On modern Google TV devices (Android TV 12+), the minimum value is 6 minutes or 360000. If you set a value lower than this, the screensaver won't start.*
+:information_source: On Google TV devices running Android TV 12 or later, the minimum is 6 minutes (360000). Lower values will not work.
 
-:information_source: *If you are using Projectivy launcher, make sure to disable: Projectivy Launcher settings > Power > Enable internal idle detection*
-
-
+:information_source: If you use Projectivy Launcher, disable `Projectivy Launcher > Power > Enable internal idle detection`.
 </details>
 
 <details>
-<summary>How to revert back to the default screensaver</summary>
+<summary>How to revert to the default screensaver</summary>
 &nbsp;
 
-For whatever reason, if you would like to stop using AerialViews+ and revert back to the original screensaver, there are two options…
-
-* Reset your device. Doing so will also reset the screensaver preference
-* Use an ADB commands to enable the default screensaver, depending on your device
-
-1. Follow the instructions above to connect to your Android/Google TV device using an iPhone, Android phone, Mac, PC, etc
-2. Run one of the following commands...
-
-### To restore the default Google TV ambient screensaver
-
+To restore the default Google TV screensaver:
 ```sh
 settings put secure screensaver_components com.google.android.apps.tv.dreamx/.service.Backdrop
 ```
 
-### To restore the default Fire TV screensaver
-
+To restore the default Fire TV screensaver:
 ```sh
 settings put secure screensaver_components com.amazon.bueller.photos/.daydream.ScreenSaverService
 ```
 
-### To restore the default (older) Android TV backdrop screensaver
-
+To restore the older Android TV backdrop screensaver:
 ```sh
 settings put secure screensaver_components com.google.android.backdrop/.Backdrop
 ```
-
 </details>
 
 <details>
 <summary>Use the TDUK Screensaver Manager app</summary>
 &nbsp;
 
-The [TDUK Screensaver Manager](https://play.google.com/store/apps/details?id=com.tduk.scrmgr) is a paid app (approx. $2/£2/€2) which allows you to easily change the active screensaver on your Android/Google TV device using a simple interface.
+The [TDUK Screensaver Manager](https://play.google.com/store/apps/details?id=com.tduk.scrmgr) is a paid app (around $2) that lets you change the screensaver using a simple on-screen interface instead of ADB commands.
 
-Please make sure to enable **Developer Mode** and **USB/Networking Debugging**. Instructions are above.
+Enable Developer Mode and USB/Network Debugging first. Instructions are above.
 
-:information_source: This app will not work on recent Fire TV devices due to changes by Amazon.
-
+:information_source: This app does not work on recent Fire TV devices.
 </details>
 
-## How YouTube Works
+## How YouTube works
 
-When YouTube is enabled as a source, the app builds a rotating set of search queries on-device and uses NewPipe Extractor to find and resolve playable video streams, with no Google account needed, no API key, and nothing sent to a custom server.
+When YouTube is enabled, the app builds a set of search queries on-device and uses NewPipe Extractor to find and resolve playable video streams. Nothing is sent to a custom server. No Google account is needed.
 
-Results are cached locally for about 24 hours. Stream URLs are refreshed automatically before they expire, and a background job keeps the cache warm overnight. If a refresh fails, the app falls back to the last working cache so playback never stops.
+Results are cached locally for up to 200 videos and refreshed daily. Stream URLs are renewed automatically before they expire. If a refresh fails, the app falls back to the last working cache so playback keeps going.
 
-## About the YouTube Videos
+You can choose which types of content to include from the YouTube settings screen: Nature, Wildlife, Drone, Ocean, Space, Cities, Weather, and Winter. Categories can be toggled individually and the library updates without wiping existing videos.
 
-Unlike the built-in Apple and Amazon videos in AerialViews, which are
-a fixed, hand-picked collection, the YouTube source in this fork pulls
-fresh content automatically. It is a different experience, and it helps
-to know what to expect.
+## What to expect from YouTube videos
+
+The built-in Apple and Amazon videos in AerialViews are a fixed, hand-picked collection. The YouTube source in this fork pulls fresh content automatically. It is a different experience.
 
 **What you will see:**
-- New videos appear regularly as the cache refreshes daily
-- Content changes week to week as search results rotate
+- New videos as the cache refreshes daily
 - A wide variety of locations, seasons, and subjects over time
+- Content that rotates week to week
 
-**What keeps it feeling consistent:**
-- Only videos longer than 8 minutes are included, with no short clips
-- Keywords like "ambient", "no music", and "no talking" filter out videos with narration, intros, or background music
-- AI-generated videos are filtered out by title, channel name, and duration patterns
-- Channel caps (max 3 videos per channel) prevent any single creator from dominating the playlist
-- Location diversity caps prevent the same place appearing back to back
-- Play history tracking means you will not see the same video twice in a short period
+**What keeps it consistent:**
+- AI-generated videos are filtered by title, channel name, and duration patterns
+- Vlog, tutorial, and talking head videos are filtered out
+- No more than a few videos from the same channel in one cache
+- The same video will not repeat within 7 days
 
-The original AerialViews videos are carefully curated and always
-look cinematic and consistent. The YouTube source trades that
-stability for variety and freshness, so you get new content every
-day instead of the same 250 videos forever. Some videos will be
-better than others. If a video looks out of place, the app moves
-on automatically after it finishes.
-
-If you want the stable, curated experience, enable Apple or 
-Amazon sources alongside YouTube or instead of it. All sources 
-can be mixed in the same playlist.
+The Apple and Amazon sources can be used alongside YouTube or instead of it. All sources mix in the same playlist.
 
 ## FAQ
-
-Please click or tap to expand each item below...
 
 <details>
 <summary>YouTube stopped working suddenly</summary>
 &nbsp;
 
-NewPipe Extractor occasionally breaks when YouTube updates its internal API. This is fixed by updating the NewPipe version.
+NewPipe Extractor occasionally breaks when YouTube updates its internal API. Open an issue on this repo with your device model and Android version. It is usually fixed within a few days by bumping the NewPipe version in `gradle/libs.versions.toml`.
 
-Check [github.com/TeamNewPipe/NewPipeExtractor/releases](https://github.com/TeamNewPipe/NewPipeExtractor/releases) for the latest version and open an issue on this repo. It is usually fixed within a few days.
+Check [NewPipe Extractor releases](https://github.com/TeamNewPipe/NewPipeExtractor/releases) to see if a newer version is available.
 </details>
 
 <details>
 <summary>Some videos are skipped</summary>
 &nbsp;
 
-Videos may be skipped due to age restrictions, regional blocks, deleted uploads, or unavailable stream quality. The app moves on to the next video automatically.
+Videos may be skipped because of age restrictions, regional blocks, deleted uploads, or unavailable stream quality. The app moves on to the next video automatically.
 </details>
 
 <details>
@@ -479,29 +332,35 @@ The original AerialViews license prohibits any fork from being uploaded to the P
 <summary>Does this replace AerialViews or work alongside it?</summary>
 &nbsp;
 
-It replaces it. Install one or the other, not both. All original features are included in this fork.
+It replaces it. Both apps cannot be installed at the same time. All original AerialViews features are included in this fork.
 </details>
 
-## Building from Source
+<details>
+<summary>Play Protect shows a warning during install</summary>
+&nbsp;
 
-Clone the repo and open it in Android Studio.
-The project requires JDK 21 and Android Studio Hedgehog or newer.
+This is normal for any app not distributed through the Play Store. Tap **Install anyway**. The source code is fully open on this page if you want to review it.
+</details>
 
-The GitHub Actions workflow builds the APK automatically
-when a release is triggered. If you just want the APK,
-download it from the Releases tab instead.
+## Building from source
+
+Clone the repo and open it in Android Studio. JDK 21 and Android Studio Hedgehog or newer are required.
+
+```sh
+./gradlew :app:assembleGithubNonMinifiedRelease
+```
+
+The APK will be at `app/build/outputs/apk/github/nonMinifiedRelease/`.
 
 ## Contributing
 
-Pull requests are welcome. This fork is maintained with AI assistance, so turnaround on complex fixes may take a few days.
-
-For NewPipe breakage: just open an issue with your device model and Android version. The fix is almost always a one-line version bump in `gradle/libs.versions.toml`.
+Pull requests are welcome. For NewPipe breakage, open an issue with your device model and Android version. The fix is almost always a version bump in `gradle/libs.versions.toml`.
 
 Please open an issue before submitting a pull request for larger changes.
 
 ## About
 
-AerialViews+ is based on [AerialViews](https://github.com/theothernt/AerialViews) by Neil McAlister, which itself is based on [Aerial Dream](https://github.com/cachapa/AerialDream) by Daniel Cachapa, created in late 2015. This fork was created to add YouTube as a video source without requiring any external server or API key.
+AerialViews+ is based on [AerialViews](https://github.com/theothernt/AerialViews) by Neil McAlister, which is based on [Aerial Dream](https://github.com/cachapa/AerialDream) by Daniel Cachapa. This fork adds YouTube as a video source without requiring any external server or API key.
 
 ## Credits
 
@@ -509,8 +368,8 @@ See [CREDITS.md](./CREDITS.md) for full attribution.
 
 ## License
 
-GPL v3, see [LICENSE](./LICENSE).
+GPL v3. See [LICENSE](./LICENSE).
 
 ## Disclaimer
 
-This fork is not affiliated with YouTube, Google, or Apple. It uses NewPipe Extractor for on-device stream extraction and is distributed for personal sideload use only.
+This fork is not affiliated with YouTube, Google, or Apple. It uses NewPipe Extractor for on-device stream extraction and is distributed for personal use only.

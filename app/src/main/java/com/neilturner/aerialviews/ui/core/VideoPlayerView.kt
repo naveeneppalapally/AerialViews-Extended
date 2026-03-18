@@ -151,7 +151,11 @@ class VideoPlayerView
 
                     Log.i("VideoPlayerView", "Preparing media source: ${playableMedia.uri}")
                     configureTrackSelection(playableMedia)
-                    VideoPlayerHelper.setupMediaSource(exoPlayer, playableMedia)
+                    val initialStartPositionMs = computeInitialYouTubeStartPosition(playableMedia)
+                    if (initialStartPositionMs > 0L) {
+                        Log.i("VideoPlayerView", "Applying initial YouTube start during prepare: ${initialStartPositionMs.milliseconds}")
+                    }
+                    VideoPlayerHelper.setupMediaSource(exoPlayer, playableMedia, initialStartPositionMs)
 
                     if (GeneralPrefs.muteVideos) {
                         VideoPlayerHelper.toggleAudioTrack(exoPlayer, true)
@@ -247,8 +251,18 @@ class VideoPlayerView
                 }
 
                 if (state.startPosition > 0) {
-                    Timber.i("Seeking to ${state.startPosition.milliseconds}")
-                    player?.seekTo(state.startPosition)
+                    val currentPosition = player?.currentPosition ?: 0L
+                    val needsForwardSeek = currentPosition + START_POSITION_SEEK_TOLERANCE_MS < state.startPosition
+                    if (needsForwardSeek) {
+                        Timber.i("Seeking to ${state.startPosition.milliseconds}")
+                        player?.seekTo(state.startPosition)
+                    } else {
+                        Timber.i(
+                            "Skipping correction seek; current=${currentPosition.milliseconds}, target=${state.startPosition.milliseconds}",
+                        )
+                        // Keep progress bar timing aligned with actual decoder position.
+                        state.startPosition = currentPosition
+                    }
                 }
 
                 state.prepared = true
@@ -576,6 +590,23 @@ class VideoPlayerView
             return adjustedStart
         }
 
+        private fun computeInitialYouTubeStartPosition(media: AerialMedia): Long {
+            if (media.source != AerialMediaSource.YOUTUBE) {
+                return 0L
+            }
+
+            val knownDurationMs = (media.metadata.exif.durationSeconds ?: 0).toLong() * 1000L
+            if (knownDurationMs <= 0L) {
+                return YOUTUBE_INTRO_SKIP_MS
+            }
+            if (knownDurationMs < YOUTUBE_INTRO_SKIP_MIN_DURATION_MS) {
+                return 0L
+            }
+
+            val maxAllowedStart = (knownDurationMs - YOUTUBE_INTRO_SKIP_END_GUARD_MS).coerceAtLeast(0L)
+            return YOUTUBE_INTRO_SKIP_MS.coerceAtMost(maxAllowedStart)
+        }
+
         interface OnVideoPlayerEventListener {
             fun onVideoAlmostFinished()
 
@@ -590,8 +621,9 @@ class VideoPlayerView
             const val CHANGE_PLAYBACK_SPEED_DELAY: Long = 2000
             const val CHANGE_PLAYBACK_START_END_DELAY: Long = 4000
             const val YOUTUBE_INTRO_SKIP_MIN_DURATION_MS: Long = 60_000
-            const val YOUTUBE_INTRO_SKIP_MS: Long = 5_000
+            const val YOUTUBE_INTRO_SKIP_MS: Long = 30_000
             const val YOUTUBE_INTRO_SKIP_END_GUARD_MS: Long = 20_000
+            const val START_POSITION_SEEK_TOLERANCE_MS: Long = 5_000
             const val YOUTUBE_STREAM_RESOLVE_TIMEOUT_MS: Long = 15_000
             private val RESOLVE_LOG_LOCK = Any()
             @Volatile

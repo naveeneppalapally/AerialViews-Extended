@@ -37,18 +37,18 @@ class ProjectivyFragment :
         val selectedProviders = ProjectivyPrefs.sharedProviders
 
         findPreference<Preference>("projectivy_apple_videos_options")?.isVisible =
-            selectedProviders.contains("APPLE")
+            selectedProviders.any { provider -> provider.equals("APPLE", ignoreCase = true) }
         findPreference<Preference>("projectivy_amazon_videos_options")?.isVisible =
-            selectedProviders.contains("AMAZON")
+            selectedProviders.any { provider -> provider.equals("AMAZON", ignoreCase = true) }
         findPreference<Preference>("projectivy_comm1_videos_options")?.isVisible =
-            selectedProviders.contains("COMM1")
+            selectedProviders.any { provider -> provider.equals("COMM1", ignoreCase = true) }
         findPreference<Preference>("projectivy_comm2_videos_options")?.isVisible =
-            selectedProviders.contains("COMM2")
+            selectedProviders.any { provider -> provider.equals("COMM2", ignoreCase = true) }
         findPreference<Preference>("projectivy_youtube_videos_options")?.isVisible =
-            selectedProviders.contains(PROJECTIVY_YOUTUBE_PROVIDER)
+            selectedProviders.any { provider -> provider.equals(PROJECTIVY_YOUTUBE_PROVIDER, ignoreCase = true) }
 
         findPreference<Preference>("projectivy_local_videos_options")?.isVisible =
-            selectedProviders.contains("LOCAL")
+            selectedProviders.any { provider -> provider.equals("LOCAL", ignoreCase = true) }
     }
 
     private companion object {

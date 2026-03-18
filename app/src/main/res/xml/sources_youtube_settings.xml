@@ -72,7 +72,7 @@
                     app:key="yt_category_cities"
                     app:title="@string/youtube_category_cities_title"
                     app:summary="@string/youtube_category_cities_summary"
-                    app:defaultValue="false" />
+                    app:defaultValue="true" />
 
                 <SwitchPreference
                     app:dependency="yt_enabled"
@@ -80,7 +80,7 @@
                     app:key="yt_category_weather"
                     app:title="@string/youtube_category_weather_title"
                     app:summary="@string/youtube_category_weather_summary"
-                    app:defaultValue="false" />
+                    app:defaultValue="true" />
 
                 <SwitchPreference
                     app:dependency="yt_enabled"
@@ -114,12 +114,23 @@
                 <ListPreference
                     app:dependency="yt_enabled"
                     app:disableDependentsState="false"
-                    app:key="yt_min_duration_str"
-                    app:title="@string/youtube_min_duration_title"
-                    app:summary="@string/youtube_min_duration_summary"
-                    app:entries="@array/youtube_min_duration_entries"
-                    app:entryValues="@array/youtube_min_duration_values"
-                    app:defaultValue="0"
+                    app:key="yt_playback_length_mode"
+                    app:title="@string/youtube_playback_length_mode_title"
+                    app:summary="@string/youtube_playback_length_mode_summary"
+                    app:entries="@array/youtube_playback_length_mode_entries"
+                    app:entryValues="@array/youtube_playback_length_mode_values"
+                    app:defaultValue="@string/youtube_playback_length_mode_default"
+                    app:useSimpleSummaryProvider="true" />
+
+                <ListPreference
+                    app:dependency="yt_enabled"
+                    app:disableDependentsState="false"
+                    app:key="yt_playback_max_minutes"
+                    app:title="@string/youtube_playback_max_minutes_title"
+                    app:summary="@string/youtube_playback_max_minutes_summary"
+                    app:entries="@array/youtube_playback_max_minutes_entries"
+                    app:entryValues="@array/youtube_playback_max_minutes_values"
+                    app:defaultValue="@string/youtube_playback_max_minutes_default"
                     app:useSimpleSummaryProvider="true" />
         </PreferenceCategory>
 </PreferenceScreen>

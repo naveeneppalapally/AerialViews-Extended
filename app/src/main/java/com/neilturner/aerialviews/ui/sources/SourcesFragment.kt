@@ -33,8 +33,10 @@ class SourcesFragment : MenuStateFragment() {
         val preference = findPreference<ListPreference>(KEY_SOURCE_MODE) ?: return
         preference.summaryProvider = ListPreference.SimpleSummaryProvider.getInstance()
         preference.setOnPreferenceChangeListener { _, newValue ->
-            applySourceMode(newValue as? String ?: SOURCE_MODE_YOUTUBE)
-            configureYouTubeMixWeightPreference()
+            val selectedMode = newValue as? String ?: SOURCE_MODE_COMBINED
+            applySourceMode(selectedMode)
+            // Use the incoming value directly; shared prefs writes happen after this callback.
+            configureYouTubeMixWeightPreference(sourceModeOverride = selectedMode)
             true
         }
     }
@@ -49,8 +51,8 @@ class SourcesFragment : MenuStateFragment() {
                 .apply()
         }
         if (!sharedPreferences.contains(KEY_SOURCE_MODE)) {
-            modePreference.value = SOURCE_MODE_YOUTUBE
-            applySourceMode(SOURCE_MODE_YOUTUBE)
+            modePreference.value = SOURCE_MODE_COMBINED
+            applySourceMode(SOURCE_MODE_COMBINED)
         } else {
             synchronizeSourceModePreference()
         }
@@ -75,6 +77,8 @@ class SourcesFragment : MenuStateFragment() {
     }
 
     private fun applySourceMode(mode: String) {
+        val wasYouTubeEnabled = YouTubeVideoPrefs.enabled
+
         when (mode) {
             SOURCE_MODE_AERIAL -> {
                 setDefaultAerialProvidersEnabled(true)
@@ -92,9 +96,10 @@ class SourcesFragment : MenuStateFragment() {
             }
         }
 
-        if (YouTubeVideoPrefs.enabled) {
-            YouTubeFeature.markCountPending()
-            YouTubeFeature.requestImmediateRefresh(requireContext(), forceSearchRefresh = true)
+        val isYouTubeEnabled = YouTubeVideoPrefs.enabled
+        if (isYouTubeEnabled && !wasYouTubeEnabled) {
+            // Enabling YouTube source mode should keep current cache when available.
+            YouTubeFeature.requestImmediateRefresh(requireContext(), forceSearchRefresh = false)
         }
     }
 
@@ -105,9 +110,11 @@ class SourcesFragment : MenuStateFragment() {
         Comm2VideoPrefs.enabled = enabled
     }
 
-    private fun configureYouTubeMixWeightPreference() {
+    private fun configureYouTubeMixWeightPreference(sourceModeOverride: String? = null) {
         val preference = findPreference<ListPreference>(YouTubeSourceRepository.KEY_MIX_WEIGHT) ?: return
-        val sourceMode = preferenceManager.sharedPreferences?.getString(KEY_SOURCE_MODE, SOURCE_MODE_YOUTUBE)
+        val sourceMode =
+            sourceModeOverride
+                ?: preferenceManager.sharedPreferences?.getString(KEY_SOURCE_MODE, SOURCE_MODE_COMBINED)
         val shouldEnable = YouTubeVideoPrefs.enabled && sourceMode == SOURCE_MODE_COMBINED
         if (shouldEnable) {
             preference.isEnabled = true

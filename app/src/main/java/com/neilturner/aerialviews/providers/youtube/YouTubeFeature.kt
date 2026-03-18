@@ -97,6 +97,7 @@ object YouTubeFeature {
                     ?: YouTubeSourceRepository(
                         context = appContext,
                         cacheDao = YouTubeCacheDatabase.getInstance(appContext).youtubeCacheDao(),
+                        watchHistoryDao = YouTubeCacheDatabase.getInstance(appContext).youtubeWatchHistoryDao(),
                         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(appContext),
                     ).also { repository = it }
             }
@@ -106,7 +107,9 @@ object YouTubeFeature {
         context: Context,
         forceSearchRefresh: Boolean = true,
     ) {
-        markCountPending()
+        if (forceSearchRefresh) {
+            markCountPending()
+        }
 
         val constraints =
             Constraints
@@ -252,6 +255,17 @@ object YouTubeFeature {
             prefs.edit {
                 putString(YouTubeSourceRepository.KEY_MIX_WEIGHT, YouTubeSourceRepository.DEFAULT_MIX_WEIGHT)
             }
+        }
+
+        prefs.edit {
+            if (!prefs.contains(YouTubeSourceRepository.KEY_CATEGORY_NATURE)) putBoolean(YouTubeSourceRepository.KEY_CATEGORY_NATURE, true)
+            if (!prefs.contains(YouTubeSourceRepository.KEY_CATEGORY_ANIMALS)) putBoolean(YouTubeSourceRepository.KEY_CATEGORY_ANIMALS, true)
+            if (!prefs.contains(YouTubeSourceRepository.KEY_CATEGORY_DRONE)) putBoolean(YouTubeSourceRepository.KEY_CATEGORY_DRONE, true)
+            if (!prefs.contains(YouTubeSourceRepository.KEY_CATEGORY_CITIES)) putBoolean(YouTubeSourceRepository.KEY_CATEGORY_CITIES, true)
+            if (!prefs.contains(YouTubeSourceRepository.KEY_CATEGORY_SPACE)) putBoolean(YouTubeSourceRepository.KEY_CATEGORY_SPACE, true)
+            if (!prefs.contains(YouTubeSourceRepository.KEY_CATEGORY_OCEAN)) putBoolean(YouTubeSourceRepository.KEY_CATEGORY_OCEAN, true)
+            if (!prefs.contains(YouTubeSourceRepository.KEY_CATEGORY_WEATHER)) putBoolean(YouTubeSourceRepository.KEY_CATEGORY_WEATHER, true)
+            if (!prefs.contains(YouTubeSourceRepository.KEY_CATEGORY_WINTER)) putBoolean(YouTubeSourceRepository.KEY_CATEGORY_WINTER, true)
         }
     }
 

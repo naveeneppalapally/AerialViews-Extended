@@ -59,35 +59,37 @@
         <item>2</item>
         <item>3</item>
     </string-array>
-    <string name="youtube_mix_weight_default" translatable="false">2</string>
-    <string-array name="youtube_min_duration_entries">
-        <item>No minimum*</item>
-        <item>1 minute</item>
-        <item>2 minutes</item>
+    <string name="youtube_mix_weight_default" translatable="false">1</string>
+    <string-array name="youtube_playback_length_mode_entries">
+        <item>Limit long videos</item>
+        <item>Play full video</item>
+        <item>Play random segment</item>
+    </string-array>
+    <string-array name="youtube_playback_length_mode_values" translatable="false">
+        <item>limit</item>
+        <item>full</item>
+        <item>segment</item>
+    </string-array>
+    <string name="youtube_playback_length_mode_default" translatable="false">limit</string>
+    <string-array name="youtube_playback_max_minutes_entries">
         <item>5 minutes</item>
+        <item>8 minutes</item>
         <item>10 minutes</item>
+        <item>12 minutes</item>
         <item>15 minutes</item>
         <item>20 minutes</item>
         <item>30 minutes</item>
-        <item>45 minutes</item>
-        <item>60 minutes</item>
-        <item>90 minutes</item>
-        <item>120 minutes</item>
     </string-array>
-    <string-array name="youtube_min_duration_values" translatable="false">
-        <item>0</item>
-        <item>1</item>
-        <item>2</item>
+    <string-array name="youtube_playback_max_minutes_values" translatable="false">
         <item>5</item>
+        <item>8</item>
         <item>10</item>
+        <item>12</item>
         <item>15</item>
         <item>20</item>
         <item>30</item>
-        <item>45</item>
-        <item>60</item>
-        <item>90</item>
-        <item>120</item>
     </string-array>
+    <string name="youtube_playback_max_minutes_default" translatable="false">12</string>
     <string-array name="source_mode_entries" translatable="false">
         <item>AerialViews only</item>
         <item>YouTube only</item>
@@ -98,7 +100,7 @@
         <item>youtube</item>
         <item>combined</item>
     </string-array>
-    <string name="source_mode_default" translatable="false">youtube</string>
+    <string name="source_mode_default" translatable="false">combined</string>
 
     <!-- Estimated data usage per hour -->
     <string-array name="apple_videos_data_usage_values" translatable="false">
@@ -1163,8 +1165,10 @@
         <item>youtube</item>
     </string-array>
     <string-array name="projectivy_shared_providers_default" translatable="false">
+        <item>APPLE</item>
         <item>AMAZON</item>
         <item>COMM1</item>
+        <item>COMM2</item>
         <item>youtube</item>
     </string-array>
 

@@ -50,16 +50,13 @@ class AerialApp : Application() {
     private fun initializeSourceModeDefaults() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         if (!prefs.contains(KEY_SOURCE_MODE)) {
-            prefs.edit().putString(KEY_SOURCE_MODE, SOURCE_MODE_YOUTUBE).apply()
-            AppleVideoPrefs.enabled = false
-            AmazonVideoPrefs.enabled = false
-            Comm1VideoPrefs.enabled = false
-            Comm2VideoPrefs.enabled = false
+            prefs.edit().putString(KEY_SOURCE_MODE, SOURCE_MODE_COMBINED).apply()
+            AppleVideoPrefs.enabled = true
+            AmazonVideoPrefs.enabled = true
+            Comm1VideoPrefs.enabled = true
+            Comm2VideoPrefs.enabled = true
             YouTubeVideoPrefs.enabled = true
         }
-
-        // Keep migration-safe baseline for old installs.
-        YouTubeVideoPrefs.minDurationMinutes = 0
     }
 
     private fun initializeProjectivyProviderDefaults() {
@@ -70,11 +67,46 @@ class AerialApp : Application() {
                 .putStringSet(
                     KEY_PROJECTIVY_SHARED_PROVIDERS,
                     setOf(
+                        PROJECTIVY_PROVIDER_APPLE,
                         PROJECTIVY_PROVIDER_AMAZON,
                         PROJECTIVY_PROVIDER_COMM1,
+                        PROJECTIVY_PROVIDER_COMM2,
                         PROJECTIVY_PROVIDER_YOUTUBE,
                     ),
                 ).apply()
+        }
+        normalizeProjectivyProviderKeys()
+    }
+
+    private fun normalizeProjectivyProviderKeys() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val rawProviders = prefs.getStringSet(KEY_PROJECTIVY_SHARED_PROVIDERS, null)?.toSet() ?: return
+        val normalizedProviders =
+            rawProviders.mapNotNull { provider ->
+                when (provider.trim().lowercase()) {
+                    "apple" -> "APPLE"
+                    "amazon" -> "AMAZON"
+                    "comm1" -> "COMM1"
+                    "comm2" -> "COMM2"
+                    "local" -> "LOCAL"
+                    "youtube" -> "youtube"
+                    else -> null
+                }
+            }.toSet()
+
+        if (normalizedProviders.isEmpty()) {
+            return
+        }
+
+        val migratedProviders =
+            if (normalizedProviders == LEGACY_PROJECTIVY_DEFAULT_PROVIDERS) {
+                PROJECTIVY_ALL_DEFAULT_PROVIDERS
+            } else {
+                normalizedProviders
+            }
+
+        if (migratedProviders != rawProviders) {
+            prefs.edit().putStringSet(KEY_PROJECTIVY_SHARED_PROVIDERS, migratedProviders).apply()
         }
     }
 
@@ -127,10 +159,26 @@ class AerialApp : Application() {
 
     companion object {
         private const val KEY_SOURCE_MODE = "source_mode"
-        private const val SOURCE_MODE_YOUTUBE = "youtube"
+        private const val SOURCE_MODE_COMBINED = "combined"
         private const val KEY_PROJECTIVY_SHARED_PROVIDERS = "projectivy_shared_providers"
-        private const val PROJECTIVY_PROVIDER_AMAZON = "amazon"
-        private const val PROJECTIVY_PROVIDER_COMM1 = "comm1"
+        private const val PROJECTIVY_PROVIDER_APPLE = "APPLE"
+        private const val PROJECTIVY_PROVIDER_AMAZON = "AMAZON"
+        private const val PROJECTIVY_PROVIDER_COMM1 = "COMM1"
+        private const val PROJECTIVY_PROVIDER_COMM2 = "COMM2"
         private const val PROJECTIVY_PROVIDER_YOUTUBE = "youtube"
+        private val LEGACY_PROJECTIVY_DEFAULT_PROVIDERS =
+            setOf(
+                PROJECTIVY_PROVIDER_AMAZON,
+                PROJECTIVY_PROVIDER_COMM1,
+                PROJECTIVY_PROVIDER_YOUTUBE,
+            )
+        private val PROJECTIVY_ALL_DEFAULT_PROVIDERS =
+            setOf(
+                PROJECTIVY_PROVIDER_APPLE,
+                PROJECTIVY_PROVIDER_AMAZON,
+                PROJECTIVY_PROVIDER_COMM1,
+                PROJECTIVY_PROVIDER_COMM2,
+                PROJECTIVY_PROVIDER_YOUTUBE,
+            )
     }
 }

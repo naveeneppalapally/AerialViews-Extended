@@ -74,16 +74,14 @@ object NewPipeHelper {
 
     suspend fun searchVideos(
         query: String,
-        minDurationSeconds: Int = 600,
         category: QueryFormulaEngine.ContentCategory? = null,
     ): List<StreamInfoItem> =
         withContext(Dispatchers.IO) {
             init()
 
             try {
-                val requiredMinDurationSeconds = maxOf(minDurationSeconds, MIN_SEARCH_DURATION_SECONDS)
                 val searchInfo = loadSearchInfo(query)
-                val baseCandidates = buildSearchCandidates(searchInfo, requiredMinDurationSeconds)
+                val baseCandidates = buildSearchCandidates(searchInfo)
                 selectSearchResults(category, baseCandidates)
             } catch (exception: Exception) {
                 Timber.tag(TAG).w(exception, "Failed to search YouTube for \"%s\"", query)
@@ -145,16 +143,12 @@ object NewPipeHelper {
 
     private fun buildSearchCandidates(
         searchInfo: SearchInfo,
-        requiredMinDurationSeconds: Int,
     ): List<StreamInfoItem> {
         val rawCandidates = searchInfo.relatedItems.filterIsInstance<StreamInfoItem>()
         val withMetadata = rawCandidates.filter(::hasUsableMetadata)
         Log.i(TAG, "YouTube search candidates: raw=${rawCandidates.size} metadata=${withMetadata.size}")
 
-        val afterDuration = withMetadata.filter { item -> item.getDuration() >= requiredMinDurationSeconds }
-        Log.i(TAG, "After duration filter: ${afterDuration.size} passed")
-
-        val afterAiFilter = afterDuration.filterNot(::isLikelyAI)
+        val afterAiFilter = withMetadata.filterNot(::isLikelyAI)
         Log.i(TAG, "After AI filter: ${afterAiFilter.size} passed")
 
         val afterHumanFilter =
@@ -372,6 +366,11 @@ object NewPipeHelper {
             highBitratePreferredCandidates.ifEmpty {
                 preferredCandidates.ifEmpty { deviceSafeCandidates }
             }
+        val strictPreferredMinimumHeight = strictMinimumPreferredHeight(targetHeight)
+        val strictCandidates =
+            rankedCandidates.filter { candidate ->
+                streamHeight(candidate) >= strictPreferredMinimumHeight
+            }
         val supportPriority =
             buildList {
                 add(DecoderSupport.SUPPORTED)
@@ -381,18 +380,33 @@ object NewPipeHelper {
                 }
             }
 
+        pickBestFromSupportTiers(strictCandidates, targetHeight, supportPriority)?.let { return it }
+        if (strictCandidates.size != rankedCandidates.size) {
+            pickBestFromSupportTiers(rankedCandidates, targetHeight, supportPriority)?.let { return it }
+        }
+
+        return null
+    }
+
+    private fun pickBestFromSupportTiers(
+        candidates: List<VideoStream>,
+        targetHeight: Int,
+        supportPriority: List<DecoderSupport>,
+    ): VideoStream? {
+        if (candidates.isEmpty()) {
+            return null
+        }
+
         supportPriority.forEach { support ->
             val supportCandidates =
-                rankedCandidates.filter { candidate ->
+                candidates.filter { candidate ->
                     decoderSupport(codecFamily(candidate), candidate) == support
                 }
             if (supportCandidates.isEmpty()) {
                 return@forEach
             }
-
             selectBestVideoStreamFromTier(supportCandidates, targetHeight)?.let { return it }
         }
-
         return null
     }
 
@@ -858,6 +872,15 @@ object NewPipeHelper {
             else -> 360
         }
 
+    private fun strictMinimumPreferredHeight(targetHeight: Int): Int =
+        when {
+            targetHeight >= 2160 -> 1440
+            targetHeight >= 1440 -> 1080
+            targetHeight >= 1080 -> 1080
+            targetHeight >= 720 -> 720
+            else -> minimumAllowedHeight(targetHeight)
+        }
+
     private class OkHttpDownloader(
         private val client: OkHttpClient,
     ) : Downloader() {
@@ -915,7 +938,6 @@ object NewPipeHelper {
     private val SearchInfo.relatedItems: List<InfoItem>
         get() = getRelatedItems()
 
-    private const val MIN_SEARCH_DURATION_SECONDS = 180
     private const val MAX_RESULTS_PER_QUERY = 24
     private const val MIN_QUERY_MATCH_RESULTS = 4
     private const val MIN_PREFERRED_RESULTS_PER_QUERY = 6

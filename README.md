@@ -118,6 +118,26 @@ appops set com.naveen.aerialviewsplus AUTO_START allow
 </details>
 
 <details>
+<summary>TCL troubleshooting: screensaver not triggering automatically</summary>
+&nbsp;
+
+If AerialViews+ does not trigger automatically on a TCL Android TV, first re-enable the app package. In tested cases, this alone restored normal screensaver behavior.
+
+```sh
+adb shell pm enable com.naveen.aerialviewsplus
+```
+
+Optional checks (only if you still have issues):
+
+```sh
+adb shell pm list packages -d | grep naveen
+adb shell settings get secure screensaver_components
+```
+
+If the issue persists, then apply the TCL Auto Launch permission steps in the section above.
+</details>
+
+<details>
 <summary>Connect using an iPhone</summary>
 &nbsp;
 

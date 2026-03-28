@@ -1145,6 +1145,16 @@ object NewPipeHelper {
             "lyric video",
             "live performance",
             "concert",
+            "epilepsy warning",
+            "flashing lights",
+            "flashing warning",
+            "seizure warning",
+            "photosensitive",
+            "strobe",
+            "strobing",
+            "flicker warning",
+            "trigger warning",
+            "content warning",
         )
     private val HUMAN_CHANNEL_BLACKLIST =
         listOf(
@@ -1165,6 +1175,10 @@ object NewPipeHelper {
             "podcast",
             "tv shows",
             "official",
+            "epilepsy",
+            "seizure",
+            "strobe",
+            "flicker",
         )
     private val PERSONAL_VLOG_TITLE_REGEX =
         Regex(

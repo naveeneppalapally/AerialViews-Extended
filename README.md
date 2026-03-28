@@ -43,7 +43,7 @@ This app is not on the Play Store and never will be. See the FAQ for why.
 
 > These setup instructions are taken directly from the original
 > [AerialViews](https://github.com/theothernt/AerialViews) by
-> [Neil McAlister](https://github.com/theothernt) and are reproduced
+> [Neil Turner](https://github.com/theothernt) and are reproduced
 > here with credit and thanks. The steps are identical for this fork.
 
 Since 2023, most devices running Google TV (Android TV 12 or later) have no interface to change the screensaver to a third-party app. This includes:
@@ -380,7 +380,7 @@ Please open an issue before submitting a pull request for larger changes.
 
 ## About
 
-AerialViews+ is based on [AerialViews](https://github.com/theothernt/AerialViews) by Neil McAlister, which is based on [Aerial Dream](https://github.com/cachapa/AerialDream) by Daniel Cachapa. This fork adds YouTube as a video source without requiring any external server or API key.
+AerialViews+ is based on [AerialViews](https://github.com/theothernt/AerialViews) by Neil Turner, which is based on [Aerial Dream](https://github.com/cachapa/AerialDream) by Daniel Cachapa. This fork adds YouTube as a video source without requiring any external server or API key.
 
 ## Credits
 

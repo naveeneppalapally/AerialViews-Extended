@@ -544,6 +544,9 @@
     <string name="weather_location_searching">Searching for locations…</string>
     <string name="location_summary">Your location is only used for weather forecasts and automatic time-of-day filtering</string>
     <string name="weather_location_custom_name_summary">Use a custom name if the location used by the weather overlay isn\'t correct</string>
+    <string name="weather_overlay_status_title">Display status</string>
+    <string name="weather_overlay_status_assigned">Weather #1 is assigned to %1$s and should display during playback.</string>
+    <string name="weather_overlay_status_unassigned">Weather #1 is not assigned to any overlay slot. Assign it in Overlays > Top Row or Bottom Row to display weather on screen.</string>
 
     <string name="weather_forecast_title">Configure Current Forecast</string>
     <string name="weather_forecast_temperature_units_title">Temperature units</string>

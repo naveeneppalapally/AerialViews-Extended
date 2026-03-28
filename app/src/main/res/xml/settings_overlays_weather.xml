@@ -4,6 +4,11 @@
 
         <PreferenceCategory app:title="@string/category_weather">
               <Preference
+                  app:key="weather_overlay_status"
+                  app:selectable="false"
+                  app:title="@string/weather_overlay_status_title" />
+
+              <Preference
                   app:key="weather_location_name"
                   app:title="@string/weather_location_title"
                   app:fragment="com.neilturner.aerialviews.ui.settings.LocationFragment" />

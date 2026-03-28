@@ -34,7 +34,7 @@ android {
         manifestPlaceholders["crashlyticsCollectionEnabled"] = false
         manifestPlaceholders["performanceCollectionEnabled"] = false
 
-        val openWeather = keyProps.getProperty("openWeatherDebug", "")
+        val openWeather = keyProps.getProperty("openWeatherDebug", keyProps.getProperty("openWeather", ""))
         buildConfigField("String", "OPEN_WEATHER", "\"$openWeather\"")
         buildConfigField("String", "BUILD_TIME", "\"${System.currentTimeMillis()}\"")
         buildConfigField("boolean", "ENABLE_YOUTUBE_LOGS", "false")
@@ -90,6 +90,9 @@ android {
             isShrinkResources = true
             // isDebuggable = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+
+            val openWeather = keyProps.getProperty("openWeather", keyProps.getProperty("openWeatherDebug", ""))
+            buildConfigField("String", "OPEN_WEATHER", "\"$openWeather\"")
 
             manifestPlaceholders["analyticsCollectionEnabled"] = true
             manifestPlaceholders["crashlyticsCollectionEnabled"] = true

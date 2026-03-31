@@ -40,6 +40,7 @@ import kotlinx.coroutines.withContext
 import me.kosert.flowbus.GlobalBus
 import timber.log.Timber
 import java.io.InputStream
+import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
 class ImagePlayerView : FrameLayout {
@@ -74,8 +75,7 @@ class ImagePlayerView : FrameLayout {
         GeneralPrefs.progressBarLocation != ProgressBarLocation.DISABLED && GeneralPrefs.progressBarType != ProgressBarType.VIDEOS
 
     companion object {
-        // Tuned to visually approximate the current software blur on TV devices.
-        private const val RENDER_EFFECT_BLUR_RADIUS = 32f
+        private const val MAX_BACKGROUND_BLUR_RADIUS = 64f
     }
 
     init {
@@ -247,6 +247,7 @@ class ImagePlayerView : FrameLayout {
         Timber.d("loadBlurredBackground: Starting request with blur opacity ${GeneralPrefs.photoBackgroundBlurOpacity}")
         try {
             val opacity = (GeneralPrefs.photoBackgroundBlurOpacity.toIntOrNull() ?: 100) / 100f
+            val blurRadius = resolveBackgroundBlurRadius()
             val isApi31Plus = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
             val requestData =
                 if (isApi31Plus) {
@@ -277,7 +278,7 @@ class ImagePlayerView : FrameLayout {
                             Timber.d("loadBlurredBackground: Coil request succeeded")
                             applyExifRotation(backgroundImageView, orientation)
                             if (isApi31Plus) {
-                                applyRenderEffectBlur()
+                                applyRenderEffectBlur(blurRadius)
                             }
                         },
                     )
@@ -287,7 +288,14 @@ class ImagePlayerView : FrameLayout {
             } else {
                 requestBuilder
                     .allowHardware(false)
-                    .transformations(listOf(BlurTransformation(useBilinearFiltering = GeneralPrefs.photoBilinearFiltering)))
+                    .transformations(
+                        listOf(
+                            BlurTransformation(
+                                radius = blurRadius.roundToInt(),
+                                useBilinearFiltering = GeneralPrefs.photoBilinearFiltering,
+                            ),
+                        ),
+                    )
             }
 
             val request = requestBuilder.build()
@@ -316,16 +324,22 @@ class ImagePlayerView : FrameLayout {
         }
     }
 
-    private fun applyRenderEffectBlur() {
+    private fun applyRenderEffectBlur(radius: Float) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             backgroundImageView.setRenderEffect(
                 RenderEffect.createBlurEffect(
-                    RENDER_EFFECT_BLUR_RADIUS,
-                    RENDER_EFFECT_BLUR_RADIUS,
+                    radius,
+                    radius,
                     Shader.TileMode.CLAMP,
                 ),
             )
         }
+    }
+
+    private fun resolveBackgroundBlurRadius(): Float {
+        val intensity = GeneralPrefs.photoBackgroundBlurIntensity.toIntOrNull() ?: 50
+        val normalizedIntensity = intensity.coerceIn(5, 100) / 100f
+        return (MAX_BACKGROUND_BLUR_RADIUS * normalizedIntensity).coerceAtLeast(1f)
     }
 
     private fun clearRenderEffectIfSupported() {

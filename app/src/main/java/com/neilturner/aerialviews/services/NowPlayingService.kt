@@ -58,10 +58,19 @@ class NowPlayingService(
     private fun updateActiveSession(controllers: MutableList<MediaController>?) {
         val selectedController = pickController(controllers)
         if (selectedController?.sessionToken == activeController?.sessionToken) {
+            if (selectedController == null) {
+                clearNowPlaying("no active controller available")
+            }
             return
         }
         unregisterCurrentController()
         activeController = selectedController
+        if (activeController == null) {
+            metadata = null
+            clearNowPlaying("active controller changed to null")
+            return
+        }
+
         activeController?.let {
             it.registerCallback(this)
             metadata = it.metadata
@@ -129,12 +138,14 @@ class NowPlayingService(
         Timber.i("onSessionDestroyed")
         activeController = null
         metadata = null
+        clearNowPlaying("session destroyed")
         super.onSessionDestroyed()
     }
 
     private fun updateMetadata() {
         if (metadata == null) {
             Timber.i("updateMetadata - null")
+            clearNowPlaying("metadata became null")
             return
         }
         active = isActive()
@@ -149,9 +160,24 @@ class NowPlayingService(
         if (musicEvent == lastMusicEvent) {
             return
         }
-        lastMusicEvent = musicEvent
-        Timber.i("updateMetadata - trying $musicEvent")
-        GlobalBus.post(musicEvent)
+        postMusicEvent(musicEvent, "updateMetadata active=$active")
+    }
+
+    private fun clearNowPlaying(reason: String) {
+        postMusicEvent(MusicEvent(), "clearNowPlaying reason=$reason")
+    }
+
+    private fun postMusicEvent(
+        event: MusicEvent,
+        reason: String,
+    ) {
+        if (event == lastMusicEvent) {
+            Timber.i("Skipping duplicate music event ($reason): $event")
+            return
+        }
+        lastMusicEvent = event
+        Timber.i("Posting music event ($reason): $event")
+        GlobalBus.post(event)
     }
 
     private fun isActive(controller: MediaController? = activeController): Boolean {

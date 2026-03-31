@@ -14,13 +14,14 @@ object SlotHelper {
     // Update summary to show assigned overlay name
     fun updateSummary(
         list: ListPreference?,
-        summaryList: Array<String>,
+        summaryEntries: Array<String>,
+        summaryValues: Array<String>,
         slot: OverlayType,
     ) {
         // should show - Location
         // and not LOCATION or Location (Slot name) etc
-        val index = OverlayType.valueOf(slot.toString()).ordinal
-        val summary = summaryList.getOrNull(index) ?: summaryList.first()
+        val index = summaryValues.indexOf(slot.toString())
+        val summary = summaryEntries.getOrNull(index) ?: slot.toString()
         list?.summary = summary
     }
 
@@ -31,7 +32,11 @@ object SlotHelper {
         slotValues: Array<String>,
         slotPrefs: List<SlotPref>,
     ) {
-        val entries = slotEntries.toMutableList()
+        val entries =
+            slotValues
+                .mapIndexed { index, value -> slotEntries.getOrNull(index) ?: value }
+                .toMutableList()
+
         slotValues.forEachIndexed { index, value ->
             if (value == OverlayType.EMPTY.toString()) {
                 return@forEachIndexed

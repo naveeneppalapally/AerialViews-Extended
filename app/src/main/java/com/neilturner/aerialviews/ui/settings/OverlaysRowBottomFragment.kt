@@ -50,10 +50,10 @@ class OverlaysRowBottomFragment :
 
         val overlayData = SlotHelper.entriesAndValues(requireContext())
 
-        SlotHelper.updateSummary(bottomLeft1, overlayData.first, GeneralPrefs.slotBottomLeft1 ?: OverlayType.entries.first())
-        SlotHelper.updateSummary(bottomLeft2, overlayData.first, GeneralPrefs.slotBottomLeft2 ?: OverlayType.entries.first())
-        SlotHelper.updateSummary(bottomRight1, overlayData.first, GeneralPrefs.slotBottomRight1 ?: OverlayType.entries.first())
-        SlotHelper.updateSummary(bottomRight2, overlayData.first, GeneralPrefs.slotBottomRight2 ?: OverlayType.entries.first())
+        SlotHelper.updateSummary(bottomLeft1, overlayData.first, overlayData.second, GeneralPrefs.slotBottomLeft1 ?: OverlayType.entries.first())
+        SlotHelper.updateSummary(bottomLeft2, overlayData.first, overlayData.second, GeneralPrefs.slotBottomLeft2 ?: OverlayType.entries.first())
+        SlotHelper.updateSummary(bottomRight1, overlayData.first, overlayData.second, GeneralPrefs.slotBottomRight1 ?: OverlayType.entries.first())
+        SlotHelper.updateSummary(bottomRight2, overlayData.first, overlayData.second, GeneralPrefs.slotBottomRight2 ?: OverlayType.entries.first())
 
         val slotPrefs = SlotHelper.slotPrefs(requireContext())
 

@@ -859,7 +859,7 @@ class YouTubeSourceRepository(
                 limit = EXTRACTION_TARGET_SIZE,
                 publishMinimumCache = refreshPlan.existingEntries.size < COLD_CACHE_SKIP_THRESHOLD,
                 publishProgress = true,
-                initialCount = initialCount,
+                initialCount = if (replaceExistingCache) 0 else initialCount,
             )
 
         Timber.tag(TAG).i(
@@ -1531,7 +1531,7 @@ class YouTubeSourceRepository(
 
         val exclusions = PlaybackExclusions(playbackHistory, recentThemes, lastChannel)
 
-        if (firstLaunchActive) {
+        if (firstLaunchActive && baseEntries.size >= MIN_FIRST_LAUNCH_CANDIDATES) {
             getFirstLaunchVideo(baseEntries, firstLaunchSequenceIndex, exclusions.strictVideoIds, random)?.let { return it }
         }
 
@@ -3211,6 +3211,7 @@ class YouTubeSourceRepository(
         private const val MAX_VIDEOS_PER_CHANNEL = 7
         private const val MAX_VIDEOS_PER_QUERY_BUCKET = 10
         private const val INITIAL_THEME_ROUND_ROBIN_CAP = 40
+        private const val MIN_FIRST_LAUNCH_CANDIDATES = 12
         private const val LAST_VIDEO_EXCLUSION_COUNT = 50
         private const val RELAXED_LAST_VIDEO_EXCLUSION_COUNT = 30
         private const val LAST_THEME_EXCLUSION_COUNT = 3

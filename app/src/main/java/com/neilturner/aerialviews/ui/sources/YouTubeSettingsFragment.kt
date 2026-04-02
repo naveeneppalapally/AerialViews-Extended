@@ -500,9 +500,12 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                 stage == YouTubeRefreshStage.SEARCHING -> getString(R.string.youtube_refresh_searching)
                 stage != YouTubeRefreshStage.IDLE &&
                     cachedCount != null &&
-                    cachedCount >= 0 &&
-                    cachedCount < targetCount ->
-                    getString(R.string.youtube_cache_loading_overlay, cachedCount, targetCount)
+                    cachedCount >= 0 ->
+                    getString(
+                        R.string.youtube_cache_loading_overlay,
+                        cachedCount.coerceAtMost(targetCount),
+                        targetCount,
+                    )
                 cachedCount != null && cachedCount >= 0 ->
                     getString(R.string.youtube_cache_count_summary, cachedCount)
                 stage != YouTubeRefreshStage.IDLE -> getString(R.string.youtube_cache_count_pending)

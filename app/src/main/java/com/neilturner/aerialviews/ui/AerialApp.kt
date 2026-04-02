@@ -19,6 +19,7 @@ import com.neilturner.aerialviews.models.prefs.ProjectivyComm1Prefs
 import com.neilturner.aerialviews.models.prefs.ProjectivyComm2Prefs
 import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
+import com.neilturner.aerialviews.utils.AppUpdateHelper
 import com.neilturner.aerialviews.utils.DeviceHelper
 import timber.log.Timber
 
@@ -52,6 +53,7 @@ class AerialApp : Application() {
         initializeSourceModeDefaults()
         initializeProjectivyProviderDefaults()
         YouTubeFeature.initialize(this)
+        AppUpdateHelper.refreshInBackground(this)
     }
 
     private fun initializeVideoQualityDefaults() {

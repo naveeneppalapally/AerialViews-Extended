@@ -6,6 +6,9 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 @DisplayName("Date Helper Tests")
 internal class DateHelperTest {
@@ -43,12 +46,18 @@ internal class DateHelperTest {
         val result =
             DateHelper.formatExifDate(
                 date = "2024-01-15T19:30:00.000Z",
-                offset = null,
+                offset = "Z",
                 type = DateType.CUSTOM,
                 custom = "yyyy-MM-dd",
             )
 
-        assertEquals("2024-01-15", result)
+        val expected =
+            Instant
+                .parse("2024-01-15T19:30:00.000Z")
+                .atZone(ZoneOffset.UTC)
+                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+
+        assertEquals(expected, result)
     }
 
     @Test

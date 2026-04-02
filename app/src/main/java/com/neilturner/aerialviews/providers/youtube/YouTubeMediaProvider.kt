@@ -75,10 +75,9 @@ class YouTubeMediaProvider(
             return emptyList()
         }
 
-        val warmedCacheEntries =
-            withTimeoutOrNull(INITIAL_CACHE_WARM_WAIT_MS) {
-                repository.getCachedVideosSnapshot()
-            } ?: emptyList()
+        repository.preWarmInBackground()
+
+        val warmedCacheEntries = waitForStartupCacheWarm()
         if (warmedCacheEntries.isNotEmpty()) {
             Log.i(TAG, "Using warmed startup cache entries=${warmedCacheEntries.size}")
             repository.preWarmInBackground()
@@ -90,14 +89,13 @@ class YouTubeMediaProvider(
             return emptyList()
         }
 
-        val firstBootstrapUrl = bootstrapMedia.first().uri.toString()
-        repository.preResolveVideo(firstBootstrapUrl, providerScope)
-        Log.i(TAG, "Startup bootstrap first URL queued for pre-resolve")
+        bootstrapMedia
+            .take(BOOTSTRAP_PRE_RESOLVE_COUNT)
+            .forEach { bootstrapItem ->
+                repository.preResolveVideo(bootstrapItem.uri.toString(), providerScope)
+            }
+        Log.i(TAG, "Startup bootstrap URLs queued for pre-resolve count=${bootstrapMedia.take(BOOTSTRAP_PRE_RESOLVE_COUNT).size}")
         Log.i(TAG, "Using bootstrap startup playlist size=${bootstrapMedia.size}")
-        providerScope.launch {
-            delay(STARTUP_BACKGROUND_WARM_DELAY_MS)
-            repository.preWarmInBackground()
-        }
         return bootstrapMedia
     }
 
@@ -109,6 +107,19 @@ class YouTubeMediaProvider(
             emptyList()
         }
     }
+
+    private suspend fun waitForStartupCacheWarm(): List<YouTubeCacheEntity> =
+        withTimeoutOrNull(INITIAL_CACHE_WARM_WAIT_MS) {
+            while (true) {
+                val snapshot = repository.getCachedVideosSnapshot()
+                if (snapshot.isNotEmpty()) {
+                    return@withTimeoutOrNull snapshot
+                }
+                delay(INITIAL_CACHE_POLL_INTERVAL_MS)
+            }
+            @Suppress("UNREACHABLE_CODE")
+            emptyList()
+        } ?: emptyList()
 
     private fun List<YouTubeCacheEntity>.toAerialMedia(): List<AerialMedia> {
         if (isEmpty()) {
@@ -197,9 +208,10 @@ class YouTubeMediaProvider(
     }
 
     companion object {
-        private const val INITIAL_CACHE_WARM_WAIT_MS = 1_500L
-        private const val STARTUP_BACKGROUND_WARM_DELAY_MS = 30_000L
+        private const val INITIAL_CACHE_WARM_WAIT_MS = 6_000L
+        private const val INITIAL_CACHE_POLL_INTERVAL_MS = 250L
         private const val NORMAL_FETCH_TIMEOUT_MS = 3_000L
+        private const val BOOTSTRAP_PRE_RESOLVE_COUNT = 2
         private const val DIRECT_PLAYBACK_WINDOW = 12
         private const val TAG = "YouTubeMedia"
         private val STARTUP_BOOTSTRAP_VIDEO_URLS =

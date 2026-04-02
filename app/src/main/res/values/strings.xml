@@ -894,9 +894,20 @@
 
     <!-- Main / Settings / About -->
     <string name="about_version_title">Version</string>
-    <string name="about_date_title">Build Date</string>
+    <string name="about_date_title">Installed Build</string>
     <string name="about_installed_title">Installed</string>
     <string name="about_last_updated_title">Last updated</string>
+
+    <string name="about_update_title">Updates</string>
+    <string name="about_update_available_title">Update available</string>
+    <string name="about_update_check_summary">Check GitHub releases for a newer version</string>
+    <string name="about_update_checking_summary">Checking GitHub releases…</string>
+    <string name="about_update_up_to_date_summary">You’re running the latest available release.</string>
+    <string name="about_update_local_build_summary">Latest published GitHub release is %1$s. This installed build was made from source and may include newer changes.</string>
+    <string name="about_update_no_release_summary">No published GitHub release was found yet.</string>
+    <string name="about_update_available_summary">Version %1$s is available. Open the download page.</string>
+    <string name="about_update_error_summary">Unable to check for updates right now. Try again.</string>
+    <string name="about_update_open_error">Unable to open the release page</string>
 
     <string name="home_update_title">New release</string>
     <string name="home_update_version">AerialViews+ %1$s</string>

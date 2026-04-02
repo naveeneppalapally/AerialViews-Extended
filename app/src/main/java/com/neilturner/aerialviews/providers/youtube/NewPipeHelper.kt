@@ -163,6 +163,7 @@ object NewPipeHelper {
                 isHumanContent(
                     title = item.getName(),
                     uploader = item.getUploaderName().orEmpty(),
+                    durationSeconds = item.getDuration().takeIf { duration -> duration > 0L },
                 )
             }
         Log.i(TAG, "After human filter: ${afterHumanFilter.size} passed")
@@ -190,11 +191,12 @@ object NewPipeHelper {
                 normalizeTitleFingerprint(it.getName()).ifBlank { fallbackKey }
             }
             .sortedByDescending { candidate ->
+                val titleLower = candidate.getName().lowercase(Locale.US)
                 QueryFormulaEngine.categoryMatchScore(
                     title = candidate.getName(),
                     uploader = candidate.getUploaderName().orEmpty(),
                     category = category,
-                ) + preferredContentScore(candidate.getName().lowercase(Locale.US))
+                ) + preferredContentScore(titleLower) + slowPacedContentScore(titleLower) - fastMotionPenalty(titleLower)
             }
             .take(MAX_RESULTS_PER_QUERY)
             .toList()
@@ -206,7 +208,11 @@ object NewPipeHelper {
     private fun isFilteredCandidate(item: StreamInfoItem): Boolean {
         val titleLower = item.getName().lowercase(Locale.US)
         return isLikelyAI(item) ||
-            isHumanContent(item.getName(), item.getUploaderName().orEmpty()) ||
+            isHumanContent(
+                item.getName(),
+                item.getUploaderName().orEmpty(),
+                item.getDuration().takeIf { duration -> duration > 0L },
+            ) ||
             isLikelySyntheticWallpaperTitle(titleLower)
     }
 
@@ -230,6 +236,10 @@ object NewPipeHelper {
                 ),
             )
         streamExtractor.fetchPage()
+        val allStreams = streamExtractor.videoStreams + streamExtractor.videoOnlyStreams
+        if (!hasPreferredAspectRatioCandidate(allStreams)) {
+            throw YouTubeExtractionException("Rejected non-16:9 YouTube video for $videoPageUrl")
+        }
         val screenHeight = getScreenHeight(context)
 
         return selectBestStreamUrl(
@@ -293,12 +303,28 @@ object NewPipeHelper {
             playableVideoOnlyStreams.size,
             if (primaryStreams === playableVideoOnlyStreams) "videoOnlyPreferred" else "progressivePreferred",
         )
-        return selectStreamContent(primaryStreams, targetHeight, allowUnsupportedFallback = false)
-            ?: selectStreamContent(primaryStreams, targetHeight, allowUnsupportedFallback = true)
-            ?: selectStreamContent(secondaryStreams, targetHeight, allowUnsupportedFallback = false)
-            ?: selectStreamContent(secondaryStreams, targetHeight, allowUnsupportedFallback = true)
-            ?: playableProgressiveStreams
-                .filter { stream -> streamHeight(stream) >= minimumFallbackHeight }
+        val primarySelection = selectPreferredStream(primaryStreams, targetHeight)
+        if (shouldPreferDashManifest(dashUrl, primarySelection, targetHeight)) {
+            Log.i(TAG, "STREAM PICKED: DASH manifest preferred for ${targetHeight}p over ${describeStream(primarySelection!!)}")
+            return dashUrl
+        }
+        primarySelection?.let { stream ->
+            logSelectedStream(stream)
+            return stream.getContent()
+        }
+
+        val secondarySelection = selectPreferredStream(secondaryStreams, targetHeight)
+        if (shouldPreferDashManifest(dashUrl, secondarySelection, targetHeight)) {
+            Log.i(TAG, "STREAM PICKED: DASH manifest preferred for ${targetHeight}p over ${describeStream(secondarySelection!!)}")
+            return dashUrl
+        }
+        secondarySelection?.let { stream ->
+            logSelectedStream(stream)
+            return stream.getContent()
+        }
+
+        return playableProgressiveStreams
+            .filter { stream -> streamHeight(stream) >= minimumFallbackHeight }
                 .sortedWith(streamQualityComparator())
                 .firstOrNull()
                 ?.let { stream ->
@@ -334,6 +360,24 @@ object NewPipeHelper {
             }
     }
 
+    private fun selectPreferredStream(
+        streams: List<VideoStream>,
+        targetHeight: Int,
+    ): VideoStream? =
+        selectBestVideoStream(streams, targetHeight, allowUnsupportedFallback = false)
+            ?: selectBestVideoStream(streams, targetHeight, allowUnsupportedFallback = true)
+
+    private fun shouldPreferDashManifest(
+        dashUrl: String?,
+        selectedStream: VideoStream?,
+        targetHeight: Int,
+    ): Boolean {
+        if (dashUrl.isNullOrBlank() || selectedStream == null || targetHeight < MIN_DASH_PREFERRED_HEIGHT) {
+            return false
+        }
+        return false
+    }
+
     private fun selectStreamContent(
         streams: List<VideoStream>,
         targetHeight: Int,
@@ -357,7 +401,9 @@ object NewPipeHelper {
                 .filter { streamHeight(it) > 0 }
                 .filter { streamHeight(it) >= minimumHeight }
                 .filter { streamHeight(it) <= maxTargetHeight(targetHeight) }
-        if (deviceSafeCandidates.isEmpty()) {
+        val aspectRatioCandidates = deviceSafeCandidates.filter(::hasPreferredAspectRatio)
+        val sizeConstrainedCandidates = aspectRatioCandidates.ifEmpty { deviceSafeCandidates }
+        if (sizeConstrainedCandidates.isEmpty()) {
             Timber.tag(TAG).w(
                 "Rejecting YouTube streams because no candidates fit target=%sp min=%sp (available=%s)",
                 targetHeight,
@@ -368,12 +414,12 @@ object NewPipeHelper {
         }
 
         val preferredCandidates =
-            deviceSafeCandidates.filter { candidate ->
+            sizeConstrainedCandidates.filter { candidate ->
                 streamHeight(candidate) in MIN_PREFERRED_PROGRESSIVE_HEIGHT..targetHeight &&
                     candidate.getItag() !in REJECTED_LOW_QUALITY_ITAGS
             }
         val rankedCandidates =
-            preferredCandidates.ifEmpty { deviceSafeCandidates }
+            preferredCandidates.ifEmpty { sizeConstrainedCandidates }
         val strictPreferredMinimumHeight = strictMinimumPreferredHeight(targetHeight)
         val strictCandidates =
             rankedCandidates.filter { candidate ->
@@ -604,6 +650,7 @@ object NewPipeHelper {
     private fun isHumanContent(
         title: String,
         uploader: String,
+        durationSeconds: Long? = null,
     ): Boolean {
         val titleLower = title.lowercase(Locale.US)
         val uploaderLower = uploader.lowercase(Locale.US)
@@ -612,13 +659,37 @@ object NewPipeHelper {
             hasDramaticPipePattern(title) ||
             HUMAN_TITLE_BLACKLIST.any(titleLower::contains) ||
             HUMAN_CHANNEL_BLACKLIST.any(uploaderLower::contains) ||
+            isLikelyTextHeavyEducationalContent(titleLower, uploaderLower, durationSeconds) ||
+            isLikelyFastMotionContent(titleLower) ||
             PERSONAL_VLOG_TITLE_REGEX.containsMatchIn(title)
     }
 
     internal fun isLikelyHumanContentForTest(
         title: String,
         uploader: String = "",
-    ): Boolean = isHumanContent(title = title, uploader = uploader)
+        durationSeconds: Long? = null,
+    ): Boolean = isHumanContent(title = title, uploader = uploader, durationSeconds = durationSeconds)
+
+    private fun isLikelyTextHeavyEducationalContent(
+        titleLower: String,
+        uploaderLower: String,
+        durationSeconds: Long?,
+    ): Boolean {
+        if (TEXT_HEAVY_TITLE_HINTS.any(titleLower::contains)) {
+            return true
+        }
+
+        val looksEducational = TEXT_HEAVY_CHANNEL_HINTS.any(uploaderLower::contains)
+        if (!looksEducational) {
+            return false
+        }
+
+        val duration = durationSeconds ?: return false
+        return duration in 1..SHORT_TEXT_HEAVY_MAX_DURATION_SECONDS
+    }
+
+    private fun isLikelyFastMotionContent(titleLower: String): Boolean =
+        FAST_MOTION_TITLE_HINTS.any(titleLower::contains)
 
     private fun isTopListTitle(titleLower: String): Boolean =
         TOP_LIST_TITLE_REGEX.containsMatchIn(titleLower) ||
@@ -671,6 +742,12 @@ object NewPipeHelper {
 
     private fun preferredContentScore(titleLower: String): Int =
         PREFERRED_CONTENT_SIGNALS.count(titleLower::contains)
+
+    private fun slowPacedContentScore(titleLower: String): Int =
+        SLOW_PACED_TITLE_HINTS.count(titleLower::contains)
+
+    private fun fastMotionPenalty(titleLower: String): Int =
+        FAST_MOTION_TITLE_HINTS.count(titleLower::contains) * 3
 
     private fun streamQualityComparator(
         supportResolver: (CodecFamily, VideoStream) -> DecoderSupport = ::decoderSupport,
@@ -822,14 +899,7 @@ object NewPipeHelper {
     }
 
     private fun streamSize(stream: VideoStream): Pair<Int, Int>? {
-        val resolution = stream.getResolution().orEmpty()
-        RESOLUTION_PAIR_REGEX.find(resolution)?.let { match ->
-            val width = match.groupValues.getOrNull(1)?.toIntOrNull()
-            val height = match.groupValues.getOrNull(2)?.toIntOrNull()
-            if (width != null && height != null) {
-                return Pair(width, height)
-            }
-        }
+        actualStreamSize(stream)?.let { return it }
 
         val height = streamHeight(stream)
         if (height <= 0) {
@@ -838,6 +908,51 @@ object NewPipeHelper {
 
         val width = (height * 16f / 9f).toInt().coerceAtLeast(1)
         return Pair(width, height)
+    }
+
+    internal fun hasPreferredAspectRatioForTest(resolution: String): Boolean =
+        streamSizeFromResolution(resolution)?.let { (width, height) ->
+            hasPreferredAspectRatio(width, height)
+        } ?: true
+
+    private fun hasPreferredAspectRatioCandidate(streams: List<VideoStream>): Boolean {
+        val knownSizes = streams.mapNotNull(::actualStreamSize)
+        if (knownSizes.isEmpty()) {
+            return true
+        }
+
+        return knownSizes.any { (width, height) -> hasPreferredAspectRatio(width, height) }
+    }
+
+    private fun hasPreferredAspectRatio(stream: VideoStream): Boolean =
+        actualStreamSize(stream)?.let { (width, height) ->
+            hasPreferredAspectRatio(width, height)
+        } ?: true
+
+    private fun hasPreferredAspectRatio(
+        width: Int,
+        height: Int,
+    ): Boolean {
+        if (width <= 0 || height <= 0) {
+            return true
+        }
+
+        val aspectRatio = width.toDouble() / height.toDouble()
+        return aspectRatio in MIN_ACCEPTABLE_ASPECT_RATIO..MAX_ACCEPTABLE_ASPECT_RATIO
+    }
+
+    private fun actualStreamSize(stream: VideoStream): Pair<Int, Int>? =
+        streamSizeFromResolution(stream.getResolution().orEmpty())
+
+    private fun streamSizeFromResolution(resolution: String): Pair<Int, Int>? {
+        RESOLUTION_PAIR_REGEX.find(resolution)?.let { match ->
+            val width = match.groupValues.getOrNull(1)?.toIntOrNull()
+            val height = match.groupValues.getOrNull(2)?.toIntOrNull()
+            if (width != null && height != null) {
+                return Pair(width, height)
+            }
+        }
+        return null
     }
 
     private fun isKnownUnsupportedTvCodecPath(
@@ -1038,14 +1153,18 @@ object NewPipeHelper {
             "no music",
             "no talking",
             "wildlife",
-            "timelapse",
             "slow motion",
             "documentary",
             "real footage",
+            "real time",
             "tripod",
             "locked off",
             "nature film",
             "national park",
+            "nature sounds",
+            "slow tv",
+            "calm",
+            "serene",
             "underwater",
             "ocean",
             "waterfall",
@@ -1125,8 +1244,72 @@ object NewPipeHelper {
             "ai cinema",
             "artificial",
         )
+    private val TEXT_HEAVY_TITLE_HINTS =
+        listOf(
+            "with text",
+            "with captions",
+            "with subtitles",
+            "subtitled",
+            "subtitles",
+            "subtitle",
+            "captioned",
+            "narrated",
+            "lecture",
+            "presentation",
+            "tutorial overlay",
+            "text on screen",
+            "on-screen text",
+            "animated text",
+            "closed captions",
+            "cc available",
+            "transcript",
+            "with labels",
+            "info text",
+        )
+    private val TEXT_HEAVY_CHANNEL_HINTS =
+        listOf(
+            "explainer",
+            "education",
+            "learn",
+            "school",
+            "lesson",
+            "facts",
+            "science explained",
+            "history of",
+        )
+    private val FAST_MOTION_TITLE_HINTS =
+        listOf(
+            "timelapse",
+            "time lapse",
+            "hyperlapse",
+            "fpv",
+            "flythrough",
+            "drone racing",
+            "fast motion",
+            "high speed",
+            "speed ramp",
+        )
+    private val SLOW_PACED_TITLE_HINTS =
+        listOf(
+            "ambient",
+            "real footage",
+            "real time",
+            "no talking",
+            "no music",
+            "nature sounds",
+            "slow tv",
+            "calm",
+            "serene",
+            "gentle",
+            "stillness",
+            "slow motion",
+        )
     private val SUSPICIOUS_EXACT_DURATIONS = setOf(3600, 7200, 10800, 14400, 21600)
+    private const val SHORT_TEXT_HEAVY_MAX_DURATION_SECONDS = 8 * 60L
+    private const val MIN_DASH_PREFERRED_HEIGHT = 1080
     private const val MIN_PREFERRED_PROGRESSIVE_HEIGHT = 1080
+    private const val MIN_ACCEPTABLE_ASPECT_RATIO = 1.70
+    private const val MAX_ACCEPTABLE_ASPECT_RATIO = 1.90
     private val RESOLUTION_PRIORITY = listOf(2160, 1440, 1080, 720, 480)
     private val CODEC_PRIORITY = listOf("vp9", "vp09", "avc1", "avc", "av01", "av1")
     private val REJECTED_LOW_QUALITY_ITAGS = setOf(18, 36, 133, 134, 135, 160) // itag 18 is 360p, 133 is 240p, 134 is 360p, 135 is 480p, 160 is 144p. Added 36 (240p).
@@ -1152,6 +1335,10 @@ object NewPipeHelper {
             "what i eat",
             "tutorial",
             "how to",
+            "with text",
+            "with captions",
+            "subtitled",
+            "narrated",
             "tips",
             "tricks",
             "guide",
@@ -1181,6 +1368,11 @@ object NewPipeHelper {
             "news",
             "explained",
             "analysis",
+            "lecture",
+            "presentation",
+            "slideshow",
+            "text on screen",
+            "animated text",
             "opinion",
             "gameplay",
             "gaming",
@@ -1243,6 +1435,10 @@ object NewPipeHelper {
             "entertainment",
             "reviews",
             "tutorials",
+            "explainer",
+            "education",
+            "lesson",
+            "facts",
             "podcast",
             "tv shows",
             "official",

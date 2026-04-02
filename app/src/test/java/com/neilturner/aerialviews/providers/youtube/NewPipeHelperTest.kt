@@ -110,6 +110,78 @@ internal class NewPipeHelperTest {
         assertEquals(137, selected?.getItag())
     }
 
+    @Test
+    @DisplayName("Should detect explicit text-overlay titles")
+    fun testDetectTextOverlayTitle() {
+        assertTrue(
+            NewPipeHelper.isLikelyHumanContentForTest(
+                title = "Forest walk with captions",
+                uploader = "Nature Footage",
+                durationSeconds = 900,
+            ),
+        )
+    }
+
+    @Test
+    @DisplayName("Should reject short educational channels for ambient results")
+    fun testDetectEducationalShortVideo() {
+        assertTrue(
+            NewPipeHelper.isLikelyHumanContentForTest(
+                title = "Storm clouds over mountains",
+                uploader = "Science Explained",
+                durationSeconds = 420,
+            ),
+        )
+    }
+
+    @Test
+    @DisplayName("Should keep long-form ambient footage")
+    fun testAllowAmbientNatureVideo() {
+        assertFalse(
+            NewPipeHelper.isLikelyHumanContentForTest(
+                title = "4K Forest Canopy Ambient Nature Sounds",
+                uploader = "Nature Focus",
+                durationSeconds = 1800,
+            ),
+        )
+    }
+
+    @Test
+    @DisplayName("Should reject fast-motion titles for ambient results")
+    fun testRejectFastMotionVideo() {
+        assertTrue(
+            NewPipeHelper.isLikelyHumanContentForTest(
+                title = "4K Tokyo Skyline Timelapse",
+                uploader = "City Motion",
+                durationSeconds = 600,
+            ),
+        )
+    }
+
+    @Test
+    @DisplayName("Should reject subtitle-heavy titles")
+    fun testRejectSubtitleHeavyTitle() {
+        assertTrue(
+            NewPipeHelper.isLikelyHumanContentForTest(
+                title = "Aurora over Iceland with subtitles",
+                uploader = "Sky Stories",
+                durationSeconds = 900,
+            ),
+        )
+    }
+
+    @Test
+    @DisplayName("Should accept 16:9 aspect ratios")
+    fun testAcceptWideAspectRatio() {
+        assertTrue(NewPipeHelper.hasPreferredAspectRatioForTest("1920x1080"))
+    }
+
+    @Test
+    @DisplayName("Should reject obvious 4:3 aspect ratios")
+    fun testRejectFourByThreeAspectRatio() {
+        assertFalse(NewPipeHelper.hasPreferredAspectRatioForTest("1440x1080"))
+    }
+
     private fun videoStream(
         itag: Int,
         codec: String,

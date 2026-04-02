@@ -579,6 +579,8 @@ object QueryFormulaEngine {
                 categoryPool +
                 listOf("$normalizedBaseQuery 4k", "$normalizedBaseQuery cinematic")
         ).distinct()
+            .map(::sanitizeQueryForAmbientPlayback)
+            .distinct()
             .shuffled(Random(entropySeed xor dailySeed() xor refreshSeed()))
             .take(count)
     }
@@ -604,7 +606,12 @@ object QueryFormulaEngine {
             )
 
         val expandedQueries = expandQueriesForNarrowCategorySelection(selectedQueries, count)
-        val finalPool = expandedQueries.ifEmpty { SAFE_FALLBACK_QUERIES.take(count) }
+        val finalPool =
+            expandedQueries
+                .ifEmpty { SAFE_FALLBACK_QUERIES.take(count) }
+                .map(::sanitizeQueryForAmbientPlayback)
+                .distinct()
+                .take(count)
         Timber.tag(TAG).d("Generated %s YouTube search variants across %s categories", finalPool.size, enabledPools.size)
         return finalPool
     }
@@ -731,6 +738,22 @@ object QueryFormulaEngine {
             if (prefs.isEnabled(category)) category.key else "-${category.key}"
         }
 
+    internal fun sanitizeQueryForAmbientPlaybackForTest(query: String): String =
+        sanitizeQueryForAmbientPlayback(query)
+
+    private fun sanitizeQueryForAmbientPlayback(query: String): String {
+        var sanitized = query.trim()
+        if (sanitized.isBlank()) {
+            return sanitized
+        }
+
+        QUERY_TERM_REPLACEMENTS.forEach { (pattern, replacement) ->
+            sanitized = sanitized.replace(pattern, replacement)
+        }
+
+        return sanitized.replace("\\s+".toRegex(), " ").trim()
+    }
+
     private fun defaultPools(): Map<ContentCategory, CategoryConfig> =
         linkedMapOf(
             ContentCategory.NATURE to categoryConfigs.getValue(ContentCategory.NATURE),
@@ -842,9 +865,19 @@ object QueryFormulaEngine {
             "real footage",
             "no talking",
             "no music",
+            "ambient",
             "cinematic",
             "documentary",
-            "timelapse",
+        )
+    private val QUERY_TERM_REPLACEMENTS =
+        listOf(
+            Regex("\\btimelapse\\b", RegexOption.IGNORE_CASE) to "real footage",
+            Regex("\\btime\\s+lapse\\b", RegexOption.IGNORE_CASE) to "real footage",
+            Regex("\\bhyperlapse\\b", RegexOption.IGNORE_CASE) to "real footage",
+            Regex("\\bfpv\\b", RegexOption.IGNORE_CASE) to "cinematic aerial",
+            Regex("\\bflythrough\\b", RegexOption.IGNORE_CASE) to "slow flyover",
+            Regex("\\bdrone racing\\b", RegexOption.IGNORE_CASE) to "drone landscape",
+            Regex("\\bfast motion\\b", RegexOption.IGNORE_CASE) to "real footage",
         )
 
     private fun buildSafeFallbackQueries(baseQuery: String): List<String> {
@@ -853,11 +886,14 @@ object QueryFormulaEngine {
             return SAFE_FALLBACK_QUERIES
         }
 
-        return listOf(
-            normalizedBaseQuery,
-            "$normalizedBaseQuery documentary 4k",
-            "$normalizedBaseQuery no talking 4k",
-        ) + SAFE_FALLBACK_QUERIES
+        return (
+            listOf(
+                normalizedBaseQuery,
+                "$normalizedBaseQuery documentary 4k",
+                "$normalizedBaseQuery no talking 4k",
+            ) + SAFE_FALLBACK_QUERIES
+        ).map(::sanitizeQueryForAmbientPlayback)
+            .distinct()
     }
 
     private val AERIAL_QUERY_REGEX =

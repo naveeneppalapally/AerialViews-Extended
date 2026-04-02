@@ -153,8 +153,9 @@ class WallpaperProviderService : Service() {
             return wallpapers
         }
         val ordered = reorderWallpapersForNovelty(wallpapers)
-        ordered.firstOrNull()?.uri?.let(::recordServedWallpaper)
-        return ordered
+        val nextWallpaper = ordered.firstOrNull() ?: return emptyList()
+        recordServedWallpaper(nextWallpaper.uri)
+        return listOf(nextWallpaper)
     }
 
     private fun reorderWallpapersForNovelty(wallpapers: List<Wallpaper>): List<Wallpaper> {
@@ -196,6 +197,10 @@ class WallpaperProviderService : Service() {
 
         val rotationIndex =
             synchronized(serveHistoryLock) {
+                if (recentKeySet.isEmpty() && reorderedBase.size > 1 && serveRotationCursor == 0) {
+                    serveRotationCursor = ((System.currentTimeMillis() / 1000L) % reorderedBase.size.toLong()).toInt()
+                    persistServeRotationCursorLocked()
+                }
                 val index = ((serveRotationCursor % reorderedBase.size) + reorderedBase.size) % reorderedBase.size
                 serveRotationCursor = (index + 1) % reorderedBase.size
                 persistServeRotationCursorLocked()
@@ -590,7 +595,7 @@ class WallpaperProviderService : Service() {
     }
 
     private fun projectivyBootstrapMedia(): List<AerialMedia> =
-        PROJECTIVY_BOOTSTRAP_VIDEO_URLS.map { videoPageUrl ->
+        PROJECTIVY_BOOTSTRAP_VIDEO_URLS.shuffled().map { videoPageUrl ->
             AerialMedia(
                 uri = Uri.parse(videoPageUrl),
                 type = AerialMediaType.VIDEO,
@@ -907,6 +912,10 @@ class WallpaperProviderService : Service() {
         }
 
         val fragment = buildProjectivyYouTubeTimeFragment(media) ?: return rawUri
+        if (isYouTubeWatchUrl(rawUri)) {
+            val separator = if (rawUri.contains('?')) "&" else "?"
+            return "$rawUri$separator$fragment"
+        }
         return if (rawUri.contains("#")) {
             "$rawUri&$fragment"
         } else {

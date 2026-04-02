@@ -352,7 +352,9 @@ class ScreenController(
         }
 
         videoPlayer.start()
-        preloadUpcomingMedia()
+        if (mediaToLoad.type == AerialMediaType.IMAGE) {
+            preloadUpcomingMedia()
+        }
         prebuildUpcomingPlaylist()
     }
 
@@ -976,6 +978,7 @@ class ScreenController(
             return
         }
 
+        preloadUpcomingMedia()
         fadeInNextItem()
     }
 

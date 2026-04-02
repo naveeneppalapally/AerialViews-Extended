@@ -575,6 +575,7 @@ object NewPipeHelper {
         val uploaderLower = uploader.lowercase(Locale.US)
         return isBumperOrVlogTitle(titleLower) ||
             isTopListTitle(titleLower) ||
+            hasDramaticPipePattern(title) ||
             HUMAN_TITLE_BLACKLIST.any(titleLower::contains) ||
             HUMAN_CHANNEL_BLACKLIST.any(uploaderLower::contains) ||
             PERSONAL_VLOG_TITLE_REGEX.containsMatchIn(title)
@@ -588,6 +589,18 @@ object NewPipeHelper {
     private fun isTopListTitle(titleLower: String): Boolean =
         TOP_LIST_TITLE_REGEX.containsMatchIn(titleLower) ||
             TOP_LIST_TITLE_BLACKLIST.any(titleLower::contains)
+
+    private fun hasDramaticPipePattern(title: String): Boolean {
+        val parts = title.split("|").map(String::trim).filter(String::isNotEmpty)
+        if (parts.size < 2) {
+            return false
+        }
+
+        return parts.any { part ->
+            val partLower = part.lowercase(Locale.US)
+            DRAMATIC_PIPE_WORDS.any(partLower::contains)
+        }
+    }
 
     private fun matchesQueryIntent(
         queryLower: String,
@@ -1155,6 +1168,27 @@ object NewPipeHelper {
             "flicker warning",
             "trigger warning",
             "content warning",
+            "wildlife documentary",
+            "animal documentary",
+            "animals documentary",
+            "nature documentary",
+            "unbelievable",
+            "cliff chase",
+            "fight",
+            "attack",
+            "predator vs",
+            "vs predator",
+            "hunt",
+            "hunting",
+            "chase",
+            "survival",
+            "incredible moment",
+            "caught on camera",
+            "rare footage",
+            "amazing footage",
+            "shocking",
+            "brutal",
+            "epic battle",
         )
     private val HUMAN_CHANNEL_BLACKLIST =
         listOf(
@@ -1179,6 +1213,28 @@ object NewPipeHelper {
             "seizure",
             "strobe",
             "flicker",
+            "documentary",
+            "wildlife films",
+            "animal planet",
+            "nat geo wild",
+            "discovery channel",
+        )
+    private val DRAMATIC_PIPE_WORDS =
+        listOf(
+            "fight",
+            "attack",
+            "chase",
+            "hunt",
+            "kill",
+            "vs",
+            "predator",
+            "prey",
+            "incredible",
+            "unbelievable",
+            "shocking",
+            "rare",
+            "amazing",
+            "caught",
         )
     private val PERSONAL_VLOG_TITLE_REGEX =
         Regex(

@@ -227,6 +227,9 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.coroutines.test)
     testRuntimeOnly(libs.junit.jupiter.engine)
+    androidTestImplementation(libs.runner)
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.espresso.core)
 
     implementation(libs.profileinstaller)
     "baselineProfile"(project(":baselineprofile"))

@@ -199,6 +199,10 @@ class WallpaperProviderService : Service() {
             return reorderedBase
         }
 
+        if (unseen.isNotEmpty()) {
+            return reorderedBase
+        }
+
         val rotationIndex =
             synchronized(serveHistoryLock) {
                 val index = ((serveRotationCursor % reorderedBase.size) + reorderedBase.size) % reorderedBase.size
@@ -320,6 +324,8 @@ class WallpaperProviderService : Service() {
         }
         return uri.substringBefore('#').substringBefore('?').ifBlank { uri }
     }
+
+    private fun mediaHistoryKey(media: AerialMedia): String = wallpaperHistoryKey(wallpaperUri(media))
 
     private fun getEnabledProviders(): List<MediaProvider> {
         val selectedProviders = selectedProviderKeys()
@@ -618,6 +624,11 @@ class WallpaperProviderService : Service() {
             return emptyList()
         }
 
+        val (recentKeySet, recencyOrderByKey) =
+            synchronized(serveHistoryLock) {
+                servedWallpaperKeys.toSet() to servedWallpaperKeys.withIndex().associate { indexed -> indexed.value to indexed.index }
+            }
+
         val buckets = linkedMapOf<String, ArrayDeque<AerialMedia>>()
         providerMediaBatches.forEach { (providerKey, media) ->
             if (media.isEmpty()) {
@@ -629,7 +640,14 @@ class WallpaperProviderService : Service() {
                 } else {
                     media
                 }
-            buckets[providerKey] = ArrayDeque(preparedMedia)
+            buckets[providerKey] =
+                ArrayDeque(
+                    prioritizeNovelMedia(
+                        media = preparedMedia,
+                        recentKeySet = recentKeySet,
+                        recencyOrderByKey = recencyOrderByKey,
+                    ),
+                )
         }
         if (buckets.isEmpty()) {
             return emptyList()
@@ -659,6 +677,37 @@ class WallpaperProviderService : Service() {
             }
         }
         return selected
+    }
+
+    private fun prioritizeNovelMedia(
+        media: List<AerialMedia>,
+        recentKeySet: Set<String>,
+        recencyOrderByKey: Map<String, Int>,
+    ): List<AerialMedia> {
+        if (media.size <= 1 || recentKeySet.isEmpty()) {
+            return media
+        }
+
+        val unseen = mutableListOf<AerialMedia>()
+        val seen = mutableListOf<AerialMedia>()
+        media.forEach { candidate ->
+            val key = mediaHistoryKey(candidate)
+            if (key in recentKeySet) {
+                seen += candidate
+            } else {
+                unseen += candidate
+            }
+        }
+
+        if (unseen.isEmpty()) {
+            return media.sortedBy { candidate ->
+                recencyOrderByKey[mediaHistoryKey(candidate)] ?: Int.MAX_VALUE
+            }
+        }
+
+        return unseen + seen.sortedBy { candidate ->
+            recencyOrderByKey[mediaHistoryKey(candidate)] ?: Int.MAX_VALUE
+        }
     }
 
     private suspend fun ensureProjectivyPlayableMedia(mediaItems: List<AerialMedia>): List<AerialMedia> {

@@ -351,10 +351,8 @@ class ScreenController(
             GlobalBus.post(ProgressBarEvent(ProgressState.RESET))
         }
 
+        preloadUpcomingMedia()
         videoPlayer.start()
-        if (mediaToLoad.type == AerialMediaType.IMAGE) {
-            preloadUpcomingMedia()
-        }
         prebuildUpcomingPlaylist()
     }
 
@@ -978,7 +976,6 @@ class ScreenController(
             return
         }
 
-        preloadUpcomingMedia()
         fadeInNextItem()
     }
 

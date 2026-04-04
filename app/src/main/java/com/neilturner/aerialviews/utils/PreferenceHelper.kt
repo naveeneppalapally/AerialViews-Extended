@@ -8,6 +8,7 @@ import com.neilturner.aerialviews.BuildConfig
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
 import timber.log.Timber
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.Properties
 
@@ -116,8 +117,22 @@ object PreferenceHelper {
         try {
             val properties =
                 Properties().apply {
-                    val stream = context.contentResolver.openInputStream(uri)
-                    this.load(stream)
+                    val stream =
+                        when (uri.scheme) {
+                            "file" -> {
+                                val path = uri.path ?: throw IllegalArgumentException("Invalid file URI: $uri")
+                                FileInputStream(path)
+                            }
+
+                            else -> {
+                                context.contentResolver.openInputStream(uri)
+                                    ?: throw IllegalArgumentException("Unable to open URI: $uri")
+                            }
+                        }
+
+                    stream.use {
+                        this.load(it)
+                    }
                 }
 
             val prefs = context.getSharedPreferences("${context.packageName}_preferences", Context.MODE_PRIVATE)
@@ -163,7 +178,7 @@ object PreferenceHelper {
             }
             true
         } catch (e: Exception) {
-            e.printStackTrace()
+            Timber.e(e, "Failed to import preferences from URI: $uri")
             false
         }
 

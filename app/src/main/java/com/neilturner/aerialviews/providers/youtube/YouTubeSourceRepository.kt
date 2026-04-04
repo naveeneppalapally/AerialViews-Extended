@@ -540,6 +540,41 @@ class YouTubeSourceRepository(
             }?.streamUrl
         }
 
+    suspend fun preloadProjectivyVideoUrl(videoPageUrl: String): String? =
+        withContext(Dispatchers.IO) {
+            peekPreResolvedEntry(videoPageUrl)?.streamUrl
+                ?.takeIf(::isProjectivyUsableStreamUrl)
+                ?.let { return@withContext it }
+
+            cacheDao.getByVideoPageUrl(videoPageUrl)?.takeIf { !it.isBad }?.let { cachedEntry ->
+                if (hasFreshStreamUrl(cachedEntry) && isProjectivyUsableStreamUrl(cachedEntry.streamUrl)) {
+                    return@withContext cachedEntry.streamUrl
+                }
+
+                return@withContext resolveProjectivyStreamUrl(videoPageUrl)?.also { resolvedUrl ->
+                    cacheDao.updateStreamUrl(
+                        cachedEntry.videoId,
+                        resolvedUrl,
+                        System.currentTimeMillis() + STREAM_URL_TTL_MS,
+                    )
+                }
+            }
+
+            runCatching {
+                buildDirectCacheEntry(
+                    videoPageUrl = videoPageUrl,
+                    cachedAt = System.currentTimeMillis(),
+                    preferredQuality = playbackResolutionQuality(fallbackQuality = preferredQuality()),
+                    allowAdaptiveManifests = false,
+                )
+            }.getOrNull()
+                ?.takeIf { entry -> isProjectivyUsableStreamUrl(entry.streamUrl) }
+                ?.also { directEntry ->
+                    cacheDao.insertAll(listOf(directEntry))
+                    updateCachedCount(cacheDao.countGoodEntries())
+                }?.streamUrl
+        }
+
     suspend fun resolveVideoUrl(videoPageUrl: String): String =
         withContext(Dispatchers.IO) {
             consumePreResolvedEntry(videoPageUrl)?.let { cachedEntry ->
@@ -1771,6 +1806,17 @@ class YouTubeSourceRepository(
         return resolvedUrl
     }
 
+    private suspend fun resolveProjectivyStreamUrl(videoPageUrl: String): String? =
+        runCatching {
+            NewPipeHelper.extractStreamUrl(
+                videoPageUrl,
+                context,
+                playbackResolutionQuality(fallbackQuality = preferredQuality()),
+                preferVideoOnly = playbackPreferVideoOnly(),
+                allowAdaptiveManifests = false,
+            )
+        }.getOrNull()?.takeIf(::isProjectivyUsableStreamUrl)
+
     private fun markEntryAsBad(
         entry: YouTubeCacheEntity,
         exception: Throwable? = null,
@@ -1796,6 +1842,36 @@ class YouTubeSourceRepository(
 
     private fun isUsableStreamUrl(url: String): Boolean =
         url.isNotBlank() && url.startsWith("http", ignoreCase = true)
+
+    private fun isProjectivyUsableStreamUrl(url: String): Boolean {
+        if (!isUsableStreamUrl(url)) {
+            return false
+        }
+
+        val parsed = runCatching { Uri.parse(url) }.getOrNull() ?: return false
+        val host = parsed.host.orEmpty().lowercase(Locale.US)
+        val path = parsed.encodedPath.orEmpty().lowercase(Locale.US)
+        val mime = parsed.getQueryParameter("mime")?.lowercase(Locale.US).orEmpty()
+
+        if (host.contains("youtube.com") || host.contains("youtu.be")) {
+            return false
+        }
+        if (host.contains("manifest.googlevideo.com")) {
+            return false
+        }
+        if (path.endsWith(".mpd") || path.endsWith(".m3u8") || path.contains("/manifest/")) {
+            return false
+        }
+        if (
+            mime.contains("application/dash+xml") ||
+            mime.contains("application/vnd.apple.mpegurl") ||
+            mime.contains("application/x-mpegurl")
+        ) {
+            return false
+        }
+
+        return true
+    }
 
     private fun isUsableCachedStream(entry: YouTubeCacheEntity): Boolean {
         if (!isUsableStreamUrl(entry.streamUrl)) {
@@ -1897,6 +1973,7 @@ class YouTubeSourceRepository(
         videoPageUrl: String,
         cachedAt: Long,
         preferredQuality: String,
+        allowAdaptiveManifests: Boolean = true,
     ): YouTubeCacheEntity? {
         val videoId = extractVideoId(videoPageUrl) ?: return null
         val streamUrl =
@@ -1905,6 +1982,7 @@ class YouTubeSourceRepository(
                 context,
                 playbackResolutionQuality(fallbackQuality = preferredQuality),
                 preferVideoOnly = playbackPreferVideoOnly(),
+                allowAdaptiveManifests = allowAdaptiveManifests,
             )
         return YouTubeCacheEntity(
             videoId = videoId,

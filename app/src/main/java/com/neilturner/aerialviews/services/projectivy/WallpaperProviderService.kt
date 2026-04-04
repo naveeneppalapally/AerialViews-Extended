@@ -27,6 +27,7 @@ import com.neilturner.aerialviews.providers.LocalMediaProvider
 import com.neilturner.aerialviews.providers.MediaProvider
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.providers.youtube.YouTubeMediaProvider
+import com.neilturner.aerialviews.providers.youtube.YouTubeSourceRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -98,37 +99,14 @@ class WallpaperProviderService : Service() {
                         "getWallpapers event=${event?.javaClass?.simpleName ?: "null"} idleEvent=${(event as? Event.LauncherIdleModeChanged)?.isIdle}",
                     )
                     when (event) {
+                        null -> wallpaperResponseForEvent("null")
+
                         is Event.TimeElapsed -> {
-                            val wallpapers = loadOrBuildWallpapers(forceRefresh = false)
-                            val shuffled =
-                                if (ProjectivyPrefs.shuffleVideos && wallpapers.size > 1) {
-                                    wallpapers.shuffled()
-                                } else {
-                                    wallpapers
-                                }
-                            prepareWallpapersForResponse(shuffled).also { prepared ->
-                                Log.i("WallpaperProviderService", "returning wallpapers=${prepared.size} for TimeElapsed")
-                            }
+                            wallpaperResponseForEvent("TimeElapsed")
                         }
 
                         is Event.LauncherIdleModeChanged -> {
-                            if (!event.isIdle) {
-                                Log.i("WallpaperProviderService", "Projectivy visible — resuming video")
-                                // Keep current playlist continuity; config-change invalidation will rebuild when needed.
-                                val wallpapers = loadOrBuildWallpapers(forceRefresh = false)
-                                val shuffled =
-                                    if (ProjectivyPrefs.shuffleVideos && wallpapers.size > 1) {
-                                        wallpapers.shuffled()
-                                    } else {
-                                        wallpapers
-                                    }
-                                prepareWallpapersForResponse(shuffled).also { prepared ->
-                                    Log.i("WallpaperProviderService", "returning wallpapers=${prepared.size} for LauncherIdleModeChanged(visible)")
-                                }
-                            } else {
-                                Log.i("WallpaperProviderService", "Projectivy hidden — pausing video")
-                                emptyList()
-                            }
+                            wallpaperResponseForEvent("LauncherIdleModeChanged(isIdle=${event.isIdle})")
                         }
 
                         else -> {
@@ -142,6 +120,19 @@ class WallpaperProviderService : Service() {
             override fun setPreferences(params: String?) {
             }
         }
+
+    private fun wallpaperResponseForEvent(eventLabel: String): List<Wallpaper> {
+        val wallpapers = loadOrBuildWallpapers(forceRefresh = false)
+        val shuffled =
+            if (ProjectivyPrefs.shuffleVideos && wallpapers.size > 1) {
+                wallpapers.shuffled()
+            } else {
+                wallpapers
+            }
+        return prepareWallpapersForResponse(shuffled).also { prepared ->
+            Log.i("WallpaperProviderService", "returning wallpapers=${prepared.size} for $eventLabel")
+        }
+    }
 
     private fun loadOrBuildWallpapers(forceRefresh: Boolean): List<Wallpaper> {
         invalidateWallpaperCacheIfConfigChanged()
@@ -478,14 +469,14 @@ class WallpaperProviderService : Service() {
         const val WALLPAPER_REUSE_WINDOW_MS = 5_000L
         const val PROVIDER_FETCH_TIMEOUT_MS = 12_000L
         const val YOUTUBE_PROJECTIVY_START_SECONDS = 30
+        const val YOUTUBE_PROJECTIVY_INTRO_SKIP_MIN_DURATION_SECONDS = 60L
+        const val YOUTUBE_PROJECTIVY_INTRO_SKIP_END_GUARD_SECONDS = 20L
         const val KEY_PROJECTIVY_SERVED_WALLPAPER_HISTORY = "projectivy_served_wallpaper_history"
         const val KEY_PROJECTIVY_SERVED_ROTATION_CURSOR = "projectivy_served_rotation_cursor"
-        const val MAX_SERVED_WALLPAPER_HISTORY = 300
+        const val MAX_SERVED_WALLPAPER_HISTORY = 1_000
         const val SERVED_WALLPAPER_SEPARATOR = "|"
         const val PLAYBACK_RECORD_COOLDOWN_MS = 15_000L
         const val PROJECTIVY_WALLPAPER_LIMIT = 40
-        const val PROJECTIVY_YOUTUBE_DIRECT_RESOLVE_LIMIT = 20
-        const val MIN_PROJECTIVY_PLAYABLE_ITEMS = 8
         const val YOUTUBE_PROJECTIVY_DIRECT_RESOLVE_TIMEOUT_MS = 4_000L
         const val PROJECTIVY_BOOTSTRAP_PROVIDER_KEY = "youtube_bootstrap"
         val PROJECTIVY_BOOTSTRAP_VIDEO_URLS =
@@ -717,87 +708,90 @@ class WallpaperProviderService : Service() {
 
         val candidates =
             mediaItems.withIndex().filter { (_, media) ->
-                media.source == AerialMediaSource.YOUTUBE &&
-                    media.type == AerialMediaType.VIDEO &&
-                    isYouTubeWatchUrl(media.uri.toString())
-            }.take(PROJECTIVY_YOUTUBE_DIRECT_RESOLVE_LIMIT)
+                media.source == AerialMediaSource.YOUTUBE && media.type == AerialMediaType.VIDEO
+            }
 
         if (candidates.isEmpty()) {
             return mediaItems
         }
 
+        val repository = YouTubeFeature.repository(applicationContext)
         val resolvedByIndex =
             supervisorScope {
                 candidates.map { indexed ->
                     async(Dispatchers.IO) {
-                        val watchUrl = indexed.value.uri.toString()
                         val resolvedUrl =
                             withTimeoutOrNull(YOUTUBE_PROJECTIVY_DIRECT_RESOLVE_TIMEOUT_MS) {
-                                runCatching {
-                                    YouTubeFeature.repository(applicationContext).preloadVideoUrl(watchUrl)
-                                }.getOrNull()
+                                resolveProjectivyYouTubeDirectUrl(
+                                    repository = repository,
+                                    media = indexed.value,
+                                )
                             }
 
-                        if (resolvedUrl.isNullOrBlank() || isYouTubeWatchUrl(resolvedUrl)) {
+                        if (resolvedUrl.isNullOrBlank()) {
                             null
                         } else {
-                            indexed.index to resolvedUrl
+                            indexed.index to
+                                indexed.value.copy(
+                                    uri = Uri.parse(resolvedUrl),
+                                    streamUrl = resolvedUrl,
+                                )
                         }
                     }
                 }.awaitAll()
             }.filterNotNull()
                 .toMap()
 
-        val candidateIndexes = candidates.map { indexed -> indexed.index }.toSet()
-        val unresolvedIndexes = candidateIndexes - resolvedByIndex.keys
-
-        val patchedMedia =
-            mediaItems.toMutableList().apply {
-                resolvedByIndex.forEach { (index, directUrl) ->
-                    this[index] =
-                        this[index].copy(
-                            uri = Uri.parse(directUrl),
-                            streamUrl = directUrl,
-                        )
-                }
-            }
-
         val filteredMedia =
-            patchedMedia.filterIndexed { index, media ->
-                if (!unresolvedIndexes.contains(index)) {
-                    true
+            mediaItems.mapIndexedNotNull { index, media ->
+                if (media.source != AerialMediaSource.YOUTUBE || media.type != AerialMediaType.VIDEO) {
+                    media
                 } else {
-                    !(media.source == AerialMediaSource.YOUTUBE &&
-                        media.type == AerialMediaType.VIDEO &&
-                        isYouTubeWatchUrl(media.uri.toString()))
+                    resolvedByIndex[index]
                 }
             }
 
-        if (filteredMedia.size < MIN_PROJECTIVY_PLAYABLE_ITEMS) {
+        val droppedCount = candidates.size - resolvedByIndex.size
+        if (droppedCount > 0) {
             Timber.w(
-                "Projectivy YouTube direct resolve: filtered too aggressively (%s -> %s). Falling back to unresolved-safe list",
-                mediaItems.size,
-                filteredMedia.size,
-            )
-            return patchedMedia
-        }
-
-        if (resolvedByIndex.isEmpty()) {
-            Timber.i(
-                "Projectivy YouTube direct resolve: no direct URLs resolved from %s candidates, dropped unresolved=%s",
+                "Projectivy dropped %s/%s YouTube items without direct playable URLs",
+                droppedCount,
                 candidates.size,
-                mediaItems.size - filteredMedia.size,
             )
-            return filteredMedia
         }
 
         Timber.i(
-            "Projectivy YouTube direct resolve: resolved %s/%s watch URLs, dropped unresolved=%s",
+            "Projectivy resolved %s/%s YouTube items into direct playable URLs",
             resolvedByIndex.size,
             candidates.size,
-            mediaItems.size - filteredMedia.size,
         )
         return filteredMedia
+    }
+
+    private suspend fun resolveProjectivyYouTubeDirectUrl(
+        repository: YouTubeSourceRepository,
+        media: AerialMedia,
+    ): String? {
+        val watchUrl = projectivyYouTubeWatchUrl(media)
+        if (watchUrl != null) {
+            return repository.preloadProjectivyVideoUrl(watchUrl)
+        }
+
+        return media.streamUrl.takeIf { it.isNotBlank() } ?: media.uri.toString().takeIf { !isYouTubeWatchUrl(it) }
+    }
+
+    private fun projectivyYouTubeWatchUrl(media: AerialMedia): String? {
+        val rawUri = media.uri.toString().substringBefore('#')
+        if (isYouTubeWatchUrl(rawUri)) {
+            return rawUri
+        }
+
+        val videoId = media.metadata.exif.description?.trim().orEmpty()
+        if (videoId.isBlank()) {
+            return null
+        }
+
+        return "https://www.youtube.com/watch?v=$videoId"
     }
 
     private fun isYouTubeWatchUrl(url: String): Boolean {
@@ -806,25 +800,122 @@ class WallpaperProviderService : Service() {
         return host.contains("youtube.com") || host.contains("youtu.be")
     }
 
+    private fun buildProjectivyYouTubeTimeFragment(media: AerialMedia): String? {
+        val knownDurationSeconds = media.metadata.exif.durationSeconds?.toLong()?.takeIf { it > 0L } ?: 0L
+        val playbackWindow = resolveProjectivyYouTubePlaybackWindow(media, knownDurationSeconds)
+        val adjustedStartSeconds =
+            adjustProjectivyYouTubeStartForIntroSkip(
+                startSeconds = playbackWindow.startSeconds,
+                endSeconds = playbackWindow.endSeconds,
+                knownDurationSeconds = knownDurationSeconds,
+            )
+        val adjustedEndSeconds = playbackWindow.endSeconds?.takeIf { it > adjustedStartSeconds }
+
+        return when {
+            adjustedEndSeconds != null -> "t=$adjustedStartSeconds,$adjustedEndSeconds"
+            adjustedStartSeconds > 0L -> "t=$adjustedStartSeconds"
+            else -> null
+        }
+    }
+
+    private fun resolveProjectivyYouTubePlaybackWindow(
+        media: AerialMedia,
+        knownDurationSeconds: Long,
+    ): ProjectivyPlaybackWindow {
+        val youtubeMode = YouTubeVideoPrefs.playbackLengthMode.trim().lowercase()
+        val youtubeMaxLengthSeconds = YouTubeVideoPrefs.playbackMaxMinutes.toLong() * 60L
+
+        return when (youtubeMode) {
+            "full" -> ProjectivyPlaybackWindow()
+
+            "segment" -> {
+                if (knownDurationSeconds > youtubeMaxLengthSeconds && youtubeMaxLengthSeconds > 0L) {
+                    val segmentStartSeconds =
+                        resolveStableProjectivySegmentStartSeconds(
+                            media = media,
+                            knownDurationSeconds = knownDurationSeconds,
+                            windowLengthSeconds = youtubeMaxLengthSeconds,
+                        )
+                    ProjectivyPlaybackWindow(
+                        startSeconds = segmentStartSeconds,
+                        endSeconds = segmentStartSeconds + youtubeMaxLengthSeconds,
+                    )
+                } else {
+                    ProjectivyPlaybackWindow()
+                }
+            }
+
+            else -> {
+                if (youtubeMaxLengthSeconds <= 0L) {
+                    ProjectivyPlaybackWindow()
+                } else if (knownDurationSeconds <= 0L || knownDurationSeconds > youtubeMaxLengthSeconds) {
+                    ProjectivyPlaybackWindow(endSeconds = youtubeMaxLengthSeconds)
+                } else {
+                    ProjectivyPlaybackWindow()
+                }
+            }
+        }
+    }
+
+    private fun resolveStableProjectivySegmentStartSeconds(
+        media: AerialMedia,
+        knownDurationSeconds: Long,
+        windowLengthSeconds: Long,
+    ): Long {
+        val maxSegmentStartSeconds = (knownDurationSeconds - windowLengthSeconds).coerceAtLeast(0L)
+        if (maxSegmentStartSeconds <= 0L) {
+            return 0L
+        }
+
+        val stableKey = media.metadata.exif.description?.takeIf { it.isNotBlank() } ?: media.uri.toString()
+        val positiveHash = stableKey.hashCode().toLong() and 0x7fffffffL
+        return positiveHash % (maxSegmentStartSeconds + 1L)
+    }
+
+    private fun adjustProjectivyYouTubeStartForIntroSkip(
+        startSeconds: Long,
+        endSeconds: Long?,
+        knownDurationSeconds: Long,
+    ): Long {
+        if (YOUTUBE_PROJECTIVY_START_SECONDS <= 0) {
+            return startSeconds
+        }
+
+        val effectiveEndSeconds = endSeconds ?: knownDurationSeconds.takeIf { it > 0L }
+        if (effectiveEndSeconds == null) {
+            return YOUTUBE_PROJECTIVY_START_SECONDS.toLong()
+        }
+
+        val playableDurationSeconds = (effectiveEndSeconds - startSeconds).coerceAtLeast(0L)
+        if (playableDurationSeconds < YOUTUBE_PROJECTIVY_INTRO_SKIP_MIN_DURATION_SECONDS) {
+            return startSeconds
+        }
+
+        val maxAllowedStartSeconds =
+            (effectiveEndSeconds - YOUTUBE_PROJECTIVY_INTRO_SKIP_END_GUARD_SECONDS).coerceAtLeast(startSeconds)
+        return (startSeconds + YOUTUBE_PROJECTIVY_START_SECONDS).coerceAtMost(maxAllowedStartSeconds)
+    }
+
     private fun wallpaperUri(media: AerialMedia): String {
         val rawUri = media.uri.toString()
         if (media.type != AerialMediaType.VIDEO) {
             return rawUri
         }
 
-        if (YOUTUBE_PROJECTIVY_START_SECONDS <= 0) {
-            return rawUri
-        }
-
-        // Keep Projectivy intro-skip offset scoped to YouTube content.
         if (media.source != AerialMediaSource.YOUTUBE) {
             return rawUri
         }
 
+        val fragment = buildProjectivyYouTubeTimeFragment(media) ?: return rawUri
         return if (rawUri.contains("#")) {
-            "$rawUri&t=$YOUTUBE_PROJECTIVY_START_SECONDS"
+            "$rawUri&$fragment"
         } else {
-            "$rawUri#t=$YOUTUBE_PROJECTIVY_START_SECONDS"
+            "$rawUri#$fragment"
         }
     }
+
+    private data class ProjectivyPlaybackWindow(
+        val startSeconds: Long = 0L,
+        val endSeconds: Long? = null,
+    )
 }

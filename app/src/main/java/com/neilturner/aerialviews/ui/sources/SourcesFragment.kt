@@ -2,6 +2,7 @@ package com.neilturner.aerialviews.ui.sources
 
 import android.os.Bundle
 import androidx.preference.ListPreference
+import androidx.preference.Preference
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.prefs.AmazonVideoPrefs
 import com.neilturner.aerialviews.models.prefs.AppleVideoPrefs
@@ -21,12 +22,26 @@ class SourcesFragment : MenuStateFragment() {
         configureSourceModePreference()
         ensureSourceModeInitialized()
         configureYouTubeMixWeightPreference()
+        restoreSourceSummaries()
     }
 
     override fun onResume() {
         super.onResume()
         synchronizeSourceModePreference()
         configureYouTubeMixWeightPreference()
+        restoreSourceSummaries()
+    }
+
+    private fun restoreSourceSummaries() {
+        restoreSourceSummary("source_apple", R.string.sources_apple_summary)
+        restoreSourceSummary("source_amazon", R.string.sources_amazon_summary)
+        restoreSourceSummary("source_comm1", R.string.sources_comm1_summary)
+        restoreSourceSummary("source_comm2", R.string.sources_comm2_summary)
+    }
+
+    private fun restoreSourceSummary(prefKey: String, summaryId: Int) {
+        val preference = findPreference<Preference>(prefKey) ?: return
+        preference.summary = getString(summaryId)
     }
 
     private fun configureSourceModePreference() {

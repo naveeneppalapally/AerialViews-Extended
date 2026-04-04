@@ -7,9 +7,11 @@ import androidx.lifecycle.lifecycleScope
 import androidx.preference.ListPreference
 import androidx.preference.MultiSelectListPreference
 import androidx.preference.Preference
+import androidx.preference.SwitchPreference
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.prefs.AppleVideoPrefs
-import com.neilturner.aerialviews.providers.AppleMediaProvider
+import com.neilturner.aerialviews.models.videos.Apple2018Video
+import com.neilturner.aerialviews.models.videos.Apple2018Videos
 import com.neilturner.aerialviews.services.Display
 import com.neilturner.aerialviews.services.HDRFormat
 import com.neilturner.aerialviews.services.getDisplay
@@ -34,7 +36,20 @@ class AppleVideosFragment : MenuStateFragment() {
         }
 
         updateSummary()
-        updateVideoCount()
+        setupEnabledPreference()
+        updateVideoCount(forceRecalculate = true)
+    }
+
+    private fun setupEnabledPreference() {
+        val enabled = findPreference<SwitchPreference>("apple_videos_enabled") ?: return
+        enabled.onPreferenceChangeListener =
+            Preference.OnPreferenceChangeListener { _, _ ->
+                lifecycleScope.launch {
+                    delay(100)
+                    updateVideoCount(forceRecalculate = true)
+                }
+                true
+            }
     }
 
     private fun setupQualityPreference() {
@@ -97,8 +112,13 @@ class AppleVideosFragment : MenuStateFragment() {
             getCachedCount = { AppleVideoPrefs.count },
             setCachedCount = { AppleVideoPrefs.count = it },
             fetchMediaCount = { ctx ->
-                val provider = AppleMediaProvider(ctx, AppleVideoPrefs)
-                provider.fetchMedia().size
+                MediaPreferenceHelper.countBundledVideos<Apple2018Videos, Apple2018Video>(
+                    context = ctx,
+                    rawResId = R.raw.tvos15,
+                    sceneSelection = AppleVideoPrefs.scene,
+                    timeOfDaySelection = AppleVideoPrefs.timeOfDay,
+                    assets = { it.assets },
+                )
             },
             forceRecalculate = forceRecalculate,
         )

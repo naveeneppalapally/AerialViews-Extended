@@ -5,6 +5,10 @@ import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
+import com.neilturner.aerialviews.models.enums.SceneType
+import com.neilturner.aerialviews.models.enums.TimeOfDay
+import com.neilturner.aerialviews.models.videos.AbstractVideo
+import com.neilturner.aerialviews.utils.JsonHelper.parseJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -15,6 +19,23 @@ import timber.log.Timber
  * Helper class for common media preference operations
  */
 object MediaPreferenceHelper {
+    internal suspend inline fun <reified T, reified V : AbstractVideo> countBundledVideos(
+        context: Context,
+        rawResId: Int,
+        sceneSelection: Set<String>,
+        timeOfDaySelection: Set<String>,
+        crossinline assets: (T) -> List<V>?,
+    ): Int {
+        val wrapper = parseJson<T>(context, rawResId)
+        return assets(wrapper).orEmpty().count { asset ->
+            val timeOfDay = TimeOfDay.fromString(asset.timeOfDay)
+            val scene = SceneType.fromString(asset.scene)
+
+            timeOfDaySelection.contains(timeOfDay.toString()) &&
+                sceneSelection.contains(scene.toString())
+        }
+    }
+
     /**
      * Updates a quality preference by combining quality entries with data usage values
      * @param fragment The preference fragment

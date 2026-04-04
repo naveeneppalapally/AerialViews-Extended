@@ -112,6 +112,7 @@
     <string name="message_media_searching">Searching for media…</string>
 
     <string name="videos_count">%1$d videos selected</string>
+    <string name="sources_video_count">%1$d videos</string>
     <string name="videos_data_estimate_summary">Approx. %1$s per hour</string>
 
     <string name="text_size_title">Size</string>

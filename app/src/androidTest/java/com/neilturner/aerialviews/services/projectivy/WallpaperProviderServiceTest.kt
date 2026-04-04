@@ -6,13 +6,12 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.SharedPreferences
 import android.os.IBinder
-import androidx.core.content.edit
+import android.util.Log
 import androidx.preference.PreferenceManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.neilturner.aerialviews.providers.youtube.YouTubeCacheDatabase
-import com.neilturner.aerialviews.providers.youtube.YouTubeCacheEntity
-import com.neilturner.aerialviews.providers.youtube.YouTubeSourceRepository
+import com.neilturner.aerialviews.testing.YouTubeInstrumentationFixtures
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.system.measureTimeMillis
@@ -41,27 +40,123 @@ class WallpaperProviderServiceTest {
         database = YouTubeCacheDatabase.getInstance(context)
 
         stopWallpaperService()
-        database.clearAllTables()
-        clearProjectivyState()
-        seedYouTubeCache(entryCount = 200)
-        configureProjectivyForYouTubeOnly()
+        YouTubeInstrumentationFixtures.resetAppState(database, prefs)
+        YouTubeInstrumentationFixtures.seedProjectivyYouTubeCache(database, entryCount = 200)
+        YouTubeInstrumentationFixtures.configureProjectivyForYouTubeOnly(
+            context = context,
+            prefs = prefs,
+            entryCount = 200,
+        )
     }
 
     @After
     fun tearDown() {
         unbindWallpaperService()
         stopWallpaperService()
-        database.clearAllTables()
-        clearProjectivyState()
+        YouTubeInstrumentationFixtures.resetAppState(database, prefs)
     }
 
     @Test
-    fun hiddenLauncherReturnsNoWallpapers() {
+    fun nullEventReturnsWallpapers() {
+        val service = bindWallpaperService()
+
+        val wallpapers = service.getWallpapers(null)
+
+        assertFalse("Expected wallpapers when Projectivy requests an initial snapshot", wallpapers.isEmpty())
+    }
+
+    @Test
+    fun launcherIdleModeChangedReturnsWallpapers() {
         val service = bindWallpaperService()
 
         val wallpapers = service.getWallpapers(Event.LauncherIdleModeChanged(isIdle = true))
 
-        assertTrue("Expected no wallpapers while Projectivy is hidden", wallpapers.isEmpty())
+        assertFalse("Expected wallpapers when Projectivy idle mode changes", wallpapers.isEmpty())
+    }
+
+    @Test
+    fun youtubeLimitModeAppliesPlaybackCapToProjectivyUri() {
+        prefs.edit()
+            .putString("yt_playback_length_mode", "limit")
+            .putString("yt_playback_max_minutes", "5")
+            .apply()
+
+        val service = bindWallpaperService()
+
+        val firstUri = service.getWallpapers(Event.TimeElapsed()).first().uri
+
+        assertTrue(
+            "Expected Projectivy YouTube limit mode to cap playback length, got $firstUri",
+            firstUri.contains("#t=30,300"),
+        )
+    }
+
+    @Test
+    fun youtubeFullModeKeepsIntroSkipWithoutPlaybackCap() {
+        prefs.edit()
+            .putString("yt_playback_length_mode", "full")
+            .putString("yt_playback_max_minutes", "5")
+            .apply()
+
+        val service = bindWallpaperService()
+
+        val firstUri = service.getWallpapers(Event.TimeElapsed()).first().uri
+
+        assertTrue(
+            "Expected Projectivy YouTube full mode to retain intro skip, got $firstUri",
+            firstUri.contains("#t=30"),
+        )
+        assertFalse(
+            "Expected Projectivy YouTube full mode to avoid an explicit playback cap, got $firstUri",
+            firstUri.contains("#t=30,"),
+        )
+    }
+
+    @Test
+    fun youtubeSegmentModeReturnsBoundedSegmentWindow() {
+        prefs.edit()
+            .putString("yt_playback_length_mode", "segment")
+            .putString("yt_playback_max_minutes", "5")
+            .apply()
+
+        val service = bindWallpaperService()
+
+        val firstUri = service.getWallpapers(Event.TimeElapsed()).first().uri
+        val (startSeconds, endSeconds) = extractTimeWindow(firstUri)
+
+        assertTrue(
+            "Expected Projectivy YouTube segment mode to start after intro skip, got $firstUri",
+            startSeconds >= 30L,
+        )
+        assertEquals(
+            "Expected Projectivy YouTube segment mode to keep a bounded playback window after intro skip, got $firstUri",
+            270L,
+            (endSeconds ?: 0L) - startSeconds,
+        )
+        assertTrue(
+            "Expected Projectivy YouTube segment mode to stay within known duration, got $firstUri",
+            (endSeconds ?: 0L) <= 600L,
+        )
+    }
+
+    @Test
+    fun youtubeProjectivyUrisUseDirectPlayableStreams() {
+        val service = bindWallpaperService()
+
+        val wallpapers = service.getWallpapers(Event.TimeElapsed())
+
+        assertFalse("Expected Projectivy to return YouTube wallpapers", wallpapers.isEmpty())
+        assertTrue(
+            "Expected Projectivy YouTube URIs to be direct playable streams, got ${wallpapers.take(5).map { it.uri }}",
+            wallpapers.take(5).all { wallpaper ->
+                val uri = wallpaper.uri.substringBefore('#')
+                !uri.contains("youtube.com/watch") &&
+                    !uri.contains("youtu.be/") &&
+                    !uri.contains("/manifest/") &&
+                    !uri.contains(".mpd") &&
+                    !uri.contains(".m3u8")
+            },
+        )
     }
 
     @Test
@@ -131,6 +226,83 @@ class WallpaperProviderServiceTest {
         )
     }
 
+    @Test
+    fun servesFiveBatchesOfTwoHundredWithoutRepeatingAcrossBatches() {
+        YouTubeInstrumentationFixtures.resetAppState(database, prefs)
+        YouTubeInstrumentationFixtures.seedProjectivyYouTubeCache(database, entryCount = 1_000)
+        YouTubeInstrumentationFixtures.configureProjectivyForYouTubeOnly(
+            context = context,
+            prefs = prefs,
+            entryCount = 1_000,
+        )
+
+        var service = bindWallpaperService()
+        val servedUris = mutableListOf<String>()
+        val durationsMs = mutableListOf<Long>()
+
+        repeat(1_000) { index ->
+            if (index > 0 && index % 40 == 0) {
+                unbindWallpaperService()
+                stopWallpaperService()
+                service = bindWallpaperService()
+            }
+
+            val durationMs =
+                measureTimeMillis {
+                    val wallpapers = service.getWallpapers(Event.TimeElapsed())
+                    assertFalse("Expected wallpapers for request $index", wallpapers.isEmpty())
+                    servedUris += wallpapers.first().uri
+                }
+            durationsMs += durationMs
+        }
+
+        val batches = servedUris.chunked(200)
+        val previousBatchSets = mutableListOf<Set<String>>()
+        val batchSummaries = mutableListOf<String>()
+
+        batches.forEachIndexed { batchIndex, batch ->
+            val batchSet = batch.toSet()
+            val overlapSummary =
+                previousBatchSets.mapIndexed { previousIndex, previousBatch ->
+                    "b${previousIndex + 1}=${batchSet.intersect(previousBatch).size}"
+                }
+            val consecutiveRepeats = batch.zipWithNext().count { (first, second) -> first == second }
+            batchSummaries +=
+                "batch=${batchIndex + 1} unique=${batchSet.size} consecutiveRepeats=$consecutiveRepeats overlap=[${overlapSummary.joinToString()}]"
+
+            assertEquals(
+                "Expected batch ${batchIndex + 1} to contain 200 unique wallpapers. Summaries=$batchSummaries",
+                200,
+                batchSet.size,
+            )
+            assertEquals(
+                "Expected batch ${batchIndex + 1} to avoid consecutive repeats. Summaries=$batchSummaries",
+                0,
+                consecutiveRepeats,
+            )
+            assertTrue(
+                "Expected batch ${batchIndex + 1} to avoid overlaps with prior batches. Summaries=$batchSummaries",
+                previousBatchSets.none { previousBatch -> batchSet.intersect(previousBatch).isNotEmpty() },
+            )
+            previousBatchSets += batchSet
+        }
+
+        val cacheBoundaryDurationsMs = durationsMs.filterIndexed { index, _ -> index == 0 || index % 40 == 0 }
+        val cachedDurationsMs = durationsMs.filterIndexed { index, _ -> index > 0 && index % 40 != 0 }
+        Log.i(
+            TEST_TAG,
+            "Projectivy 5x200 summaries=$batchSummaries boundaryDurationsMs=$cacheBoundaryDurationsMs cachedMaxMs=${cachedDurationsMs.maxOrNull() ?: -1L}",
+        )
+        assertTrue(
+            "Expected cached Projectivy responses to remain under 1000ms during the 5x200 run. boundary=$cacheBoundaryDurationsMs cached=$cachedDurationsMs summaries=$batchSummaries",
+            cachedDurationsMs.maxOrNull() ?: Long.MAX_VALUE < 1_000L,
+        )
+    }
+
+    private companion object {
+        const val TEST_TAG = "WallpaperProviderServiceTest"
+    }
+
     private fun bindWallpaperService(): IWallpaperProviderService {
         unbindWallpaperService()
 
@@ -173,82 +345,22 @@ class WallpaperProviderServiceTest {
         serviceConnection = null
     }
 
+    private fun extractTimeWindow(uri: String): Pair<Long, Long?> {
+        val timeFragment =
+            uri.substringAfter('#', missingDelimiterValue = "")
+                .split('&')
+                .firstOrNull { fragment -> fragment.startsWith("t=") }
+                ?.removePrefix("t=")
+                ?: error("Expected Projectivy YouTube URI to contain a time fragment: $uri")
+
+        val values = timeFragment.split(',')
+        val startSeconds = values.first().toLong()
+        val endSeconds = values.getOrNull(1)?.toLong()
+        return startSeconds to endSeconds
+    }
+
     private fun stopWallpaperService() {
         context.stopService(Intent(context, WallpaperProviderService::class.java))
     }
 
-    private fun clearProjectivyState() {
-        prefs.edit {
-            remove("projectivy_shared_providers")
-            remove("projectivy_shuffle_videos")
-            remove("projectivy_served_wallpaper_history")
-            remove("projectivy_served_rotation_cursor")
-            remove("yt_enabled")
-            remove("yt_shuffle")
-            remove("yt_quality")
-            remove(YouTubeSourceRepository.KEY_CACHE_VERSION)
-            remove(YouTubeSourceRepository.KEY_CACHE_SIGNATURE)
-            remove(YouTubeSourceRepository.KEY_FIRST_LAUNCH)
-            remove(YouTubeSourceRepository.KEY_FIRST_LAUNCH_INDEX)
-            remove(YouTubeSourceRepository.KEY_COUNT)
-        }
-    }
-
-    private fun configureProjectivyForYouTubeOnly() {
-        prefs.edit {
-            putStringSet("projectivy_shared_providers", setOf("youtube"))
-            putBoolean("projectivy_shuffle_videos", false)
-            putBoolean("yt_enabled", true)
-            putBoolean("yt_shuffle", false)
-            putString("yt_quality", "1080p")
-            putInt(YouTubeSourceRepository.KEY_CACHE_VERSION, currentCacheVersion())
-            putString(YouTubeSourceRepository.KEY_CACHE_SIGNATURE, currentCacheSignature())
-            putBoolean(YouTubeSourceRepository.KEY_FIRST_LAUNCH, false)
-            putInt(YouTubeSourceRepository.KEY_FIRST_LAUNCH_INDEX, 0)
-            putString(YouTubeSourceRepository.KEY_COUNT, "200")
-        }
-    }
-
-    private fun seedYouTubeCache(entryCount: Int) {
-        val now = System.currentTimeMillis()
-        val entries =
-            (1..entryCount).map { index ->
-                YouTubeCacheEntity(
-                    videoId = "video$index",
-                    videoPageUrl = "https://www.youtube.com/watch?v=video$index",
-                    streamUrl = "https://rr1---sn.example.googlevideo.com/videoplayback?id=video$index.mp4&itag=137",
-                    title = "Ambient Projectivy Video $index",
-                    uploaderName = "channel$index",
-                    durationSeconds = 600,
-                    categoryKey = "nature",
-                    streamUrlExpiresAt = now + 86_400_000L,
-                    searchCachedAt = now,
-                    searchQuery = "4K ambient nature",
-                    isBad = false,
-                    lastPlayedAt = 0L,
-                )
-            }
-
-        database.youtubeCacheDao().insertAll(entries)
-    }
-
-    private fun currentCacheSignature(): String {
-        val versionCode = context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
-        return "$versionCode|v${currentCacheVersion()}"
-    }
-
-    private fun currentCacheVersion(): Int {
-        runCatching {
-            val field = YouTubeSourceRepository::class.java.getDeclaredField("CURRENT_CACHE_VERSION")
-            field.isAccessible = true
-            return field.getInt(null)
-        }
-        val companionClass =
-            YouTubeSourceRepository::class.java.declaredClasses.firstOrNull { declaredClass ->
-                declaredClass.simpleName == "Companion"
-            } ?: error("Unable to locate YouTubeSourceRepository companion")
-        val field = companionClass.getDeclaredField("CURRENT_CACHE_VERSION")
-        field.isAccessible = true
-        return field.getInt(null)
-    }
 }

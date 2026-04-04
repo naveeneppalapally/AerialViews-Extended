@@ -97,12 +97,19 @@ object NewPipeHelper {
         context: Context,
         preferredQuality: String = "1080p",
         preferVideoOnly: Boolean = false,
+        allowAdaptiveManifests: Boolean = true,
     ): String =
         withContext(Dispatchers.IO) {
             init()
 
             try {
-                loadPlayableStreamUrl(videoPageUrl, context, preferredQuality, preferVideoOnly)
+                loadPlayableStreamUrl(
+                    videoPageUrl = videoPageUrl,
+                    context = context,
+                    preferredQuality = preferredQuality,
+                    preferVideoOnly = preferVideoOnly,
+                    allowAdaptiveManifests = allowAdaptiveManifests,
+                )
             } catch (exception: AgeRestrictedContentException) {
                 Timber.tag(TAG).d("Age-restricted stream rejected: %s", videoPageUrl)
                 throw exception
@@ -208,6 +215,7 @@ object NewPipeHelper {
         context: Context,
         preferredQuality: String,
         preferVideoOnly: Boolean,
+        allowAdaptiveManifests: Boolean,
     ): String {
         val service = NewPipe.getService("YouTube")
         val videoId =
@@ -232,6 +240,7 @@ object NewPipeHelper {
             screenHeight = screenHeight,
             preferredQuality = preferredQuality,
             preferVideoOnly = preferVideoOnly,
+            allowAdaptiveManifests = allowAdaptiveManifests,
         )?.takeIf(String::isNotBlank)
             ?: throw YouTubeExtractionException("No playable stream found for $videoPageUrl")
     }
@@ -244,6 +253,7 @@ object NewPipeHelper {
         screenHeight: Int,
         preferredQuality: String,
         preferVideoOnly: Boolean,
+        allowAdaptiveManifests: Boolean,
     ): String? {
         val effectiveScreenHeight =
             if (isAmlogicDevice() && screenHeight in 1 until 1080) {
@@ -303,10 +313,10 @@ object NewPipeHelper {
                 Log.w(TAG, "STREAM FALLBACK 2 (quality floor ${minimumFallbackHeight}p): ${describeStream(stream)}")
                 stream.getContent()
             }
-            ?: dashUrl?.takeIf(String::isNotBlank)?.also {
+            ?: dashUrl?.takeIf { allowAdaptiveManifests && it.isNotBlank() }?.also {
                 Log.w(TAG, "STREAM FALLBACK 3 (dash): using DASH manifest URL")
             }
-            ?: hlsUrl?.takeIf(String::isNotBlank)?.also {
+            ?: hlsUrl?.takeIf { allowAdaptiveManifests && it.isNotBlank() }?.also {
                 Log.w(TAG, "STREAM FALLBACK 4 (hls): using HLS manifest URL")
             }
             ?: run {
@@ -338,6 +348,7 @@ object NewPipeHelper {
         streams: List<VideoStream>,
         targetHeight: Int,
         allowUnsupportedFallback: Boolean = false,
+        supportResolver: (CodecFamily, VideoStream) -> DecoderSupport = ::decoderSupport,
     ): VideoStream? {
         val minimumHeight = minimumAllowedHeight(targetHeight)
         val deviceSafeCandidates =
@@ -361,11 +372,8 @@ object NewPipeHelper {
                 streamHeight(candidate) in MIN_PREFERRED_PROGRESSIVE_HEIGHT..targetHeight &&
                     candidate.getItag() !in REJECTED_LOW_QUALITY_ITAGS
             }
-        val highBitratePreferredCandidates = preferredCandidates.filter(::meetsBitrateFloor)
         val rankedCandidates =
-            highBitratePreferredCandidates.ifEmpty {
-                preferredCandidates.ifEmpty { deviceSafeCandidates }
-            }
+            preferredCandidates.ifEmpty { deviceSafeCandidates }
         val strictPreferredMinimumHeight = strictMinimumPreferredHeight(targetHeight)
         val strictCandidates =
             rankedCandidates.filter { candidate ->
@@ -380,18 +388,39 @@ object NewPipeHelper {
                 }
             }
 
-        pickBestFromSupportTiers(strictCandidates, targetHeight, supportPriority)?.let { return it }
+        pickBestFromSupportTiers(strictCandidates, targetHeight, supportPriority, supportResolver)?.let { return it }
         if (strictCandidates.size != rankedCandidates.size) {
-            pickBestFromSupportTiers(rankedCandidates, targetHeight, supportPriority)?.let { return it }
+            pickBestFromSupportTiers(rankedCandidates, targetHeight, supportPriority, supportResolver)?.let { return it }
         }
 
         return null
     }
 
+    internal fun selectBestVideoStreamForTest(
+        streams: List<VideoStream>,
+        targetHeight: Int,
+        allowUnsupportedFallback: Boolean = false,
+        supportedItags: Set<Int> = emptySet(),
+        unsupportedItags: Set<Int> = emptySet(),
+    ): VideoStream? =
+        selectBestVideoStream(
+            streams = streams,
+            targetHeight = targetHeight,
+            allowUnsupportedFallback = allowUnsupportedFallback,
+            supportResolver = { _, stream ->
+                when (stream.getItag()) {
+                    in supportedItags -> DecoderSupport.SUPPORTED
+                    in unsupportedItags -> DecoderSupport.UNSUPPORTED
+                    else -> DecoderSupport.UNKNOWN
+                }
+            },
+        )
+
     private fun pickBestFromSupportTiers(
         candidates: List<VideoStream>,
         targetHeight: Int,
         supportPriority: List<DecoderSupport>,
+        supportResolver: (CodecFamily, VideoStream) -> DecoderSupport,
     ): VideoStream? {
         if (candidates.isEmpty()) {
             return null
@@ -400,12 +429,12 @@ object NewPipeHelper {
         supportPriority.forEach { support ->
             val supportCandidates =
                 candidates.filter { candidate ->
-                    decoderSupport(codecFamily(candidate), candidate) == support
+                    supportResolver(codecFamily(candidate), candidate) == support
                 }
             if (supportCandidates.isEmpty()) {
                 return@forEach
             }
-            selectBestVideoStreamFromTier(supportCandidates, targetHeight)?.let { return it }
+            selectBestVideoStreamFromTier(supportCandidates, targetHeight, supportResolver)?.let { return it }
         }
         return null
     }
@@ -428,23 +457,25 @@ object NewPipeHelper {
     private fun selectBestVideoStreamFromTier(
         streams: List<VideoStream>,
         preferredHeight: Int,
+        supportResolver: (CodecFamily, VideoStream) -> DecoderSupport,
     ): VideoStream? {
-        selectBestStreamAtResolution(streams, preferredHeight)?.let { return it }
+        selectBestStreamAtResolution(streams, preferredHeight, supportResolver)?.let { return it }
 
         RESOLUTION_PRIORITY.forEach { resolution ->
             if (resolution > preferredHeight) {
                 return@forEach
             }
-            selectBestStreamAtResolution(streams, resolution)?.let { return it }
+            selectBestStreamAtResolution(streams, resolution, supportResolver)?.let { return it }
         }
 
         Timber.tag(TAG).w("No preferred YouTube stream quality found, using best available fallback")
-        return streams.sortedWith(streamQualityComparator()).firstOrNull()
+        return streams.sortedWith(streamQualityComparator(supportResolver)).firstOrNull()
     }
 
     private fun selectBestStreamAtResolution(
         streams: List<VideoStream>,
         resolution: Int,
+        supportResolver: (CodecFamily, VideoStream) -> DecoderSupport,
     ): VideoStream? {
         val atResolution = streams.filter { streamHeight(it) == resolution }
         if (atResolution.isEmpty()) {
@@ -455,12 +486,12 @@ object NewPipeHelper {
             atResolution
                 .filter { stream ->
                     stream.getCodec().orEmpty().lowercase(Locale.US).contains(codec)
-                }.sortedWith(streamQualityComparator())
+                }.sortedWith(streamQualityComparator(supportResolver))
                     .firstOrNull()
                     ?.let { return it }
         }
 
-        return atResolution.sortedWith(streamQualityComparator()).firstOrNull()
+        return atResolution.sortedWith(streamQualityComparator(supportResolver)).firstOrNull()
     }
 
     private fun streamHeight(stream: VideoStream): Int {
@@ -501,9 +532,12 @@ object NewPipeHelper {
         return CODEC_PRIORITY.indexOfFirst(codec::contains).takeIf { it >= 0 } ?: CODEC_PRIORITY.size
     }
 
-    private fun codecPenalty(stream: VideoStream): Int {
+    private fun codecPenalty(
+        stream: VideoStream,
+        supportResolver: (CodecFamily, VideoStream) -> DecoderSupport,
+    ): Int {
         val codecFamily = codecFamily(stream)
-        return when (decoderSupport(codecFamily, stream)) {
+        return when (supportResolver(codecFamily, stream)) {
             DecoderSupport.SUPPORTED ->
                 when (codecFamily) {
                     CodecFamily.VP9 -> 0
@@ -638,9 +672,12 @@ object NewPipeHelper {
     private fun preferredContentScore(titleLower: String): Int =
         PREFERRED_CONTENT_SIGNALS.count(titleLower::contains)
 
-    private fun streamQualityComparator(): Comparator<VideoStream> =
+    private fun streamQualityComparator(
+        supportResolver: (CodecFamily, VideoStream) -> DecoderSupport = ::decoderSupport,
+    ): Comparator<VideoStream> =
         compareByDescending<VideoStream> { streamHeight(it) }
-            .thenBy { codecPenalty(it) }
+            .thenByDescending { meetsBitrateFloor(it) }
+            .thenBy { codecPenalty(it, supportResolver) }
             .thenByDescending { codecScore(it) }
             .thenByDescending { it.getBitrate() }
             .thenBy { codecPriorityIndex(it) }

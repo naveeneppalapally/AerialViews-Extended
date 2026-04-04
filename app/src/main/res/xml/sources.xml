@@ -15,21 +15,25 @@
 
     <PreferenceCategory app:title="@string/category_remote_streaming">
         <Preference
+            app:key="source_apple"
             app:title="@string/sources_apple_title"
             app:summary="@string/sources_apple_summary"
             app:fragment="com.neilturner.aerialviews.ui.sources.AppleVideosFragment"/>
 
         <Preference
+            app:key="source_amazon"
             app:title="@string/sources_amazon_title"
             app:summary="@string/sources_amazon_summary"
             app:fragment="com.neilturner.aerialviews.ui.sources.AmazonVideosFragment"/>
 
         <Preference
+            app:key="source_comm1"
             app:title="@string/sources_comm1_title"
             app:summary="@string/sources_comm1_summary"
             app:fragment="com.neilturner.aerialviews.ui.sources.Comm1VideosFragment"/>
 
         <Preference
+            app:key="source_comm2"
             app:title="@string/sources_comm2_title"
             app:summary="@string/sources_comm2_summary"
             app:fragment="com.neilturner.aerialviews.ui.sources.Comm2VideosFragment"/>

@@ -175,7 +175,7 @@
             <!-- what events to listen for - refer to WallpaperUpdateEventType -->
             <meta-data
                 android:name="updateMode"
-                android:value="17"/>
+                android:value="1"/>
         </service>
 
         <!-- Firebase Analytics and Crashlytics options -->

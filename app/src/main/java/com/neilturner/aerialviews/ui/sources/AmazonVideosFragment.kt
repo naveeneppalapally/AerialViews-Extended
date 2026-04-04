@@ -6,9 +6,11 @@ import android.os.Bundle
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.MultiSelectListPreference
 import androidx.preference.Preference
+import androidx.preference.SwitchPreference
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.prefs.AmazonVideoPrefs
-import com.neilturner.aerialviews.providers.AmazonMediaProvider
+import com.neilturner.aerialviews.models.videos.AmazonVideo
+import com.neilturner.aerialviews.models.videos.AmazonVideos
 import com.neilturner.aerialviews.utils.MediaPreferenceHelper
 import com.neilturner.aerialviews.utils.MenuStateFragment
 import kotlinx.coroutines.delay
@@ -29,7 +31,20 @@ class AmazonVideosFragment : MenuStateFragment() {
             onChangeCallback = { updateVideoCount(forceRecalculate = true) },
         )
         updateSummary()
-        updateVideoCount()
+        setupEnabledPreference()
+        updateVideoCount(forceRecalculate = true)
+    }
+
+    private fun setupEnabledPreference() {
+        val enabled = findPreference<SwitchPreference>("amazon_videos_enabled") ?: return
+        enabled.onPreferenceChangeListener =
+            Preference.OnPreferenceChangeListener { _, _ ->
+                lifecycleScope.launch {
+                    delay(100)
+                    updateVideoCount(forceRecalculate = true)
+                }
+                true
+            }
     }
 
     private fun updateSummary() {
@@ -67,8 +82,13 @@ class AmazonVideosFragment : MenuStateFragment() {
             getCachedCount = { AmazonVideoPrefs.count },
             setCachedCount = { AmazonVideoPrefs.count = it },
             fetchMediaCount = { ctx ->
-                val provider = AmazonMediaProvider(ctx, AmazonVideoPrefs)
-                provider.fetchMedia().size
+                MediaPreferenceHelper.countBundledVideos<AmazonVideos, AmazonVideo>(
+                    context = ctx,
+                    rawResId = R.raw.fireos8,
+                    sceneSelection = AmazonVideoPrefs.scene,
+                    timeOfDaySelection = AmazonVideoPrefs.timeOfDay,
+                    assets = { it.assets },
+                )
             },
             forceRecalculate = forceRecalculate,
         )

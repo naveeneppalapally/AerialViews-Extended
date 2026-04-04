@@ -6,9 +6,11 @@ import android.os.Bundle
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.MultiSelectListPreference
 import androidx.preference.Preference
+import androidx.preference.SwitchPreference
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.prefs.Comm2VideoPrefs
-import com.neilturner.aerialviews.providers.Comm2MediaProvider
+import com.neilturner.aerialviews.models.videos.Comm2Video
+import com.neilturner.aerialviews.models.videos.Comm2Videos
 import com.neilturner.aerialviews.utils.MediaPreferenceHelper
 import com.neilturner.aerialviews.utils.MenuStateFragment
 import kotlinx.coroutines.delay
@@ -29,7 +31,20 @@ class Comm2VideosFragment : MenuStateFragment() {
             onChangeCallback = { updateVideoCount(forceRecalculate = true) },
         )
         updateSummary()
-        updateVideoCount()
+        setupEnabledPreference()
+        updateVideoCount(forceRecalculate = true)
+    }
+
+    private fun setupEnabledPreference() {
+        val enabled = findPreference<SwitchPreference>("comm2_videos_enabled") ?: return
+        enabled.onPreferenceChangeListener =
+            Preference.OnPreferenceChangeListener { _, _ ->
+                lifecycleScope.launch {
+                    delay(100)
+                    updateVideoCount(forceRecalculate = true)
+                }
+                true
+            }
     }
 
     private fun updateSummary() {
@@ -67,8 +82,13 @@ class Comm2VideosFragment : MenuStateFragment() {
             getCachedCount = { Comm2VideoPrefs.count },
             setCachedCount = { Comm2VideoPrefs.count = it },
             fetchMediaCount = { ctx ->
-                val provider = Comm2MediaProvider(ctx, Comm2VideoPrefs)
-                provider.fetchMedia().size
+                MediaPreferenceHelper.countBundledVideos<Comm2Videos, Comm2Video>(
+                    context = ctx,
+                    rawResId = R.raw.comm2,
+                    sceneSelection = Comm2VideoPrefs.scene,
+                    timeOfDaySelection = Comm2VideoPrefs.timeOfDay,
+                    assets = { it.assets },
+                )
             },
             forceRecalculate = forceRecalculate,
         )

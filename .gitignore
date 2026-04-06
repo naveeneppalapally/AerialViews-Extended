@@ -83,3 +83,18 @@ lint/tmp/
 # Local toolchains used during development
 .jbr21-codex-work/
 .jdk-temurin21/
+
+# Local QA artifacts
+/.vscode/
+/tmp/
+/1080p_*.png
+/4k_*.png
+/tmp_*.png
+/import_*.xml
+/projectivy_*.xml
+/settings_4k.xml
+/settings_after_main_4k.xml
+/source_mode_*.xml
+/sources_4k.xml
+/main_4k.xml
+/logcat_*.txt

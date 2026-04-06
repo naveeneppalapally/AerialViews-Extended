@@ -1,3 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--suppress CheckTagEmptyBody -->
-<resources></resources>
+<resources>
+	<color name="update_prompt_surface_top">#F0101010</color>
+	<color name="update_prompt_surface_bottom">#F0101010</color>
+	<color name="update_prompt_surface_stroke">#22FFFFFF</color>
+	<color name="update_prompt_text_primary">#FFFFFFFF</color>
+	<color name="update_prompt_text_secondary">#AAFFFFFF</color>
+	<color name="update_prompt_text_accent">#FFFFFFFF</color>
+	<color name="update_prompt_accent_soft">#18FFFFFF</color>
+	<color name="update_prompt_button_primary">#FF1A1A1A</color>
+	<color name="update_prompt_button_primary_focused">#FF333333</color>
+	<color name="update_prompt_button_primary_pressed">#FF222222</color>
+	<color name="update_prompt_left_surface">#F0000000</color>
+</resources>

@@ -9,19 +9,26 @@ import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.Preference
 import androidx.preference.PreferenceManager
+import com.neilturner.aerialviews.BuildConfig
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
 import com.neilturner.aerialviews.models.prefs.LocalMediaPrefs
+import com.neilturner.aerialviews.models.prefs.UpdatePrefs
 import com.neilturner.aerialviews.utils.DeviceHelper
+import com.neilturner.aerialviews.utils.HomeUpdatePromptHelper
 import com.neilturner.aerialviews.utils.MenuStateFragment
 import com.neilturner.aerialviews.utils.PermissionHelper
 import com.neilturner.aerialviews.utils.ToastHelper
+import com.neilturner.aerialviews.utils.UpdateCheckResult
+import com.neilturner.aerialviews.utils.UpdateCheckerHelper
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
 class MainFragment :
     MenuStateFragment(),
     PreferenceManager.OnPreferenceTreeClickListener {
+    private var hasCheckedStartupUpdate = false
+
     override fun onCreatePreferences(
         savedInstanceState: Bundle?,
         rootKey: String?,
@@ -138,6 +145,53 @@ class MainFragment :
             Timber.i("Intent not available... $intent")
         }
         return intents.isNotEmpty()
+    }
+
+    fun maybeShowStartupUpdatePrompt() {
+        if (BuildConfig.FLAVOR != "github" || hasCheckedStartupUpdate || !isAdded || parentFragmentManager.isStateSaved) {
+            return
+        }
+
+        hasCheckedStartupUpdate = true
+        clearDismissedUpdateIfInstalled()
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            when (val result = UpdateCheckerHelper.checkForUpdate(BuildConfig.VERSION_NAME)) {
+                is UpdateCheckResult.Available -> {
+                    if (UpdatePrefs.homeUpdatePromptDismissedTag == result.updateInfo.tagName) {
+                        return@launch
+                    }
+
+                    HomeUpdatePromptHelper.show(
+                        context = requireContext(),
+                        currentVersion = BuildConfig.VERSION_NAME,
+                        updateInfo = result.updateInfo,
+                        onDownload = {
+                            UpdatePrefs.homeUpdatePromptDismissedTag = ""
+                            val mainActivity = activity as? MainActivity
+                            if (mainActivity == null) {
+                                Timber.w("UpdateChecker: MainActivity unavailable for startup update download")
+                                return@show
+                            }
+                            mainActivity.startAppUpdateDownload(result.updateInfo)
+                        },
+                        onLater = {
+                            UpdatePrefs.homeUpdatePromptDismissedTag = result.updateInfo.tagName
+                        },
+                    )
+                }
+
+                UpdateCheckResult.UpToDate,
+                UpdateCheckResult.Failed,
+                -> Unit
+            }
+        }
+    }
+
+    private fun clearDismissedUpdateIfInstalled() {
+        if (UpdateCheckerHelper.isSameVersion(UpdatePrefs.homeUpdatePromptDismissedTag, BuildConfig.VERSION_NAME)) {
+            UpdatePrefs.homeUpdatePromptDismissedTag = ""
+        }
     }
 
     companion object {

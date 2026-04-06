@@ -1,14 +1,20 @@
 package com.neilturner.aerialviews.ui
 
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.commit
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
+import com.neilturner.aerialviews.BuildConfig
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.databinding.MainActivityBinding
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
@@ -16,6 +22,9 @@ import com.neilturner.aerialviews.ui.screensaver.TestActivity
 import com.neilturner.aerialviews.ui.settings.ImportExportFragment
 import com.neilturner.aerialviews.utils.FirebaseHelper
 import com.neilturner.aerialviews.utils.PreferenceHelper
+import com.neilturner.aerialviews.utils.ToastHelper
+import com.neilturner.aerialviews.utils.UpdateCheckerHelper
+import com.neilturner.aerialviews.utils.UpdateInfo
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -25,6 +34,28 @@ class MainActivity :
     private lateinit var binding: MainActivityBinding
     private lateinit var resultLauncher: ActivityResultLauncher<Intent>
     private var fromScreensaver = false
+    private var updateDownloadId: Long = -1L
+    private var startupUpdatePromptHandled = false
+    private var isDownloadReceiverRegistered = false
+
+    private val downloadReceiver =
+        object : BroadcastReceiver() {
+            override fun onReceive(
+                context: Context,
+                intent: Intent,
+            ) {
+                val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+                if (id != updateDownloadId) return
+
+                val didLaunchInstaller = UpdateCheckerHelper.installDownloadedApk(this@MainActivity, updateDownloadId)
+                if (!didLaunchInstaller) {
+                    lifecycleScope.launch {
+                        ToastHelper.show(this@MainActivity, R.string.home_update_download_failed)
+                    }
+                }
+                updateDownloadId = -1L
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,9 +98,18 @@ class MainActivity :
     override fun onResume() {
         super.onResume()
         FirebaseHelper.analyticsScreenView("Main", this)
+        registerDownloadReceiver()
         lifecycleScope.launch {
-            handleCustomLaunching()
+            val shouldShowStartupPrompt = handleCustomLaunching()
+            if (shouldShowStartupPrompt) {
+                maybeShowStartupUpdatePrompt()
+            }
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        unregisterDownloadReceiver()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -77,10 +117,9 @@ class MainActivity :
         outState.putCharSequence("TITLE_TAG", title)
     }
 
-    private fun handleCustomLaunching() {
-        val fromAppRestart = intent.getBooleanExtra("from_app_restart", false) // Check if app was restarted by user (language change)
-        val hasIntentUri = intent.data != null // Check if app was started from intent
-        // && (intent.type == "application/avsettings" || intent.type == "text/avsettings")
+    private fun handleCustomLaunching(): Boolean {
+        val fromAppRestart = intent.getBooleanExtra("from_app_restart", false)
+        val hasIntentUri = intent.data != null
         val hasValidIntentAndData = hasIntentUri && intent.action == Intent.ACTION_VIEW
         val shouldExitApp =
             GeneralPrefs.startScreensaverOnLaunch &&
@@ -95,6 +134,8 @@ class MainActivity :
 
         if (shouldExitApp) {
             startScreensaver()
+            fromScreensaver = false
+            return false
         } else if (hasValidIntentAndData) {
             val bundle =
                 Bundle().apply {
@@ -108,8 +149,56 @@ class MainActivity :
                     },
                 ).addToBackStack(null)
             }
+            fromScreensaver = false
+            return false
         }
         fromScreensaver = false
+        return true
+    }
+
+    fun startAppUpdateDownload(updateInfo: UpdateInfo) {
+        runCatching {
+            updateDownloadId = UpdateCheckerHelper.enqueueDownload(this, updateInfo)
+        }.onSuccess {
+            lifecycleScope.launch {
+                ToastHelper.show(
+                    this@MainActivity,
+                    getString(R.string.home_update_download_started, updateInfo.tagName.removePrefix("v")),
+                )
+            }
+        }.onFailure { exception ->
+            Timber.e(exception, "UpdateChecker: failed to enqueue home-screen update download")
+            lifecycleScope.launch {
+                ToastHelper.show(this@MainActivity, R.string.home_update_download_failed)
+            }
+        }
+    }
+
+    private fun maybeShowStartupUpdatePrompt() {
+        if (BuildConfig.FLAVOR != "github" || startupUpdatePromptHandled) return
+
+        binding.container.post {
+            val mainFragment = supportFragmentManager.findFragmentById(binding.container.id) as? MainFragment ?: return@post
+            startupUpdatePromptHandled = true
+            mainFragment.maybeShowStartupUpdatePrompt()
+        }
+    }
+
+    private fun registerDownloadReceiver() {
+        if (isDownloadReceiverRegistered) return
+        ContextCompat.registerReceiver(
+            this,
+            downloadReceiver,
+            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+        isDownloadReceiverRegistered = true
+    }
+
+    private fun unregisterDownloadReceiver() {
+        if (!isDownloadReceiverRegistered) return
+        runCatching { unregisterReceiver(downloadReceiver) }
+        isDownloadReceiverRegistered = false
     }
 
     fun startScreensaver() {

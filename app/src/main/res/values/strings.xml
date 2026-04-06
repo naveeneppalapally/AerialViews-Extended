@@ -898,4 +898,18 @@
     <string name="about_installed_title">Installed</string>
     <string name="about_last_updated_title">Last updated</string>
 
+    <string name="home_update_title">New release</string>
+    <string name="home_update_version">AerialViews+ %1$s</string>
+    <string name="home_update_summary">Version %2$s is available. You can keep using the app while it downloads.</string>
+    <string name="home_update_whats_new">Release notes</string>
+    <string name="home_update_empty_notes">Bug fixes and improvements</string>
+    <string name="home_update_download">Download update</string>
+    <string name="home_update_later">Later</string>
+    <string name="home_update_download_started">Downloading AerialViews+ %1$s…</string>
+    <string name="home_update_download_failed">Couldn\'t start the update download</string>
+    <string name="home_update_badge">New version available</string>
+    <string name="home_update_app_name">AerialViews+</string>
+    <string name="home_update_highlights">Release highlights</string>
+    <string name="home_update_version_stable">Version stable</string>
+
 </resources>

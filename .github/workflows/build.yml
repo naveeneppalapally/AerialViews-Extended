@@ -18,6 +18,8 @@ permissions:
 jobs:
   build-release-apk:
     runs-on: ubuntu-latest
+    env:
+      EXPECTED_SIGNER_SHA256: ""
 
     steps:
       - name: Check out repository
@@ -38,16 +40,66 @@ jobs:
       - name: Build signed release APK
         run: ./gradlew --no-daemon :app:assembleGithubNonMinifiedRelease
         env:
-          KEYSTORE_PATH: aerialviews-plus-release.jks
+          KEYSTORE_PATH: ${{ github.workspace }}/app/aerialviews-plus-release.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Verify APK signer fingerprint
+        run: |
+          APK_PATH=$(find app/build/outputs/apk/github/nonMinifiedRelease -name '*.apk' | head -n 1)
+          SIGNER_OWNER=$(keytool -printcert -jarfile "$APK_PATH" | sed -n 's/^Owner: //p' | head -n 1 | tr -d '\r')
+          ACTUAL_SIGNER_SHA256=$(keytool -printcert -jarfile "$APK_PATH" | sed -n 's/.*SHA256: //p' | head -n 1 | tr -d '\r')
+
+          echo "APK path: $APK_PATH"
+          echo "Signer owner:          $SIGNER_OWNER"
+          echo "Actual signer SHA256:   $ACTUAL_SIGNER_SHA256"
+
+          if echo "$SIGNER_OWNER" | grep -q 'CN=Android Debug'; then
+            echo "Refusing to publish a debug-signed release APK" >&2
+            exit 1
+          fi
+
+          if [ -z "$ACTUAL_SIGNER_SHA256" ]; then
+            echo "Failed to read signer fingerprint from built APK" >&2
+            exit 1
+          fi
+
+          if [ -z "$EXPECTED_SIGNER_SHA256" ]; then
+            echo "No pinned signer fingerprint configured yet; skipping verification for this release"
+            exit 0
+          fi
+
+          echo "Expected signer SHA256: $EXPECTED_SIGNER_SHA256"
+
+          if [ "$ACTUAL_SIGNER_SHA256" != "$EXPECTED_SIGNER_SHA256" ]; then
+            echo "APK signer fingerprint does not match the pinned release signer" >&2
+            exit 1
+          fi
 
       - name: Rename APK
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/github/nonMinifiedRelease/*.apk \
              dist/AerialViews-Plus-v${{ github.event.inputs.version }}.apk
+
+      - name: Create update metadata
+        run: |
+          jq -n \
+            --arg tagName "v${{ github.event.inputs.version }}" \
+            --arg versionName "${{ github.event.inputs.version }}" \
+            --arg apkFileName "AerialViews-Plus-v${{ github.event.inputs.version }}.apk" \
+            --arg downloadUrl "https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/AerialViews-Plus-v${{ github.event.inputs.version }}.apk" \
+            --arg releaseNotes "${{ github.event.inputs.release_notes }}" \
+            --arg publishedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{
+              tagName: $tagName,
+              versionName: $versionName,
+              apkFileName: $apkFileName,
+              downloadUrl: $downloadUrl,
+              releaseNotes: $releaseNotes,
+              publishedAt: $publishedAt
+            }' > dist/update-metadata.json
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -70,7 +122,7 @@ jobs:
             - Source code: github.com/naveeneppalapally/AerialViews-Plus
 
             **Full source:** https://github.com/naveeneppalapally/AerialViews-Plus
-          files: dist/*.apk
+          files: dist/*
           draft: false
           prerelease: false
           generate_release_notes: false

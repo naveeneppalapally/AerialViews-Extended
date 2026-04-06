@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/update_prompt_panel_background"
+    android:clipToOutline="true"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="42"
+            android:background="@drawable/update_prompt_left_panel_background"
+            android:orientation="vertical"
+            android:padding="32dp">
+
+            <TextView
+                android:id="@+id/update_prompt_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/update_prompt_badge_background"
+                android:fontFamily="sans-serif-medium"
+                android:letterSpacing="0.06"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="6dp"
+                android:textAllCaps="true"
+                android:textColor="@color/update_prompt_text_accent"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/update_prompt_app_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="26dp"
+                android:fontFamily="sans-serif-light"
+                android:textColor="@color/update_prompt_text_primary"
+                android:textSize="26sp" />
+
+            <TextView
+                android:id="@+id/update_prompt_version"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-light"
+                android:textColor="@color/update_prompt_text_accent"
+                android:textSize="44sp" />
+
+            <TextView
+                android:id="@+id/update_prompt_summary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:fontFamily="sans-serif-light"
+                android:lineSpacingExtra="4dp"
+                android:textColor="@color/update_prompt_text_secondary"
+                android:textSize="13sp" />
+
+            <Space
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+        </LinearLayout>
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="@color/update_prompt_surface_stroke" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="58"
+            android:orientation="vertical"
+            android:padding="32dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/update_prompt_highlights_label"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="sans-serif-medium"
+                    android:letterSpacing="0.08"
+                    android:textAllCaps="true"
+                    android:textColor="@color/update_prompt_text_accent"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/update_prompt_date"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="sans-serif"
+                    android:letterSpacing="0.04"
+                    android:textAllCaps="true"
+                    android:textColor="@color/update_prompt_text_secondary"
+                    android:textSize="11sp" />
+
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="16dp"
+                android:background="@color/update_prompt_surface_stroke" />
+
+            <androidx.core.widget.NestedScrollView
+                android:id="@+id/update_prompt_notes_scroll"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:layout_marginTop="16dp"
+                android:fadeScrollbars="false"
+                android:focusable="false"
+                android:scrollbars="vertical">
+
+                <TextView
+                    android:id="@+id/update_prompt_notes"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="sans-serif-light"
+                    android:lineSpacingExtra="10dp"
+                    android:textColor="@color/update_prompt_text_primary"
+                    android:textSize="14sp" />
+
+            </androidx.core.widget.NestedScrollView>
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/update_prompt_surface_stroke" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="32dp"
+        android:paddingVertical="20dp">
+
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/update_prompt_download"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:minWidth="200dp"
+            android:background="@drawable/update_prompt_button_primary_background"
+            android:fontFamily="sans-serif-medium"
+            android:paddingHorizontal="28dp"
+            android:textAllCaps="false"
+            android:textColor="@color/update_prompt_text_primary"
+            android:textSize="14sp" />
+
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/update_prompt_later"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_marginStart="14dp"
+            android:minWidth="100dp"
+            android:background="@drawable/update_prompt_button_secondary_background"
+            android:fontFamily="sans-serif"
+            android:paddingHorizontal="28dp"
+            android:textAllCaps="false"
+            android:textColor="@color/update_prompt_text_primary"
+            android:textSize="14sp" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/update_prompt_version_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/update_prompt_badge_background"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.06"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="8dp"
+            android:textAllCaps="true"
+            android:textColor="@color/update_prompt_text_accent"
+            android:textSize="10sp" />
+
+    </LinearLayout>
+
+</LinearLayout>

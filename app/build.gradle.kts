@@ -20,6 +20,20 @@ android {
 
     var betaVersion = ""
     val keyProps = loadProperties("secrets.properties")
+    val openWeatherDebug =
+        sequenceOf(
+            keyProps.getProperty("openWeatherDebug"),
+            System.getenv("OPEN_WEATHER_DEBUG"),
+            keyProps.getProperty("openWeather"),
+            System.getenv("OPEN_WEATHER"),
+        ).firstOrNull { !it.isNullOrBlank() } ?: ""
+    val openWeatherRelease =
+        sequenceOf(
+            keyProps.getProperty("openWeather"),
+            System.getenv("OPEN_WEATHER"),
+            keyProps.getProperty("openWeatherDebug"),
+            System.getenv("OPEN_WEATHER_DEBUG"),
+        ).firstOrNull { !it.isNullOrBlank() } ?: ""
     defaultConfig {
         applicationId = "com.naveen.aerialviewsplus"
         minSdk = 23 // Android v6
@@ -34,8 +48,7 @@ android {
         manifestPlaceholders["crashlyticsCollectionEnabled"] = false
         manifestPlaceholders["performanceCollectionEnabled"] = false
 
-        val openWeather = keyProps.getProperty("openWeatherDebug", keyProps.getProperty("openWeather", ""))
-        buildConfigField("String", "OPEN_WEATHER", "\"$openWeather\"")
+        buildConfigField("String", "OPEN_WEATHER", "\"$openWeatherDebug\"")
         buildConfigField("String", "BUILD_TIME", "\"${System.currentTimeMillis()}\"")
         buildConfigField("boolean", "ENABLE_YOUTUBE_LOGS", "false")
     }
@@ -91,8 +104,7 @@ android {
             // isDebuggable = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
 
-            val openWeather = keyProps.getProperty("openWeather", keyProps.getProperty("openWeatherDebug", ""))
-            buildConfigField("String", "OPEN_WEATHER", "\"$openWeather\"")
+            buildConfigField("String", "OPEN_WEATHER", "\"$openWeatherRelease\"")
 
             manifestPlaceholders["analyticsCollectionEnabled"] = true
             manifestPlaceholders["crashlyticsCollectionEnabled"] = true

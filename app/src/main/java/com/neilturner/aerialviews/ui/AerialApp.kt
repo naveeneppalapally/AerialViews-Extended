@@ -1,6 +1,7 @@
 package com.neilturner.aerialviews.ui
 
 import android.app.Application
+import android.content.SharedPreferences
 import android.os.StrictMode
 import android.os.StrictMode.VmPolicy
 import androidx.preference.PreferenceManager
@@ -12,6 +13,10 @@ import com.neilturner.aerialviews.models.prefs.AppleVideoPrefs
 import com.neilturner.aerialviews.models.prefs.Comm1VideoPrefs
 import com.neilturner.aerialviews.models.prefs.Comm2VideoPrefs
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
+import com.neilturner.aerialviews.models.prefs.ProjectivyAmazonPrefs
+import com.neilturner.aerialviews.models.prefs.ProjectivyApplePrefs
+import com.neilturner.aerialviews.models.prefs.ProjectivyComm1Prefs
+import com.neilturner.aerialviews.models.prefs.ProjectivyComm2Prefs
 import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.utils.DeviceHelper
@@ -31,6 +36,8 @@ class AerialApp : Application() {
             // setupStrictMode()
         }
 
+        initializeVideoQualityDefaults()
+
         if (!GeneralPrefs.checkForHevcSupport) {
             // FireTV Gen 1 and emulator can't play HEVC/H.265
             // Set video quality to H.264
@@ -45,6 +52,52 @@ class AerialApp : Application() {
         initializeSourceModeDefaults()
         initializeProjectivyProviderDefaults()
         YouTubeFeature.initialize(this)
+    }
+
+    private fun initializeVideoQualityDefaults() {
+        if (!DeviceHelper.isTV(applicationContext) ||
+            !DeviceHelper.hasHevcSupport() ||
+            !DeviceHelper.supportsUltraHdOutput(applicationContext)
+        ) {
+            return
+        }
+
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+
+        maybeSetDefaultQuality(prefs, "apple_videos_quality") {
+            AppleVideoPrefs.quality = VideoQuality.VIDEO_4K_SDR
+        }
+        maybeSetDefaultQuality(prefs, "amazon_videos_quality") {
+            AmazonVideoPrefs.quality = VideoQuality.VIDEO_4K_SDR
+        }
+        maybeSetDefaultQuality(prefs, "comm1_videos_quality") {
+            Comm1VideoPrefs.quality = VideoQuality.VIDEO_4K_SDR
+        }
+        maybeSetDefaultQuality(prefs, "comm2_videos_quality") {
+            Comm2VideoPrefs.quality = VideoQuality.VIDEO_4K_SDR
+        }
+        maybeSetDefaultQuality(prefs, "projectivy_apple_videos_quality") {
+            ProjectivyApplePrefs.quality = VideoQuality.VIDEO_4K_SDR
+        }
+        maybeSetDefaultQuality(prefs, "projectivy_amazon_videos_quality") {
+            ProjectivyAmazonPrefs.quality = VideoQuality.VIDEO_4K_SDR
+        }
+        maybeSetDefaultQuality(prefs, "projectivy_comm1_videos_quality") {
+            ProjectivyComm1Prefs.quality = VideoQuality.VIDEO_4K_SDR
+        }
+        maybeSetDefaultQuality(prefs, "projectivy_comm2_videos_quality") {
+            ProjectivyComm2Prefs.quality = VideoQuality.VIDEO_4K_SDR
+        }
+    }
+
+    private fun maybeSetDefaultQuality(
+        prefs: SharedPreferences,
+        key: String,
+        update: () -> Unit,
+    ) {
+        if (!prefs.contains(key)) {
+            update()
+        }
     }
 
     private fun initializeSourceModeDefaults() {

@@ -4,6 +4,7 @@ package com.neilturner.aerialviews.utils
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.display.DisplayManager
 import android.os.Build
 import android.util.TypedValue
 import java.util.Locale
@@ -92,6 +93,22 @@ object DeviceHelper {
 
     fun hasHevcSupport(): Boolean = !isEmulator()
 
+    fun supportsUltraHdOutput(context: Context): Boolean = maxDisplayHeight(context) >= UHD_HEIGHT
+
+    private fun maxDisplayHeight(context: Context): Int {
+        val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager ?: return FULL_HD_HEIGHT
+        return displayManager.displays
+            .flatMap { display ->
+                buildList {
+                    display.mode?.physicalHeight?.let(::add)
+                    addAll(display.supportedModes.map { mode -> mode.physicalHeight })
+                }
+            }.maxOrNull() ?: FULL_HD_HEIGHT
+    }
+
     fun hasAvifSupport(): Boolean =
         ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) && !isEmulator()) // Might need to test for TV & 13+ or Phone & 12+
+
+    private const val UHD_HEIGHT = 2160
+    private const val FULL_HD_HEIGHT = 1080
 }

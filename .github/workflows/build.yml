@@ -44,6 +44,8 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          OPEN_WEATHER: ${{ secrets.OPEN_WEATHER }}
+          OPEN_WEATHER_DEBUG: ${{ secrets.OPEN_WEATHER_DEBUG }}
 
       - name: Verify APK signer fingerprint
         run: |

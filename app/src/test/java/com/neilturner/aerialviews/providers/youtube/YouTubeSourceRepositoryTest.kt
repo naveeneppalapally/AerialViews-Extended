@@ -11,6 +11,7 @@ import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -41,6 +42,7 @@ internal class YouTubeSourceRepositoryTest {
                 mutableMapOf(
                     YouTubeSourceRepository.KEY_CACHE_VERSION to 29,
                     YouTubeSourceRepository.KEY_CACHE_SIGNATURE to "1|v29",
+                    YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE to "best|videoOnly=true",
                     YouTubeSourceRepository.KEY_FIRST_LAUNCH to false,
                     YouTubeSourceRepository.KEY_FIRST_LAUNCH_INDEX to 0,
                 ),
@@ -76,6 +78,52 @@ internal class YouTubeSourceRepositoryTest {
         )
     }
 
+    @Test
+    @DisplayName("Should invalidate cached stream URLs when YouTube quality target changes")
+    fun testGetCachedVideosSnapshotInvalidatesStreamUrlsWhenQualityChanges() = runTest {
+        val now = System.currentTimeMillis()
+        val cacheDao = FakeYouTubeCacheDao(buildEntries(now))
+        val watchHistoryDao = FakeYouTubeWatchHistoryDao()
+        val sharedPreferences =
+            InMemorySharedPreferences(
+                mutableMapOf(
+                    YouTubeSourceRepository.KEY_CACHE_VERSION to 29,
+                    YouTubeSourceRepository.KEY_CACHE_SIGNATURE to "1|v29",
+                    YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE to "1080p|videoOnly=true",
+                    YouTubeSourceRepository.KEY_QUALITY to "2160p",
+                    YouTubeSourceRepository.KEY_FIRST_LAUNCH to false,
+                    YouTubeSourceRepository.KEY_FIRST_LAUNCH_INDEX to 0,
+                ),
+            )
+
+        val packageManager = mockk<PackageManager>()
+        val packageInfo = mockk<PackageInfo>()
+        every { packageInfo.longVersionCode } returns 1L
+        every { packageManager.getPackageInfo(any<String>(), any<Int>()) } returns packageInfo
+
+        val context = mockk<Context>()
+        every { context.packageManager } returns packageManager
+        every { context.packageName } returns "com.naveen.aerialviewsplus"
+
+        val repository =
+            YouTubeSourceRepository(
+                context = context,
+                cacheDao = cacheDao,
+                watchHistoryDao = watchHistoryDao,
+                sharedPreferences = sharedPreferences,
+            )
+
+        val cachedEntries = repository.getCachedVideosSnapshot()
+
+        assertTrue(cachedEntries.isNotEmpty())
+        assertTrue(cachedEntries.all { it.streamUrl.isBlank() })
+        assertEquals(cacheDao.countGoodEntries(), cacheDao.invalidatedStreamUrlCount)
+        assertEquals(
+            "2160p|videoOnly=true",
+            sharedPreferences.getString(YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE, null),
+        )
+    }
+
     private fun buildEntries(now: Long): MutableList<YouTubeCacheEntity> =
         (1..200).map { index ->
             YouTubeCacheEntity(
@@ -97,6 +145,8 @@ internal class YouTubeSourceRepositoryTest {
     private class FakeYouTubeCacheDao(
         private val entries: MutableList<YouTubeCacheEntity>,
     ) : YouTubeCacheDao {
+        var invalidatedStreamUrlCount: Int = 0
+
         override fun getAll(): List<YouTubeCacheEntity> = entries.toList()
 
         override fun getAllGood(): List<YouTubeCacheEntity> = entries.filterNot { it.isBad }
@@ -123,6 +173,19 @@ internal class YouTubeSourceRepositoryTest {
             updateEntry(videoId) { entry ->
                 entry.copy(streamUrl = newUrl, streamUrlExpiresAt = newExpiresAt, isBad = false)
             }
+        }
+
+        override fun invalidateAllStreamUrls(): Int {
+            val matchingEntries = entries.filterNot { it.isBad }
+            invalidatedStreamUrlCount = matchingEntries.size
+            entries.replaceAll { entry ->
+                if (entry.isBad) {
+                    entry
+                } else {
+                    entry.copy(streamUrl = "", streamUrlExpiresAt = 0L)
+                }
+            }
+            return invalidatedStreamUrlCount
         }
 
         override fun getOldestCachedAt(): Long? = entries.minOfOrNull { it.searchCachedAt }

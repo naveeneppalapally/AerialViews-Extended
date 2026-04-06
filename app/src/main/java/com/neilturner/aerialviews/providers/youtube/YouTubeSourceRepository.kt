@@ -138,6 +138,8 @@ class YouTubeSourceRepository(
 
     suspend fun getNextVideoUrl(): String =
         withContext(Dispatchers.IO) {
+            ensureStreamQualitySignatureFresh()
+
             consumeAnyPreResolvedEntry()?.let { cachedEntry ->
                 if (!cachedEntry.isBad && isUsableCachedStream(cachedEntry)) {
                     Log.i(TAG, "Using pre-resolved URL instantly")
@@ -172,6 +174,7 @@ class YouTubeSourceRepository(
 
     suspend fun getCachedVideos(): List<YouTubeCacheEntity> =
         withContext(Dispatchers.IO) {
+            ensureStreamQualitySignatureFresh()
             val searchCache = ensureSearchCache()
             prunePlayHistory(searchCache)
             val cachedEntries = buildPlaylistEntries(searchCache)
@@ -181,6 +184,7 @@ class YouTubeSourceRepository(
 
     suspend fun getLocalCachedVideos(): List<YouTubeCacheEntity> =
         withContext(Dispatchers.IO) {
+            ensureStreamQualitySignatureFresh()
             if (isCacheVersionStale() || isCacheSignatureStale()) {
                 return@withContext runCatching { ensureSearchCache() }
                     .getOrElse { exception ->
@@ -208,6 +212,7 @@ class YouTubeSourceRepository(
 
     suspend fun getCachedVideosSnapshot(): List<YouTubeCacheEntity> =
         withContext(Dispatchers.IO) {
+            ensureStreamQualitySignatureFresh()
             val cachedEntries = cacheDao.getAllGood()
             if (cachedEntries.isEmpty()) {
                 updateCachedCount(0)
@@ -449,6 +454,8 @@ class YouTubeSourceRepository(
         preResolvingJob?.cancel()
         preResolvingJob =
             scope.launch(Dispatchers.IO) {
+                ensureStreamQualitySignatureFresh()
+
                 if (cacheDao.countGoodEntries() < COLD_CACHE_SKIP_THRESHOLD) {
                     clearPreResolvedEntry()
                     return@launch
@@ -483,6 +490,8 @@ class YouTubeSourceRepository(
         preResolvingJob?.cancel()
         preResolvingJob =
             scope.launch(Dispatchers.IO) {
+                ensureStreamQualitySignatureFresh()
+
                 try {
                     val entry =
                         cacheDao.getByVideoPageUrl(videoPageUrl)
@@ -517,6 +526,7 @@ class YouTubeSourceRepository(
 
     suspend fun preloadVideoUrl(videoPageUrl: String): String? =
         withContext(Dispatchers.IO) {
+            ensureStreamQualitySignatureFresh()
             peekPreResolvedEntry(videoPageUrl)?.streamUrl?.let { return@withContext it }
 
             cacheDao.getByVideoPageUrl(videoPageUrl)?.takeIf { !it.isBad }?.let { cachedEntry ->
@@ -542,6 +552,7 @@ class YouTubeSourceRepository(
 
     suspend fun preloadProjectivyVideoUrl(videoPageUrl: String): String? =
         withContext(Dispatchers.IO) {
+            ensureStreamQualitySignatureFresh()
             peekPreResolvedEntry(videoPageUrl)?.streamUrl
                 ?.takeIf(::isProjectivyUsableStreamUrl)
                 ?.let { return@withContext it }
@@ -577,6 +588,7 @@ class YouTubeSourceRepository(
 
     suspend fun resolveVideoUrl(videoPageUrl: String): String =
         withContext(Dispatchers.IO) {
+            ensureStreamQualitySignatureFresh()
             consumePreResolvedEntry(videoPageUrl)?.let { cachedEntry ->
                 if (!cachedEntry.isBad && isUsableCachedStream(cachedEntry)) {
                     recordPlayback(cachedEntry)
@@ -614,6 +626,7 @@ class YouTubeSourceRepository(
         replaceExistingCacheOverride: Boolean? = null,
     ): Int =
         withContext(Dispatchers.IO) {
+            ensureStreamQualitySignatureFresh()
             val cachedEntries = cacheDao.getAllGood()
 
             val refreshedEntries =
@@ -1732,6 +1745,30 @@ class YouTubeSourceRepository(
         }
     }
 
+    private fun ensureStreamQualitySignatureFresh() {
+        val currentSignature = currentStreamQualitySignature()
+        val storedSignature = sharedPreferences.getString(KEY_STREAM_QUALITY_SIGNATURE, "").orEmpty()
+        if (storedSignature == currentSignature) {
+            return
+        }
+
+        preResolvingJob?.cancel()
+        clearPreResolvedEntry()
+        val invalidatedCount = cacheDao.invalidateAllStreamUrls()
+        sharedPreferences.edit {
+            putString(KEY_STREAM_QUALITY_SIGNATURE, currentSignature)
+        }
+        Timber.tag(TAG).i(
+            "Invalidated %s cached YouTube stream URLs after quality target changed from \"%s\" to \"%s\"",
+            invalidatedCount,
+            storedSignature,
+            currentSignature,
+        )
+    }
+
+    private fun currentStreamQualitySignature(): String =
+        "${playbackResolutionQuality().lowercase(Locale.US)}|videoOnly=${playbackPreferVideoOnly()}"
+
     private fun cacheSignature(): String {
         val appVersion = context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
         // DO NOT include categorySignature here; category changes should not invalidate the whole cache.
@@ -2596,6 +2633,7 @@ class YouTubeSourceRepository(
         sharedPreferences.edit {
             putString(KEY_COUNT, count.toString())
             putString(KEY_CACHE_SIGNATURE, signature)
+            putString(KEY_STREAM_QUALITY_SIGNATURE, currentStreamQualitySignature())
             putStringSet(KEY_CATEGORY_SNAPSHOT, enabledCategoryKeys().toSet())
             putInt(KEY_CACHE_VERSION, CURRENT_CACHE_VERSION)
             putLong("yt_last_search_at", System.currentTimeMillis())
@@ -3090,6 +3128,7 @@ class YouTubeSourceRepository(
         const val KEY_COUNT = "yt_count"
         const val KEY_CACHE_VERSION = "yt_cache_version"
         const val KEY_CACHE_SIGNATURE = "yt_cache_signature"
+        const val KEY_STREAM_QUALITY_SIGNATURE = "yt_stream_quality_signature"
         const val KEY_PLAY_HISTORY = "yt_play_history"
         const val KEY_LAST_CATEGORY = "yt_last_category"
         const val KEY_THEME_HISTORY = "yt_theme_history"

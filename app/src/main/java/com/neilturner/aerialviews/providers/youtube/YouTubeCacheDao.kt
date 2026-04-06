@@ -45,6 +45,9 @@ interface YouTubeCacheDao {
         newExpiresAt: Long,
     )
 
+    @Query("UPDATE youtube_cache SET streamUrl = '', streamUrlExpiresAt = 0 WHERE isBad = 0")
+    fun invalidateAllStreamUrls(): Int
+
     @Query("SELECT MIN(searchCachedAt) FROM youtube_cache")
     fun getOldestCachedAt(): Long?
 

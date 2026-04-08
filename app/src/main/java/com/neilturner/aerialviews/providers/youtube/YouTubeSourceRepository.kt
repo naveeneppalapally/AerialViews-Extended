@@ -1536,8 +1536,12 @@ class YouTubeSourceRepository(
         }
 
         val finalCandidates = resolvePlaybackCandidates(baseEntries, exclusions)
+        val immediateRepeatSafeCandidates =
+            playbackHistory.lastOrNull()?.let { lastPlayedVideoId ->
+                finalCandidates.filterNot { it.videoId == lastPlayedVideoId }.ifEmpty { finalCandidates }
+            } ?: finalCandidates
 
-        return weightedRandomPick(finalCandidates, playbackHistory, random)
+        return weightedRandomPick(immediateRepeatSafeCandidates, playbackHistory, random)
             ?: cacheDao.getUnwatchedEntry(recentPlaybackCutoff())
             ?: cacheDao.getLeastRecentlyPlayed()
     }

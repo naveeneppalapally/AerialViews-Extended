@@ -111,6 +111,45 @@ internal class NewPipeHelperTest {
     }
 
     @Test
+    @DisplayName("Should prefer a stronger 1440p stream over a weak 4K stream")
+    fun testPreferStrongerLowerResolutionWhen4kBitrateIsWeak() {
+        val selected =
+            NewPipeHelper.selectBestVideoStreamForTest(
+                streams =
+                    listOf(
+                        videoStream(
+                            itag = 401,
+                            codec = "vp09.00.51.08",
+                            resolution = "2160p",
+                            height = 2160,
+                            bitrate = 8_000_000,
+                            mediaFormat = MediaFormat.WEBM,
+                        ),
+                        videoStream(
+                            itag = 271,
+                            codec = "vp09.00.50.08",
+                            resolution = "1440p",
+                            height = 1440,
+                            bitrate = 13_000_000,
+                            mediaFormat = MediaFormat.WEBM,
+                        ),
+                        videoStream(
+                            itag = 137,
+                            codec = "avc1.640028",
+                            resolution = "1080p",
+                            height = 1080,
+                            bitrate = 6_000_000,
+                            mediaFormat = MediaFormat.MPEG_4,
+                        ),
+                    ),
+                targetHeight = 2160,
+                supportedItags = setOf(401, 271, 137),
+            )
+
+        assertEquals(271, selected?.getItag())
+    }
+
+    @Test
     @DisplayName("Should detect explicit text-overlay titles")
     fun testDetectTextOverlayTitle() {
         assertTrue(

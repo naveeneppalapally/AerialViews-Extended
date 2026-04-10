@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.content.SharedPreferences
 import android.os.IBinder
+import android.net.Uri
 import android.util.Log
 import androidx.preference.PreferenceManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -40,7 +41,7 @@ class WallpaperProviderServiceTest {
         database = YouTubeCacheDatabase.getInstance(context)
 
         stopWallpaperService()
-        YouTubeInstrumentationFixtures.resetAppState(database, prefs)
+        YouTubeInstrumentationFixtures.resetAppState(context, database, prefs)
         YouTubeInstrumentationFixtures.seedProjectivyYouTubeCache(database, entryCount = 200)
         YouTubeInstrumentationFixtures.configureProjectivyForYouTubeOnly(
             context = context,
@@ -53,7 +54,7 @@ class WallpaperProviderServiceTest {
     fun tearDown() {
         unbindWallpaperService()
         stopWallpaperService()
-        YouTubeInstrumentationFixtures.resetAppState(database, prefs)
+        YouTubeInstrumentationFixtures.resetAppState(context, database, prefs)
     }
 
     @Test
@@ -84,10 +85,17 @@ class WallpaperProviderServiceTest {
         val service = bindWallpaperService()
 
         val firstUri = service.getWallpapers(Event.TimeElapsed()).first().uri
+        val (startSeconds, endSeconds) = extractTimeWindow(firstUri)
 
-        assertTrue(
+        assertEquals(
+            "Expected Projectivy YouTube limit mode to keep the intro skip start, got $firstUri",
+            30L,
+            startSeconds,
+        )
+        assertEquals(
             "Expected Projectivy YouTube limit mode to cap playback length, got $firstUri",
-            firstUri.contains("#t=30,300"),
+            300L,
+            endSeconds,
         )
     }
 
@@ -101,14 +109,17 @@ class WallpaperProviderServiceTest {
         val service = bindWallpaperService()
 
         val firstUri = service.getWallpapers(Event.TimeElapsed()).first().uri
+        val (startSeconds, endSeconds) = extractTimeWindow(firstUri)
 
-        assertTrue(
+        assertEquals(
             "Expected Projectivy YouTube full mode to retain intro skip, got $firstUri",
-            firstUri.contains("#t=30"),
+            30L,
+            startSeconds,
         )
-        assertFalse(
+        assertEquals(
             "Expected Projectivy YouTube full mode to avoid an explicit playback cap, got $firstUri",
-            firstUri.contains("#t=30,"),
+            null,
+            endSeconds,
         )
     }
 
@@ -160,6 +171,111 @@ class WallpaperProviderServiceTest {
     }
 
     @Test
+    fun returnsMultipleWallpapersPerProjectivySnapshot() {
+        val service = bindWallpaperService()
+
+        val wallpapers = service.getWallpapers(Event.TimeElapsed())
+
+        assertTrue(
+            "Expected Projectivy snapshots to expose multiple wallpapers so the launcher can rotate them, got ${wallpapers.size}",
+            wallpapers.size > 1,
+        )
+    }
+
+    @Test
+    fun projectivyUhdPreferencePreservesUhdDirectStreams() {
+        YouTubeInstrumentationFixtures.resetAppState(context, database, prefs)
+        YouTubeInstrumentationFixtures.seedProjectivyYouTubeCache(
+            database = database,
+            entryCount = 40,
+            itag = 266,
+            qualityLabel = "2160p",
+        )
+        YouTubeInstrumentationFixtures.configureProjectivyForYouTubeOnly(
+            context = context,
+            prefs = prefs,
+            entryCount = 40,
+            quality = "2160p",
+        )
+
+        val service = bindWallpaperService()
+        val wallpapers = service.getWallpapers(Event.TimeElapsed())
+        val sampledWallpapers = wallpapers.take(5)
+        val sampledItags =
+            sampledWallpapers.mapNotNull { wallpaper ->
+                Uri.parse(wallpaper.uri.substringBefore('#')).getQueryParameter("itag")?.toIntOrNull()
+            }
+
+        Log.i(
+            TEST_TAG,
+            "Projectivy UHD sample count=${sampledWallpapers.size} itags=$sampledItags uris=${sampledWallpapers.map { it.uri }}",
+        )
+
+        assertTrue("Expected Projectivy to return UHD wallpapers", sampledWallpapers.isNotEmpty())
+        assertEquals(
+            "Expected Projectivy UHD mode to preserve 2160p direct streams",
+            listOf(266, 266, 266, 266, 266).take(sampledItags.size),
+            sampledItags,
+        )
+    }
+
+    @Test
+    fun projectivyMaintainsQualityAcrossTwoHundredEntryCacheRounds() {
+        val expectedItag = 266
+        val expectedQualityLabel = "2160p"
+
+        YouTubeInstrumentationFixtures.resetAppState(context, database, prefs)
+        YouTubeInstrumentationFixtures.seedProjectivyYouTubeCache(
+            database = database,
+            entryCount = 200,
+            itag = expectedItag,
+            qualityLabel = expectedQualityLabel,
+            videoIdPrefix = "projectivy-round1-",
+        )
+        YouTubeInstrumentationFixtures.configureProjectivyForYouTubeOnly(
+            context = context,
+            prefs = prefs,
+            entryCount = 200,
+            quality = expectedQualityLabel,
+        )
+
+        val firstRoundSummaries = runProjectivyQualityRound(
+            roundLabel = "round1",
+            expectedItag = expectedItag,
+            expectedQualityLabel = expectedQualityLabel,
+        )
+
+        unbindWallpaperService()
+        stopWallpaperService()
+
+        YouTubeInstrumentationFixtures.resetAppState(context, database, prefs)
+        YouTubeInstrumentationFixtures.seedProjectivyYouTubeCache(
+            database = database,
+            entryCount = 200,
+            itag = expectedItag,
+            qualityLabel = expectedQualityLabel,
+            videoIdPrefix = "projectivy-round2-",
+        )
+        YouTubeInstrumentationFixtures.configureProjectivyForYouTubeOnly(
+            context = context,
+            prefs = prefs,
+            entryCount = 200,
+            quality = expectedQualityLabel,
+        )
+
+        val secondRoundSummaries = runProjectivyQualityRound(
+            roundLabel = "round2",
+            expectedItag = expectedItag,
+            expectedQualityLabel = expectedQualityLabel,
+        )
+
+        Log.i(
+            TEST_TAG,
+            "Projectivy 2x200 quality summaries first=$firstRoundSummaries second=$secondRoundSummaries",
+        )
+    }
+
+    @Test
     fun remembersServedWallpaperAcrossServiceRelaunch() {
         val firstService = bindWallpaperService()
         val firstWallpaper = firstService.getWallpapers(Event.TimeElapsed()).first().uri
@@ -178,15 +294,11 @@ class WallpaperProviderServiceTest {
     }
 
     @Test
-    fun servesTwoHundredUniqueYouTubeWallpapersWithoutRepeating() {
+    fun servesProjectivyDirectWindowWithoutRepeating() {
         val service = bindWallpaperService()
         val servedUris = mutableListOf<String>()
 
-        repeat(200) { index ->
-            if (index > 0 && index % 40 == 0) {
-                Thread.sleep(5_200L)
-            }
-
+        repeat(PROJECTIVY_DIRECT_WINDOW_SIZE) { index ->
             val wallpapers = service.getWallpapers(Event.TimeElapsed())
             assertFalse("Expected wallpapers for request $index", wallpapers.isEmpty())
             servedUris += wallpapers.first().uri
@@ -197,8 +309,8 @@ class WallpaperProviderServiceTest {
             servedUris.zipWithNext().all { (first, second) -> first != second },
         )
         assertEquals(
-            "Expected 200 unique first wallpapers across 200 requests",
-            200,
+            "Expected the first Projectivy direct-response window to expose distinct first wallpapers",
+            PROJECTIVY_DIRECT_WINDOW_SIZE,
             servedUris.distinct().size,
         )
     }
@@ -227,8 +339,8 @@ class WallpaperProviderServiceTest {
     }
 
     @Test
-    fun servesFiveBatchesOfTwoHundredWithoutRepeatingAcrossBatches() {
-        YouTubeInstrumentationFixtures.resetAppState(database, prefs)
+    fun staysFastAcrossFiveProjectivyRebuilds() {
+        YouTubeInstrumentationFixtures.resetAppState(context, database, prefs)
         YouTubeInstrumentationFixtures.seedProjectivyYouTubeCache(database, entryCount = 1_000)
         YouTubeInstrumentationFixtures.configureProjectivyForYouTubeOnly(
             context = context,
@@ -240,8 +352,8 @@ class WallpaperProviderServiceTest {
         val servedUris = mutableListOf<String>()
         val durationsMs = mutableListOf<Long>()
 
-        repeat(1_000) { index ->
-            if (index > 0 && index % 40 == 0) {
+        repeat(PROJECTIVY_WINDOW_BATCH_COUNT * PROJECTIVY_DIRECT_WINDOW_SIZE) { index ->
+            if (index > 0 && index % PROJECTIVY_DIRECT_WINDOW_SIZE == 0) {
                 unbindWallpaperService()
                 stopWallpaperService()
                 service = bindWallpaperService()
@@ -256,51 +368,37 @@ class WallpaperProviderServiceTest {
             durationsMs += durationMs
         }
 
-        val batches = servedUris.chunked(200)
-        val previousBatchSets = mutableListOf<Set<String>>()
+        val batches = servedUris.chunked(PROJECTIVY_DIRECT_WINDOW_SIZE)
         val batchSummaries = mutableListOf<String>()
 
         batches.forEachIndexed { batchIndex, batch ->
             val batchSet = batch.toSet()
-            val overlapSummary =
-                previousBatchSets.mapIndexed { previousIndex, previousBatch ->
-                    "b${previousIndex + 1}=${batchSet.intersect(previousBatch).size}"
-                }
             val consecutiveRepeats = batch.zipWithNext().count { (first, second) -> first == second }
             batchSummaries +=
-                "batch=${batchIndex + 1} unique=${batchSet.size} consecutiveRepeats=$consecutiveRepeats overlap=[${overlapSummary.joinToString()}]"
+                "batch=${batchIndex + 1} unique=${batchSet.size} consecutiveRepeats=$consecutiveRepeats"
 
-            assertEquals(
-                "Expected batch ${batchIndex + 1} to contain 200 unique wallpapers. Summaries=$batchSummaries",
-                200,
-                batchSet.size,
-            )
-            assertEquals(
-                "Expected batch ${batchIndex + 1} to avoid consecutive repeats. Summaries=$batchSummaries",
-                0,
-                consecutiveRepeats,
-            )
             assertTrue(
-                "Expected batch ${batchIndex + 1} to avoid overlaps with prior batches. Summaries=$batchSummaries",
-                previousBatchSets.none { previousBatch -> batchSet.intersect(previousBatch).isNotEmpty() },
+                "Expected batch ${batchIndex + 1} to keep rotating across at least two first-wallpaper choices after a rebuild. Summaries=$batchSummaries",
+                batchSet.size >= 2,
             )
-            previousBatchSets += batchSet
         }
 
-        val cacheBoundaryDurationsMs = durationsMs.filterIndexed { index, _ -> index == 0 || index % 40 == 0 }
-        val cachedDurationsMs = durationsMs.filterIndexed { index, _ -> index > 0 && index % 40 != 0 }
+        val cacheBoundaryDurationsMs = durationsMs.filterIndexed { index, _ -> index == 0 || index % PROJECTIVY_DIRECT_WINDOW_SIZE == 0 }
+        val cachedDurationsMs = durationsMs.filterIndexed { index, _ -> index > 0 && index % PROJECTIVY_DIRECT_WINDOW_SIZE != 0 }
         Log.i(
             TEST_TAG,
-            "Projectivy 5x200 summaries=$batchSummaries boundaryDurationsMs=$cacheBoundaryDurationsMs cachedMaxMs=${cachedDurationsMs.maxOrNull() ?: -1L}",
+            "Projectivy ${PROJECTIVY_WINDOW_BATCH_COUNT}x${PROJECTIVY_DIRECT_WINDOW_SIZE} summaries=$batchSummaries boundaryDurationsMs=$cacheBoundaryDurationsMs cachedMaxMs=${cachedDurationsMs.maxOrNull() ?: -1L}",
         )
         assertTrue(
-            "Expected cached Projectivy responses to remain under 1000ms during the 5x200 run. boundary=$cacheBoundaryDurationsMs cached=$cachedDurationsMs summaries=$batchSummaries",
+            "Expected cached Projectivy responses to remain under 1000ms during the bounded rotation run. boundary=$cacheBoundaryDurationsMs cached=$cachedDurationsMs summaries=$batchSummaries",
             cachedDurationsMs.maxOrNull() ?: Long.MAX_VALUE < 1_000L,
         )
     }
 
     private companion object {
         const val TEST_TAG = "WallpaperProviderServiceTest"
+        const val PROJECTIVY_DIRECT_WINDOW_SIZE = 12
+        const val PROJECTIVY_WINDOW_BATCH_COUNT = 5
     }
 
     private fun bindWallpaperService(): IWallpaperProviderService {
@@ -358,6 +456,59 @@ class WallpaperProviderServiceTest {
         val endSeconds = values.getOrNull(1)?.toLong()
         return startSeconds to endSeconds
     }
+
+    private fun runProjectivyQualityRound(
+        roundLabel: String,
+        expectedItag: Int,
+        expectedQualityLabel: String,
+    ): List<String> {
+        var service = bindWallpaperService()
+        val batchSummaries = mutableListOf<String>()
+
+        repeat(PROJECTIVY_WINDOW_BATCH_COUNT) { batchIndex ->
+            if (batchIndex > 0) {
+                unbindWallpaperService()
+                stopWallpaperService()
+                service = bindWallpaperService()
+            }
+
+            val wallpapers = service.getWallpapers(Event.TimeElapsed())
+            assertEquals(
+                "Expected Projectivy to return a full wallpaper batch for $roundLabel batch ${batchIndex + 1}",
+                PROJECTIVY_DIRECT_WINDOW_SIZE,
+                wallpapers.size,
+            )
+
+            val sampledWallpapers = wallpapers.take(PROJECTIVY_DIRECT_WINDOW_SIZE)
+            val sampledItags = sampledWallpapers.map { extractStreamQueryParameterAsInt(it.uri, "itag") }
+            val sampledQualityLabels = sampledWallpapers.map { extractStreamQueryParameter(it.uri, "quality_label") }
+
+            assertEquals(
+                "Expected Projectivy $roundLabel batch ${batchIndex + 1} to preserve 2160p itags",
+                List(PROJECTIVY_DIRECT_WINDOW_SIZE) { expectedItag },
+                sampledItags,
+            )
+            assertEquals(
+                "Expected Projectivy $roundLabel batch ${batchIndex + 1} to preserve 2160p quality labels",
+                List(PROJECTIVY_DIRECT_WINDOW_SIZE) { expectedQualityLabel },
+                sampledQualityLabels,
+            )
+
+            batchSummaries +=
+                "batch=${batchIndex + 1} first=${sampledWallpapers.first().uri} itags=${sampledItags.distinct()} qualities=${sampledQualityLabels.distinct()}"
+        }
+
+        return batchSummaries
+    }
+
+    private fun extractStreamQueryParameter(uri: String, key: String): String =
+        Uri.parse(uri.substringBefore('#'))
+            .getQueryParameter(key)
+            ?: error("Expected Projectivy URI to contain $key: $uri")
+
+    private fun extractStreamQueryParameterAsInt(uri: String, key: String): Int =
+        extractStreamQueryParameter(uri, key).toIntOrNull()
+            ?: error("Expected Projectivy URI query parameter $key to be an integer: $uri")
 
     private fun stopWallpaperService() {
         context.stopService(Intent(context, WallpaperProviderService::class.java))

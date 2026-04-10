@@ -408,18 +408,23 @@ class ScreenController(
 
         preloadJob =
             mainScope.launch {
-                val resolvedUrl =
+                val resolvedPlayback =
                     withContext(Dispatchers.IO) {
-                        YouTubeFeature.repository(context).preloadVideoUrl(sourceUri)
+                        YouTubeFeature.repository(context).preloadVideoPlayback(sourceUri)
                     }
 
-                if (resolvedUrl == null) {
+                if (resolvedPlayback == null) {
                     Timber.w("Failed to preload next YouTube media URL before transition: %s", sourceUri)
                     return@launch
                 }
 
                 preloadedNextSourceUri = sourceUri
-                preloadedNextMedia = upcomingMedia.copy(uri = resolvedUrl.toUri())
+                preloadedNextMedia =
+                    upcomingMedia.copy(
+                        uri = resolvedPlayback.videoUrl.toUri(),
+                        streamUrl = resolvedPlayback.videoUrl,
+                        audioStreamUrl = resolvedPlayback.audioUrl,
+                    )
                 Timber.i("Preloaded next YouTube media URL for seamless transition: %s", sourceUri)
             }
     }

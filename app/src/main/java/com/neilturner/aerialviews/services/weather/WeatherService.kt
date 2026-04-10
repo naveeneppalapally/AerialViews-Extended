@@ -3,8 +3,10 @@ package com.neilturner.aerialviews.services.weather
 import android.content.Context
 import androidx.core.os.bundleOf
 import com.neilturner.aerialviews.BuildConfig
+import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
 import com.neilturner.aerialviews.services.weather.NetworkHelpers.buildOkHttpClient
+import com.neilturner.aerialviews.utils.GeocoderHelper
 import com.neilturner.aerialviews.utils.FirebaseHelper
 import com.neilturner.aerialviews.utils.JsonHelper.buildSerializer
 import com.neilturner.aerialviews.utils.TimeHelper.calculateTimeAgo
@@ -48,6 +50,21 @@ class WeatherService(
     }
 
     suspend fun lookupLocation(query: String): List<LocationResponse> =
+        lookupLocationFromOpenWeather(query).ifEmpty {
+            Timber.i("OpenWeather location lookup returned no results, falling back to Android Geocoder")
+            lookupLocationWithGeocoder(query)
+        }
+
+    suspend fun lookupLocationByCoordinates(
+        lat: Double,
+        lon: Double,
+    ): List<LocationResponse> =
+        lookupLocationByCoordinatesFromOpenWeather(lat, lon).ifEmpty {
+            Timber.i("OpenWeather reverse lookup returned no results, falling back to Android Geocoder")
+            lookupLocationByCoordinatesWithGeocoder(lat, lon)
+        }
+
+    private suspend fun lookupLocationFromOpenWeather(query: String): List<LocationResponse> =
         try {
             val key = BuildConfig.OPEN_WEATHER
             val language = WeatherLanguage.getLanguageCode(context)
@@ -83,7 +100,7 @@ class WeatherService(
             emptyList()
         }
 
-    suspend fun lookupLocationByCoordinates(
+    private suspend fun lookupLocationByCoordinatesFromOpenWeather(
         lat: Double,
         lon: Double,
     ): List<LocationResponse> =
@@ -121,6 +138,38 @@ class WeatherService(
             delay(errorDelay)
             emptyList()
         }
+
+    private suspend fun lookupLocationWithGeocoder(query: String): List<LocationResponse> =
+        GeocoderHelper.forwardGeocode(context, query).map { place ->
+            LocationResponse(
+                name = place.name,
+                lat = place.latitude,
+                lon = place.longitude,
+                country = place.country.orEmpty(),
+                state = place.state,
+            )
+        }
+
+    private suspend fun lookupLocationByCoordinatesWithGeocoder(
+        lat: Double,
+        lon: Double,
+    ): List<LocationResponse> =
+        GeocoderHelper.reverseGeocode(context, lat, lon)
+            ?.let { geocodedLocation ->
+                listOf(
+                    LocationResponse(
+                        name =
+                            geocodedLocation.city
+                                ?: geocodedLocation.state
+                                ?: geocodedLocation.country
+                                ?: context.getString(R.string.location_custom_name_default),
+                        lat = lat,
+                        lon = lon,
+                        country = geocodedLocation.country.orEmpty(),
+                        state = geocodedLocation.state,
+                    ),
+                )
+            }.orEmpty()
 
     fun startUpdates() {
         updateJob?.cancel()

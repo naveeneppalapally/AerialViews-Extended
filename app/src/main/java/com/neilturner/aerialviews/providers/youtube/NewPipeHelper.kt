@@ -25,6 +25,7 @@ import org.schabi.newpipe.extractor.linkhandler.LinkHandler
 import org.schabi.newpipe.extractor.linkhandler.SearchQueryHandler
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
+import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.VideoStream
 import java.net.URLEncoder
@@ -42,6 +43,11 @@ object NewPipeHelper {
             "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     private const val REFERER = "https://www.youtube.com/"
     private const val ORIGIN = "https://www.youtube.com"
+
+    data class PlaybackStreams(
+        val videoUrl: String,
+        val audioUrl: String = "",
+    )
 
     @Volatile
     private var initialized = false
@@ -98,17 +104,36 @@ object NewPipeHelper {
         preferredQuality: String = "1080p",
         preferVideoOnly: Boolean = false,
         allowAdaptiveManifests: Boolean = true,
+        preferAdaptiveManifests: Boolean = false,
     ): String =
+        extractPlaybackStreams(
+            videoPageUrl = videoPageUrl,
+            context = context,
+            preferredQuality = preferredQuality,
+            preferVideoOnly = preferVideoOnly,
+            allowAdaptiveManifests = allowAdaptiveManifests,
+            preferAdaptiveManifests = preferAdaptiveManifests,
+        ).videoUrl
+
+    suspend fun extractPlaybackStreams(
+        videoPageUrl: String,
+        context: Context,
+        preferredQuality: String = "1080p",
+        preferVideoOnly: Boolean = false,
+        allowAdaptiveManifests: Boolean = true,
+        preferAdaptiveManifests: Boolean = false,
+    ): PlaybackStreams =
         withContext(Dispatchers.IO) {
             init()
 
             try {
-                loadPlayableStreamUrl(
+                loadPlayableStreamUrls(
                     videoPageUrl = videoPageUrl,
                     context = context,
                     preferredQuality = preferredQuality,
                     preferVideoOnly = preferVideoOnly,
                     allowAdaptiveManifests = allowAdaptiveManifests,
+                    preferAdaptiveManifests = preferAdaptiveManifests,
                 )
             } catch (exception: AgeRestrictedContentException) {
                 Timber.tag(TAG).d("Age-restricted stream rejected: %s", videoPageUrl)
@@ -216,13 +241,14 @@ object NewPipeHelper {
             isLikelySyntheticWallpaperTitle(titleLower)
     }
 
-    private fun loadPlayableStreamUrl(
+    private fun loadPlayableStreamUrls(
         videoPageUrl: String,
         context: Context,
         preferredQuality: String,
         preferVideoOnly: Boolean,
         allowAdaptiveManifests: Boolean,
-    ): String {
+        preferAdaptiveManifests: Boolean,
+    ): PlaybackStreams {
         val service = NewPipe.getService("YouTube")
         val videoId =
             extractVideoId(videoPageUrl)
@@ -245,26 +271,30 @@ object NewPipeHelper {
         return selectBestStreamUrl(
             progressiveStreams = streamExtractor.videoStreams,
             videoOnlyStreams = streamExtractor.videoOnlyStreams,
+            audioStreams = streamExtractor.audioStreams,
             dashUrl = streamExtractor.dashMpdUrl,
             hlsUrl = streamExtractor.hlsUrl,
             screenHeight = screenHeight,
             preferredQuality = preferredQuality,
             preferVideoOnly = preferVideoOnly,
             allowAdaptiveManifests = allowAdaptiveManifests,
-        )?.takeIf(String::isNotBlank)
+            preferAdaptiveManifests = preferAdaptiveManifests,
+        )?.takeIf { playback -> playback.videoUrl.isNotBlank() }
             ?: throw YouTubeExtractionException("No playable stream found for $videoPageUrl")
     }
 
     private fun selectBestStreamUrl(
         progressiveStreams: List<VideoStream>,
         videoOnlyStreams: List<VideoStream>,
+        audioStreams: List<AudioStream>,
         dashUrl: String?,
         hlsUrl: String?,
         screenHeight: Int,
         preferredQuality: String,
         preferVideoOnly: Boolean,
         allowAdaptiveManifests: Boolean,
-    ): String? {
+        preferAdaptiveManifests: Boolean,
+    ): PlaybackStreams? {
         val effectiveScreenHeight =
             if (isAmlogicDevice() && screenHeight in 1 until 1080) {
                 1080
@@ -304,23 +334,27 @@ object NewPipeHelper {
             if (primaryStreams === playableVideoOnlyStreams) "videoOnlyPreferred" else "progressivePreferred",
         )
         val primarySelection = selectPreferredStream(primaryStreams, targetHeight)
-        if (shouldPreferDashManifest(dashUrl, primarySelection, targetHeight)) {
+        if (shouldPreferDashManifest(dashUrl, primarySelection, targetHeight, allowAdaptiveManifests, preferAdaptiveManifests)) {
             Log.i(TAG, "STREAM PICKED: DASH manifest preferred for ${targetHeight}p over ${describeStream(primarySelection!!)}")
-            return dashUrl
+            return PlaybackStreams(videoUrl = checkNotNull(dashUrl))
         }
         primarySelection?.let { stream ->
-            logSelectedStream(stream)
-            return stream.getContent()
+            playbackStreamsFor(stream, audioStreams)?.let { playback ->
+                logSelectedStream(stream)
+                return playback
+            }
         }
 
         val secondarySelection = selectPreferredStream(secondaryStreams, targetHeight)
-        if (shouldPreferDashManifest(dashUrl, secondarySelection, targetHeight)) {
+        if (shouldPreferDashManifest(dashUrl, secondarySelection, targetHeight, allowAdaptiveManifests, preferAdaptiveManifests)) {
             Log.i(TAG, "STREAM PICKED: DASH manifest preferred for ${targetHeight}p over ${describeStream(secondarySelection!!)}")
-            return dashUrl
+            return PlaybackStreams(videoUrl = checkNotNull(dashUrl))
         }
         secondarySelection?.let { stream ->
-            logSelectedStream(stream)
-            return stream.getContent()
+            playbackStreamsFor(stream, audioStreams)?.let { playback ->
+                logSelectedStream(stream)
+                return playback
+            }
         }
 
         return playableProgressiveStreams
@@ -329,7 +363,7 @@ object NewPipeHelper {
                 .firstOrNull()
                 ?.let { stream ->
                 Log.w(TAG, "STREAM FALLBACK 1 (quality floor ${minimumFallbackHeight}p): ${describeStream(stream)}")
-                stream.getContent()
+                PlaybackStreams(videoUrl = stream.getContent())
             }
             ?: playableAnyStreams
                 .filter { stream -> streamHeight(stream) >= minimumFallbackHeight }
@@ -337,13 +371,15 @@ object NewPipeHelper {
                 .firstOrNull()
                 ?.let { stream ->
                 Log.w(TAG, "STREAM FALLBACK 2 (quality floor ${minimumFallbackHeight}p): ${describeStream(stream)}")
-                stream.getContent()
+                playbackStreamsFor(stream, audioStreams) ?: PlaybackStreams(videoUrl = stream.getContent())
             }
-            ?: dashUrl?.takeIf { allowAdaptiveManifests && it.isNotBlank() }?.also {
+            ?: dashUrl?.takeIf { allowAdaptiveManifests && it.isNotBlank() }?.let {
                 Log.w(TAG, "STREAM FALLBACK 3 (dash): using DASH manifest URL")
+                PlaybackStreams(videoUrl = it)
             }
-            ?: hlsUrl?.takeIf { allowAdaptiveManifests && it.isNotBlank() }?.also {
+            ?: hlsUrl?.takeIf { allowAdaptiveManifests && it.isNotBlank() }?.let {
                 Log.w(TAG, "STREAM FALLBACK 4 (hls): using HLS manifest URL")
+                PlaybackStreams(videoUrl = it)
             }
             ?: run {
                 Timber.tag(TAG).w(
@@ -360,6 +396,30 @@ object NewPipeHelper {
             }
     }
 
+    private fun playbackStreamsFor(
+        stream: VideoStream,
+        audioStreams: List<AudioStream>,
+    ): PlaybackStreams? {
+        if (!stream.isVideoOnly()) {
+            return PlaybackStreams(videoUrl = stream.getContent())
+        }
+
+        val audioStream = selectBestAudioStream(audioStreams)
+        if (audioStream == null) {
+            Timber.tag(TAG).w("No audio-only stream available to merge with %s", describeStream(stream))
+            return null
+        }
+
+        Log.i(
+            TAG,
+            "AUDIO PICKED: codec=${audioStream.getCodec()} itag=${audioStream.getItag()} bitrate=${audioBitrate(audioStream)}",
+        )
+        return PlaybackStreams(
+            videoUrl = stream.getContent(),
+            audioUrl = audioStream.getContent(),
+        )
+    }
+
     private fun selectPreferredStream(
         streams: List<VideoStream>,
         targetHeight: Int,
@@ -371,11 +431,27 @@ object NewPipeHelper {
         dashUrl: String?,
         selectedStream: VideoStream?,
         targetHeight: Int,
+        allowAdaptiveManifests: Boolean,
+        preferAdaptiveManifests: Boolean,
     ): Boolean {
-        if (dashUrl.isNullOrBlank() || selectedStream == null || targetHeight < MIN_DASH_PREFERRED_HEIGHT) {
+        if (
+            !allowAdaptiveManifests ||
+            !preferAdaptiveManifests ||
+            dashUrl.isNullOrBlank() ||
+            selectedStream == null ||
+            targetHeight < MIN_DASH_PREFERRED_HEIGHT
+        ) {
             return false
         }
-        return false
+
+        val selectedHeight = streamHeight(selectedStream)
+        val selectedCodec = selectedStream.getCodec().orEmpty().lowercase(Locale.US)
+        val selectedNeedsAdaptiveHelp =
+            selectedHeight < targetHeight ||
+                !meetsBitrateFloor(selectedStream) ||
+                (selectedHeight >= 2160 && (selectedCodec.contains("vp9") || selectedCodec.contains("av01") || selectedCodec.contains("av1")))
+
+        return selectedNeedsAdaptiveHelp
     }
 
     private fun selectStreamContent(
@@ -462,6 +538,32 @@ object NewPipeHelper {
             },
         )
 
+    internal fun selectBestAudioStreamForTest(audioStreams: List<AudioStream>): AudioStream? =
+        selectBestAudioStream(audioStreams)
+
+    private fun selectBestAudioStream(audioStreams: List<AudioStream>): AudioStream? =
+        audioStreams
+            .filter { stream -> stream.isUrl() && stream.getContent().isNotBlank() }
+            .sortedWith(audioStreamComparator())
+            .firstOrNull()
+
+    private fun audioStreamComparator(): Comparator<AudioStream> =
+        compareBy<AudioStream> { audioCodecPriorityIndex(it) }
+            .thenByDescending(::audioBitrate)
+
+    private fun audioCodecPriorityIndex(stream: AudioStream): Int {
+        val codec = stream.getCodec().orEmpty().lowercase(Locale.US)
+        return when {
+            codec.contains("mp4a") || codec.contains("aac") -> 0
+            codec.contains("opus") -> 1
+            codec.contains("vorbis") -> 2
+            else -> 3
+        }
+    }
+
+    private fun audioBitrate(stream: AudioStream): Int =
+        maxOf(stream.getBitrate(), stream.getAverageBitrate())
+
     private fun pickBestFromSupportTiers(
         candidates: List<VideoStream>,
         targetHeight: Int,
@@ -505,13 +607,13 @@ object NewPipeHelper {
         preferredHeight: Int,
         supportResolver: (CodecFamily, VideoStream) -> DecoderSupport,
     ): VideoStream? {
-        selectBestStreamAtResolution(streams, preferredHeight, supportResolver)?.let { return it }
-
-        RESOLUTION_PRIORITY.forEach { resolution ->
-            if (resolution > preferredHeight) {
-                return@forEach
-            }
-            selectBestStreamAtResolution(streams, resolution, supportResolver)?.let { return it }
+        resolutionPriority(preferredHeight).forEach { resolution ->
+            selectBestStreamAtResolution(
+                streams = streams,
+                resolution = resolution,
+                supportResolver = supportResolver,
+                requireBitrateFloor = true,
+            )?.let { return it }
         }
 
         Timber.tag(TAG).w("No preferred YouTube stream quality found, using best available fallback")
@@ -522,14 +624,26 @@ object NewPipeHelper {
         streams: List<VideoStream>,
         resolution: Int,
         supportResolver: (CodecFamily, VideoStream) -> DecoderSupport,
+        requireBitrateFloor: Boolean,
     ): VideoStream? {
         val atResolution = streams.filter { streamHeight(it) == resolution }
         if (atResolution.isEmpty()) {
             return null
         }
 
+        val candidates =
+            if (requireBitrateFloor) {
+                atResolution.filter(::meetsBitrateFloor)
+            } else {
+                atResolution
+            }
+
+        if (candidates.isEmpty()) {
+            return null
+        }
+
         CODEC_PRIORITY.forEach { codec ->
-            atResolution
+            candidates
                 .filter { stream ->
                     stream.getCodec().orEmpty().lowercase(Locale.US).contains(codec)
                 }.sortedWith(streamQualityComparator(supportResolver))
@@ -537,8 +651,14 @@ object NewPipeHelper {
                     ?.let { return it }
         }
 
-        return atResolution.sortedWith(streamQualityComparator(supportResolver)).firstOrNull()
+        return candidates.sortedWith(streamQualityComparator(supportResolver)).firstOrNull()
     }
+
+    private fun resolutionPriority(preferredHeight: Int): List<Int> =
+        buildList {
+            add(preferredHeight)
+            addAll(RESOLUTION_PRIORITY.filter { it < preferredHeight })
+        }.distinct()
 
     private fun streamHeight(stream: VideoStream): Int {
         if (stream.getHeight() > 0) {

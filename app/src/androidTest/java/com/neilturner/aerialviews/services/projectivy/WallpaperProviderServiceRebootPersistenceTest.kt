@@ -45,7 +45,7 @@ class WallpaperProviderServiceRebootPersistenceTest {
 
     @Test
     fun primeWallpaperHistoryForRebootValidation() {
-        YouTubeInstrumentationFixtures.resetAppState(database, prefs)
+        YouTubeInstrumentationFixtures.resetAppState(context, database, prefs)
         YouTubeInstrumentationFixtures.configureProjectivyForYouTubeOnly(
             context = context,
             prefs = prefs,
@@ -82,7 +82,7 @@ class WallpaperProviderServiceRebootPersistenceTest {
             firstWallpaperAfterReboot,
         )
 
-        YouTubeInstrumentationFixtures.resetAppState(database, prefs)
+        YouTubeInstrumentationFixtures.resetAppState(context, database, prefs)
     }
 
     private fun bindWallpaperService(): IWallpaperProviderService {

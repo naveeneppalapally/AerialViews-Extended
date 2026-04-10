@@ -154,8 +154,13 @@ class WallpaperProviderService : Service() {
         }
         val ordered = reorderWallpapersForNovelty(wallpapers)
         val nextWallpaper = ordered.firstOrNull() ?: return emptyList()
+        val responseWallpapers = ordered.take(PROJECTIVY_RESPONSE_WALLPAPER_LIMIT)
+        Log.i(
+            "WallpaperProviderService",
+            "Projectivy serving wallpaper key=${wallpaperHistoryKey(nextWallpaper.uri)} responseCount=${responseWallpapers.size} uri=${nextWallpaper.uri}",
+        )
         recordServedWallpaper(nextWallpaper.uri)
-        return listOf(nextWallpaper)
+        return responseWallpapers
     }
 
     private fun reorderWallpapersForNovelty(wallpapers: List<Wallpaper>): List<Wallpaper> {
@@ -262,6 +267,17 @@ class WallpaperProviderService : Service() {
 
     private fun loadServedWallpaperHistory() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(applicationContext)
+        val storedVersion = prefs.getInt(KEY_PROJECTIVY_SERVED_WALLPAPER_HISTORY_VERSION, 0)
+        if (storedVersion != PROJECTIVY_SERVED_WALLPAPER_HISTORY_VERSION) {
+            synchronized(serveHistoryLock) {
+                servedWallpaperKeys.clear()
+                serveRotationCursor = 0
+                lastRecordedYouTubeKey = ""
+            }
+            persistServedWallpaperHistory()
+            return
+        }
+
         val raw =
             prefs.getString(KEY_PROJECTIVY_SERVED_WALLPAPER_HISTORY, "").orEmpty()
         val loaded =
@@ -282,6 +298,10 @@ class WallpaperProviderService : Service() {
         PreferenceManager
             .getDefaultSharedPreferences(applicationContext)
             .edit()
+            .putInt(
+                KEY_PROJECTIVY_SERVED_WALLPAPER_HISTORY_VERSION,
+                PROJECTIVY_SERVED_WALLPAPER_HISTORY_VERSION,
+            )
             .putString(
                 KEY_PROJECTIVY_SERVED_WALLPAPER_HISTORY,
                 servedWallpaperKeys.joinToString(SERVED_WALLPAPER_SEPARATOR),
@@ -301,6 +321,7 @@ class WallpaperProviderService : Service() {
 
     private fun wallpaperHistoryKey(uri: String): String {
         val parsed = runCatching { Uri.parse(uri) }.getOrNull()
+        parsed?.let { stableProjectivyHistoryKey(it)?.let { key -> return key } }
         val host = parsed?.host.orEmpty().lowercase()
         if (host.contains("youtube.com")) {
             parsed?.getQueryParameter("v")
@@ -320,6 +341,46 @@ class WallpaperProviderService : Service() {
         }
         return uri.substringBefore('#').substringBefore('?').ifBlank { uri }
     }
+
+    private fun stableProjectivyHistoryKey(parsed: Uri): String? {
+        parsed.getQueryParameter("yt")
+            ?.takeIf(String::isNotBlank)
+            ?.let { return "yt:${it.trim()}" }
+
+        parsed.getQueryParameter("videoId")
+            ?.takeIf(String::isNotBlank)
+            ?.let { return "yt:${it.trim()}" }
+
+        parsed.fragment
+            ?.takeIf(String::isNotBlank)
+            ?.let { fragment ->
+                parseFragmentParameter(fragment, "yt")?.let { return "yt:$it" }
+                parseFragmentParameter(fragment, "videoId")?.let { return "yt:$it" }
+            }
+
+        return null
+    }
+
+    private fun parseFragmentParameter(
+        rawFragment: String,
+        key: String,
+    ): String? =
+        rawFragment
+            .split('&')
+            .asSequence()
+            .mapNotNull { part ->
+                val pieces = part.split('=', limit = 2)
+                if (pieces.size != 2) {
+                    return@mapNotNull null
+                }
+                val parameterKey = pieces[0].trim()
+                val parameterValue = Uri.decode(pieces[1].trim())
+                if (parameterKey.equals(key, ignoreCase = true) && parameterValue.isNotBlank()) {
+                    parameterValue
+                } else {
+                    null
+                }
+            }.firstOrNull()
 
     private fun mediaHistoryKey(media: AerialMedia): String = wallpaperHistoryKey(wallpaperUri(media))
 
@@ -477,12 +538,16 @@ class WallpaperProviderService : Service() {
         const val YOUTUBE_PROJECTIVY_INTRO_SKIP_MIN_DURATION_SECONDS = 60L
         const val YOUTUBE_PROJECTIVY_INTRO_SKIP_END_GUARD_SECONDS = 20L
         const val KEY_PROJECTIVY_SERVED_WALLPAPER_HISTORY = "projectivy_served_wallpaper_history"
+        const val KEY_PROJECTIVY_SERVED_WALLPAPER_HISTORY_VERSION = "projectivy_served_wallpaper_history_version"
         const val KEY_PROJECTIVY_SERVED_ROTATION_CURSOR = "projectivy_served_rotation_cursor"
         const val MAX_SERVED_WALLPAPER_HISTORY = 1_000
         const val SERVED_WALLPAPER_SEPARATOR = "|"
+        const val PROJECTIVY_SERVED_WALLPAPER_HISTORY_VERSION = 2
         const val PLAYBACK_RECORD_COOLDOWN_MS = 15_000L
         const val PROJECTIVY_WALLPAPER_LIMIT = 40
-        const val YOUTUBE_PROJECTIVY_DIRECT_RESOLVE_TIMEOUT_MS = 4_000L
+        const val PROJECTIVY_DIRECT_RESOLVE_CANDIDATE_LIMIT = 12
+        const val PROJECTIVY_RESPONSE_WALLPAPER_LIMIT = 12
+        const val YOUTUBE_PROJECTIVY_DIRECT_RESOLVE_TIMEOUT_MS = 20_000L
         const val PROJECTIVY_BOOTSTRAP_PROVIDER_KEY = "youtube_bootstrap"
         val PROJECTIVY_BOOTSTRAP_VIDEO_URLS =
             listOf(
@@ -714,7 +779,7 @@ class WallpaperProviderService : Service() {
         val candidates =
             mediaItems.withIndex().filter { (_, media) ->
                 media.source == AerialMediaSource.YOUTUBE && media.type == AerialMediaType.VIDEO
-            }
+            }.take(PROJECTIVY_DIRECT_RESOLVE_CANDIDATE_LIMIT)
 
         if (candidates.isEmpty()) {
             return mediaItems
@@ -758,6 +823,10 @@ class WallpaperProviderService : Service() {
 
         val droppedCount = candidates.size - resolvedByIndex.size
         if (droppedCount > 0) {
+            Log.w(
+                "WallpaperProviderService",
+                "Projectivy dropped ${droppedCount}/${candidates.size} YouTube items without playable URLs",
+            )
             Timber.w(
                 "Projectivy dropped %s/%s YouTube items without direct playable URLs",
                 droppedCount,
@@ -765,6 +834,10 @@ class WallpaperProviderService : Service() {
             )
         }
 
+        Log.i(
+            "WallpaperProviderService",
+            "Projectivy resolved ${resolvedByIndex.size}/${candidates.size} YouTube items into playable URLs",
+        )
         Timber.i(
             "Projectivy resolved %s/%s YouTube items into direct playable URLs",
             resolvedByIndex.size,
@@ -777,12 +850,21 @@ class WallpaperProviderService : Service() {
         repository: YouTubeSourceRepository,
         media: AerialMedia,
     ): String? {
+        media.streamUrl
+            .takeIf { streamUrl -> streamUrl.isNotBlank() && !isYouTubeWatchUrl(streamUrl) }
+            ?.let { return it }
+
+        media.uri.toString()
+            .substringBefore('#')
+            .takeIf { rawUri -> rawUri.isNotBlank() && !isYouTubeWatchUrl(rawUri) }
+            ?.let { return it }
+
         val watchUrl = projectivyYouTubeWatchUrl(media)
         if (watchUrl != null) {
             return repository.preloadProjectivyVideoUrl(watchUrl)
         }
 
-        return media.streamUrl.takeIf { it.isNotBlank() } ?: media.uri.toString().takeIf { !isYouTubeWatchUrl(it) }
+        return null
     }
 
     private fun projectivyYouTubeWatchUrl(media: AerialMedia): String? {
@@ -911,17 +993,27 @@ class WallpaperProviderService : Service() {
             return rawUri
         }
 
-        val fragment = buildProjectivyYouTubeTimeFragment(media) ?: return rawUri
+        val fragments =
+            listOfNotNull(
+                buildProjectivyYouTubeHistoryFragment(media),
+                buildProjectivyYouTubeTimeFragment(media),
+            ).joinToString("&").takeIf(String::isNotBlank) ?: return rawUri
         if (isYouTubeWatchUrl(rawUri)) {
             val separator = if (rawUri.contains('?')) "&" else "?"
-            return "$rawUri$separator$fragment"
+            return "$rawUri$separator$fragments"
         }
         return if (rawUri.contains("#")) {
-            "$rawUri&$fragment"
+            "$rawUri&$fragments"
         } else {
-            "$rawUri#$fragment"
+            "$rawUri#$fragments"
         }
     }
+
+    private fun buildProjectivyYouTubeHistoryFragment(media: AerialMedia): String? =
+        media.metadata.exif.description
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.let { "yt=$it" }
 
     private data class ProjectivyPlaybackWindow(
         val startSeconds: Long = 0L,

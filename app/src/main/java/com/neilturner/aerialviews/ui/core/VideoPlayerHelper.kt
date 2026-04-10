@@ -14,6 +14,7 @@ import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters
@@ -227,25 +228,13 @@ object VideoPlayerHelper {
                         .setConnectTimeoutMs(TimeUnit.SECONDS.toMillis(30).toInt())
                         .setReadTimeoutMs(TimeUnit.SECONDS.toMillis(30).toInt())
 
-                val mediaSource =
-                    when {
-                        media.uri.toString().contains("manifest/dash", ignoreCase = true) ||
-                            media.uri.toString().contains(".mpd", ignoreCase = true) ->
-                            DashMediaSource
-                                .Factory(dataSourceFactory)
-                                .createMediaSource(mediaItem)
-
-                        media.uri.toString().contains("manifest/hls", ignoreCase = true) ||
-                            media.uri.toString().contains(".m3u8", ignoreCase = true) ->
-                            HlsMediaSource
-                                .Factory(dataSourceFactory)
-                                .createMediaSource(mediaItem)
-
-                        else ->
-                            ProgressiveMediaSource
-                                .Factory(dataSourceFactory)
-                                .createMediaSource(mediaItem)
-                    }
+                val mediaSource = buildYouTubeMediaSource(media, dataSourceFactory)
+                Timber.i(
+                    "Created YouTube media source (merged=%s, video=%s, audio=%s)",
+                    media.audioStreamUrl.isNotBlank(),
+                    media.uri,
+                    media.audioStreamUrl.ifBlank { "none" },
+                )
 
                 setMediaSourceWithOptionalStart(player, mediaSource, startPositionMs)
             }
@@ -257,6 +246,46 @@ object VideoPlayerHelper {
                     player.setMediaItem(mediaItem)
                 }
             }
+        }
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun buildYouTubeMediaSource(
+        media: AerialMedia,
+        dataSourceFactory: DefaultHttpDataSource.Factory,
+    ): MediaSource {
+        val videoItem = MediaItem.fromUri(media.uri)
+        val videoUrl = media.uri.toString()
+
+        if (media.audioStreamUrl.isNotBlank()) {
+            val videoSource =
+                ProgressiveMediaSource
+                    .Factory(dataSourceFactory)
+                    .createMediaSource(videoItem)
+            val audioSource =
+                ProgressiveMediaSource
+                    .Factory(dataSourceFactory)
+                    .createMediaSource(MediaItem.fromUri(media.audioStreamUrl))
+            return MergingMediaSource(videoSource, audioSource)
+        }
+
+        return when {
+            videoUrl.contains("manifest/dash", ignoreCase = true) ||
+                videoUrl.contains(".mpd", ignoreCase = true) ->
+                DashMediaSource
+                    .Factory(dataSourceFactory)
+                    .createMediaSource(videoItem)
+
+            videoUrl.contains("manifest/hls", ignoreCase = true) ||
+                videoUrl.contains(".m3u8", ignoreCase = true) ->
+                HlsMediaSource
+                    .Factory(dataSourceFactory)
+                    .createMediaSource(videoItem)
+
+            else ->
+                ProgressiveMediaSource
+                    .Factory(dataSourceFactory)
+                    .createMediaSource(videoItem)
         }
     }
 

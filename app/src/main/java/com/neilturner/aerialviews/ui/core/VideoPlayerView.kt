@@ -20,6 +20,7 @@ import com.neilturner.aerialviews.models.prefs.GeneralPrefs
 import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.models.videos.AerialMedia
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
+import com.neilturner.aerialviews.providers.youtube.YouTubePlaybackUrls
 import com.neilturner.aerialviews.services.philips.PhilipsMediaCodecAdapterFactory
 import com.neilturner.aerialviews.ui.overlays.ProgressBarEvent
 import com.neilturner.aerialviews.ui.overlays.ProgressState
@@ -371,13 +372,16 @@ class VideoPlayerView
                 }
 
                 val resolveStartedAt = SystemClock.elapsedRealtime()
-                val streamUrl =
+                val resolvedPlayback =
                     if (media.streamUrl.isNotBlank()) {
                         Log.i("VideoPlayerView", "Using cached streamUrl directly")
-                        media.streamUrl
+                        YouTubePlaybackUrls(
+                            videoUrl = media.streamUrl,
+                            audioUrl = media.audioStreamUrl,
+                        )
                     } else {
                         withTimeoutOrNull(YOUTUBE_STREAM_RESOLVE_TIMEOUT_MS) {
-                            repository.resolveVideoUrl(mediaUrl)
+                            repository.resolveVideoPlayback(mediaUrl)
                         } ?: throw IllegalStateException("Timed out resolving YouTube stream URL")
                     }
                 val resolveDurationMs = SystemClock.elapsedRealtime() - resolveStartedAt
@@ -386,7 +390,11 @@ class VideoPlayerView
                     mediaUrl = mediaUrl,
                     fromPreResolvedUrl = false,
                 )
-                media.copy(uri = streamUrl.toUri())
+                media.copy(
+                    uri = resolvedPlayback.videoUrl.toUri(),
+                    streamUrl = resolvedPlayback.videoUrl,
+                    audioStreamUrl = resolvedPlayback.audioUrl,
+                )
             }
 
         private fun isYouTubePageUrl(url: String): Boolean {
@@ -403,32 +411,31 @@ class VideoPlayerView
                     .setMaxVideoBitrate(Int.MAX_VALUE)
 
             if (media.source == AerialMediaSource.YOUTUBE) {
-                builder.setForceHighestSupportedBitrate(false)
+                builder
+                    .setForceHighestSupportedBitrate(true)
+                    .setMaxVideoBitrate(Int.MAX_VALUE)
                 when (YouTubeVideoPrefs.quality.lowercase()) {
                     "720p" -> {
                         builder
                             .setMaxVideoSize(Int.MAX_VALUE, 720)
-                            .setMaxVideoBitrate(6_500_000)
                     }
 
                     "1080p" -> {
                         builder
                             .setMaxVideoSize(Int.MAX_VALUE, 1080)
-                            .setMaxVideoBitrate(10_000_000)
                     }
 
                     "1440p" -> {
                         builder
                             .setMaxVideoSize(Int.MAX_VALUE, 1440)
-                            .setMaxVideoBitrate(16_000_000)
                     }
 
+                    "best",
                     "2160p",
                     "4k",
                     -> {
                         builder
                             .setMaxVideoSize(Int.MAX_VALUE, 2160)
-                            .setMaxVideoBitrate(22_000_000)
                     }
                 }
             }

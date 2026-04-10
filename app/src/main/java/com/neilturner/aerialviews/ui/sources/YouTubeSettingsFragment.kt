@@ -19,6 +19,7 @@ import com.neilturner.aerialviews.providers.youtube.YouTubeSourceRepository
 import com.neilturner.aerialviews.services.getDisplay
 import com.neilturner.aerialviews.services.supportsUltraHdOutput
 import com.neilturner.aerialviews.services.supports1440pOutput
+import com.neilturner.aerialviews.utils.DeviceHelper
 import com.neilturner.aerialviews.utils.DialogHelper
 import com.neilturner.aerialviews.utils.MenuStateFragment
 import com.neilturner.aerialviews.utils.ToastHelper
@@ -282,10 +283,15 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
     private fun configureQualityPreference() {
         val qualityPreference = findPreference<ListPreference>("yt_quality") ?: return
+        val isTv = DeviceHelper.isTV(requireContext()) && !DeviceHelper.isEmulator()
         val display =
-            runCatching { getDisplay(requireActivity()) }.getOrNull()
+            if (isTv) {
+                null
+            } else {
+                runCatching { getDisplay(requireActivity()) }.getOrNull()
+            }
         val supportsUltraHd =
-            display?.let { runCatching { it.supportsUltraHdOutput() }.getOrDefault(false) } ?: false
+            isTv || display?.let { runCatching { it.supportsUltraHdOutput() }.getOrDefault(false) } ?: false
         val supports1440p =
             display?.let { runCatching { it.supports1440pOutput() }.getOrDefault(false) } ?: false
 

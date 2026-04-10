@@ -42,7 +42,7 @@ internal class YouTubeSourceRepositoryTest {
                 mutableMapOf(
                     YouTubeSourceRepository.KEY_CACHE_VERSION to 29,
                     YouTubeSourceRepository.KEY_CACHE_SIGNATURE to "1|v29",
-                    YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE to "best|videoOnly=true",
+                    YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE to streamSignature("best"),
                     YouTubeSourceRepository.KEY_FIRST_LAUNCH to false,
                     YouTubeSourceRepository.KEY_FIRST_LAUNCH_INDEX to 0,
                 ),
@@ -89,7 +89,7 @@ internal class YouTubeSourceRepositoryTest {
                 mutableMapOf(
                     YouTubeSourceRepository.KEY_CACHE_VERSION to 29,
                     YouTubeSourceRepository.KEY_CACHE_SIGNATURE to "1|v29",
-                    YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE to "1080p|videoOnly=true",
+                    YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE to streamSignature("1080p"),
                     YouTubeSourceRepository.KEY_QUALITY to "2160p",
                     YouTubeSourceRepository.KEY_FIRST_LAUNCH to false,
                     YouTubeSourceRepository.KEY_FIRST_LAUNCH_INDEX to 0,
@@ -119,10 +119,70 @@ internal class YouTubeSourceRepositoryTest {
         assertTrue(cachedEntries.all { it.streamUrl.isBlank() })
         assertEquals(cacheDao.countGoodEntries(), cacheDao.invalidatedStreamUrlCount)
         assertEquals(
-            "2160p|videoOnly=true",
+            streamSignature("2160p"),
             sharedPreferences.getString(YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE, null),
         )
     }
+
+    @Test
+    @DisplayName("Should invalidate cached stream URLs when the stream selection strategy changes")
+    fun testGetCachedVideosSnapshotInvalidatesStreamUrlsWhenStrategyChanges() = runTest {
+        val now = System.currentTimeMillis()
+        val cacheDao = FakeYouTubeCacheDao(buildEntries(now))
+        val watchHistoryDao = FakeYouTubeWatchHistoryDao()
+        val sharedPreferences =
+            InMemorySharedPreferences(
+                mutableMapOf(
+                    YouTubeSourceRepository.KEY_CACHE_VERSION to 29,
+                    YouTubeSourceRepository.KEY_CACHE_SIGNATURE to "1|v29",
+                    YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE to "2160p|videoOnly=true",
+                    YouTubeSourceRepository.KEY_QUALITY to "2160p",
+                    YouTubeSourceRepository.KEY_FIRST_LAUNCH to false,
+                    YouTubeSourceRepository.KEY_FIRST_LAUNCH_INDEX to 0,
+                ),
+            )
+
+        val packageManager = mockk<PackageManager>()
+        val packageInfo = mockk<PackageInfo>()
+        every { packageInfo.longVersionCode } returns 1L
+        every { packageManager.getPackageInfo(any<String>(), any<Int>()) } returns packageInfo
+
+        val context = mockk<Context>()
+        every { context.packageManager } returns packageManager
+        every { context.packageName } returns "com.naveen.aerialviewsplus"
+
+        val repository =
+            YouTubeSourceRepository(
+                context = context,
+                cacheDao = cacheDao,
+                watchHistoryDao = watchHistoryDao,
+                sharedPreferences = sharedPreferences,
+            )
+
+        val cachedEntries = repository.getCachedVideosSnapshot()
+
+        assertTrue(cachedEntries.isNotEmpty())
+        assertTrue(cachedEntries.all { it.streamUrl.isBlank() })
+        assertEquals(cacheDao.countGoodEntries(), cacheDao.invalidatedStreamUrlCount)
+        assertEquals(
+            streamSignature("2160p"),
+            sharedPreferences.getString(YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE, null),
+        )
+    }
+
+    @Test
+    @DisplayName("Should preserve Projectivy YouTube UHD quality targets")
+    fun testProjectivyPlaybackResolutionQualityFor() {
+        assertEquals("2160p", YouTubeSourceRepository.projectivyPlaybackResolutionQualityFor("best"))
+        assertEquals("2160p", YouTubeSourceRepository.projectivyPlaybackResolutionQualityFor("2160p"))
+        assertEquals("1440p", YouTubeSourceRepository.projectivyPlaybackResolutionQualityFor("1440p"))
+        assertEquals("1080p", YouTubeSourceRepository.projectivyPlaybackResolutionQualityFor("1080p"))
+        assertEquals("720p", YouTubeSourceRepository.projectivyPlaybackResolutionQualityFor("720p"))
+        assertEquals("2160p", YouTubeSourceRepository.projectivyPlaybackResolutionQualityFor("  "))
+    }
+
+    private fun streamSignature(quality: String): String =
+        "$quality|videoOnly=true|selector=v${YouTubeSourceRepository.STREAM_SELECTION_STRATEGY_VERSION}"
 
     private fun buildEntries(now: Long): MutableList<YouTubeCacheEntity> =
         (1..200).map { index ->
@@ -169,9 +229,14 @@ internal class YouTubeSourceRepositoryTest {
             entries.removeAll { !it.isBad }
         }
 
-        override fun updateStreamUrl(videoId: String, newUrl: String, newExpiresAt: Long) {
+        override fun updateStreamUrl(videoId: String, newUrl: String, newAudioUrl: String, newExpiresAt: Long) {
             updateEntry(videoId) { entry ->
-                entry.copy(streamUrl = newUrl, streamUrlExpiresAt = newExpiresAt, isBad = false)
+                entry.copy(
+                    streamUrl = newUrl,
+                    audioStreamUrl = newAudioUrl,
+                    streamUrlExpiresAt = newExpiresAt,
+                    isBad = false,
+                )
             }
         }
 
@@ -182,7 +247,7 @@ internal class YouTubeSourceRepositoryTest {
                 if (entry.isBad) {
                     entry
                 } else {
-                    entry.copy(streamUrl = "", streamUrlExpiresAt = 0L)
+                    entry.copy(streamUrl = "", audioStreamUrl = "", streamUrlExpiresAt = 0L)
                 }
             }
             return invalidatedStreamUrlCount

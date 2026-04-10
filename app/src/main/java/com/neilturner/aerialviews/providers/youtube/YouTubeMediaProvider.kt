@@ -189,12 +189,19 @@ class YouTubeMediaProvider(
         } else {
             entry.videoPageUrl
         }
+        val audioPlaybackUrl =
+            if (playbackUrl != entry.videoPageUrl) {
+                repository.playbackAudioUrl(entry)
+            } else {
+                ""
+            }
         
         return AerialMedia(
             uri = playbackUrl.toUri(),
             type = AerialMediaType.VIDEO,
             source = AerialMediaSource.YOUTUBE,
             streamUrl = if (playbackUrl != entry.videoPageUrl) playbackUrl else "",
+            audioStreamUrl = audioPlaybackUrl,
             metadata =
                 AerialMediaMetadata(
                     shortDescription = entry.title,

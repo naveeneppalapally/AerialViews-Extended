@@ -30,7 +30,7 @@ class ScreensaverYouTubeBehaviorTest {
         prefs = PreferenceManager.getDefaultSharedPreferences(context)
         database = YouTubeCacheDatabase.getInstance(context)
 
-        YouTubeInstrumentationFixtures.resetAppState(database, prefs)
+        YouTubeInstrumentationFixtures.resetAppState(context, database, prefs)
         YouTubeInstrumentationFixtures.configureYouTubeOnlyPlayback(
             context = context,
             prefs = prefs,
@@ -42,7 +42,7 @@ class ScreensaverYouTubeBehaviorTest {
 
     @After
     fun tearDown() {
-        YouTubeInstrumentationFixtures.resetAppState(database, prefs)
+        YouTubeInstrumentationFixtures.resetAppState(context, database, prefs)
     }
 
     @Test

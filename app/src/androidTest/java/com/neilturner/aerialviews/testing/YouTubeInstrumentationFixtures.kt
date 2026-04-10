@@ -1,6 +1,7 @@
 package com.neilturner.aerialviews.testing
 
 import android.content.Context
+import android.content.Context.MODE_PRIVATE
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import com.neilturner.aerialviews.providers.youtube.YouTubeCacheDatabase
@@ -34,11 +35,15 @@ object YouTubeInstrumentationFixtures {
         "http://10.0.2.2:18080/BigBuckBunny.mp4"
 
     fun resetAppState(
+        context: Context,
         database: YouTubeCacheDatabase,
         prefs: SharedPreferences,
     ) {
         database.clearAllTables()
         prefs.edit {
+            clear()
+        }
+        appPrefs(context).edit {
             clear()
         }
     }
@@ -49,9 +54,30 @@ object YouTubeInstrumentationFixtures {
         entryCount: Int,
         quality: String = "1080p",
     ) {
+        val appPrefs = appPrefs(context)
         prefs.edit {
             putString(KEY_SOURCE_MODE, SOURCE_MODE_YOUTUBE)
             putBoolean(KEY_SHUFFLE_VIDEOS, false)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_NATURE, true)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_ANIMALS, true)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_DRONE, true)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_CITIES, true)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_SPACE, true)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_OCEAN, true)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_WEATHER, true)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_WINTER, true)
+
+            putBoolean(KEY_APPLE_ENABLED, false)
+            putBoolean(KEY_AMAZON_ENABLED, false)
+            putBoolean(KEY_COMM1_ENABLED, false)
+            putBoolean(KEY_COMM2_ENABLED, false)
+            putBoolean(KEY_LOCAL_ENABLED, false)
+            putBoolean(KEY_SAMBA_ENABLED, false)
+            putBoolean(KEY_SAMBA2_ENABLED, false)
+            putBoolean(KEY_WEBDAV_ENABLED, false)
+            putBoolean(KEY_WEBDAV2_ENABLED, false)
+            putBoolean(KEY_IMMICH_ENABLED, false)
+            putBoolean(KEY_CUSTOM_ENABLED, false)
 
             putBoolean(YouTubeSourceRepository.KEY_ENABLED, true)
             putBoolean(YouTubeSourceRepository.KEY_SHUFFLE, false)
@@ -63,6 +89,33 @@ object YouTubeInstrumentationFixtures {
             putInt(YouTubeSourceRepository.KEY_FIRST_LAUNCH_INDEX, 0)
             putInt(YouTubeSourceRepository.KEY_CACHE_VERSION, currentCacheVersion())
             putString(YouTubeSourceRepository.KEY_CACHE_SIGNATURE, currentCacheSignature(context))
+            putString(YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE, currentStreamQualitySignature(quality))
+            putString(YouTubeSourceRepository.KEY_COUNT, entryCount.toString())
+        }
+
+        appPrefs.edit {
+            putString(KEY_SOURCE_MODE, SOURCE_MODE_YOUTUBE)
+            putBoolean(KEY_SHUFFLE_VIDEOS, false)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_NATURE, true)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_ANIMALS, true)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_DRONE, true)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_CITIES, true)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_SPACE, true)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_OCEAN, true)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_WEATHER, true)
+            putBoolean(YouTubeSourceRepository.KEY_CATEGORY_WINTER, true)
+
+            putBoolean(YouTubeSourceRepository.KEY_ENABLED, true)
+            putBoolean(YouTubeSourceRepository.KEY_SHUFFLE, false)
+            putString(YouTubeSourceRepository.KEY_QUALITY, quality)
+            putString(YouTubeSourceRepository.KEY_MIX_WEIGHT, YouTubeSourceRepository.DEFAULT_MIX_WEIGHT)
+            putBoolean(KEY_QUALITY_INITIALIZED, true)
+            putBoolean(KEY_QUALITY_USER_SELECTED, true)
+            putBoolean(YouTubeSourceRepository.KEY_FIRST_LAUNCH, false)
+            putInt(YouTubeSourceRepository.KEY_FIRST_LAUNCH_INDEX, 0)
+            putInt(YouTubeSourceRepository.KEY_CACHE_VERSION, currentCacheVersion())
+            putString(YouTubeSourceRepository.KEY_CACHE_SIGNATURE, currentCacheSignature(context))
+            putString(YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE, currentStreamQualitySignature(quality))
             putString(YouTubeSourceRepository.KEY_COUNT, entryCount.toString())
 
             putBoolean(KEY_APPLE_ENABLED, false)
@@ -83,13 +136,19 @@ object YouTubeInstrumentationFixtures {
         context: Context,
         prefs: SharedPreferences,
         entryCount: Int,
+        quality: String = "1080p",
     ) {
         configureYouTubeOnlyPlayback(
             context = context,
             prefs = prefs,
             entryCount = entryCount,
+            quality = quality,
         )
         prefs.edit {
+            putStringSet(KEY_PROJECTIVY_SHARED_PROVIDERS, setOf("youtube"))
+            putBoolean(KEY_PROJECTIVY_SHUFFLE_VIDEOS, false)
+        }
+        appPrefs(context).edit {
             putStringSet(KEY_PROJECTIVY_SHARED_PROVIDERS, setOf("youtube"))
             putBoolean(KEY_PROJECTIVY_SHUFFLE_VIDEOS, false)
         }
@@ -124,22 +183,27 @@ object YouTubeInstrumentationFixtures {
     fun seedProjectivyYouTubeCache(
         database: YouTubeCacheDatabase,
         entryCount: Int,
+        itag: Int = 137,
+        qualityLabel: String = "1080p",
+        videoIdPrefix: String = "projectivy",
     ) {
         val now = System.currentTimeMillis()
+        val sanitizedPrefix = videoIdPrefix.trim().ifBlank { "projectivy" }
         database.youtubeCacheDao().insertAll(
             (1..entryCount).map { index ->
                 val paddedIndex = index.toString().padStart(4, '0')
+                val videoId = "$sanitizedPrefix$paddedIndex"
                 YouTubeCacheEntity(
-                    videoId = "projectivy$paddedIndex",
-                    videoPageUrl = "https://www.youtube.com/watch?v=projectivy$paddedIndex",
-                    streamUrl = "https://$PROJECTIVY_STREAM_HOST/videoplayback?id=projectivy$paddedIndex.mp4&itag=137",
+                    videoId = videoId,
+                    videoPageUrl = "https://www.youtube.com/watch?v=$videoId",
+                    streamUrl = "https://$PROJECTIVY_STREAM_HOST/videoplayback?id=$videoId.mp4&itag=$itag&quality_label=$qualityLabel",
                     title = "Ambient Projectivy Video $paddedIndex",
-                    uploaderName = "projectivy-channel-$paddedIndex",
+                    uploaderName = "$sanitizedPrefix-channel-$paddedIndex",
                     durationSeconds = 600,
                     categoryKey = "nature",
                     streamUrlExpiresAt = now + 86_400_000L,
                     searchCachedAt = now,
-                    searchQuery = "4K ambient nature",
+                    searchQuery = "4K ambient nature $sanitizedPrefix",
                     isBad = false,
                     lastPlayedAt = 0L,
                 )
@@ -166,4 +230,29 @@ object YouTubeInstrumentationFixtures {
         field.isAccessible = true
         return field.getInt(null)
     }
+
+    private fun currentStreamQualitySignature(quality: String): String =
+        buildString {
+            append(quality.trim().ifBlank { YouTubeSourceRepository.DEFAULT_QUALITY })
+            append("|videoOnly=true|selector=v")
+            append(currentStreamSelectionStrategyVersion())
+        }
+
+    private fun currentStreamSelectionStrategyVersion(): Int {
+        runCatching {
+            val field = YouTubeSourceRepository::class.java.getDeclaredField("STREAM_SELECTION_STRATEGY_VERSION")
+            field.isAccessible = true
+            return field.getInt(null)
+        }
+        val companionClass =
+            YouTubeSourceRepository::class.java.declaredClasses.firstOrNull { declaredClass ->
+                declaredClass.simpleName == "Companion"
+            } ?: error("Unable to locate YouTubeSourceRepository companion")
+        val field = companionClass.getDeclaredField("STREAM_SELECTION_STRATEGY_VERSION")
+        field.isAccessible = true
+        return field.getInt(null)
+    }
+
+    private fun appPrefs(context: Context): SharedPreferences =
+        context.getSharedPreferences("${context.packageName}_preferences", MODE_PRIVATE)
 }

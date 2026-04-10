@@ -36,16 +36,17 @@ interface YouTubeCacheDao {
     }
 
     @Query(
-        "UPDATE youtube_cache SET streamUrl = :newUrl, streamUrlExpiresAt = :newExpiresAt, isBad = 0 " +
+        "UPDATE youtube_cache SET streamUrl = :newUrl, audioStreamUrl = :newAudioUrl, streamUrlExpiresAt = :newExpiresAt, isBad = 0 " +
             "WHERE videoId = :videoId",
     )
     fun updateStreamUrl(
         videoId: String,
         newUrl: String,
+        newAudioUrl: String,
         newExpiresAt: Long,
     )
 
-    @Query("UPDATE youtube_cache SET streamUrl = '', streamUrlExpiresAt = 0 WHERE isBad = 0")
+    @Query("UPDATE youtube_cache SET streamUrl = '', audioStreamUrl = '', streamUrlExpiresAt = 0 WHERE isBad = 0")
     fun invalidateAllStreamUrls(): Int
 
     @Query("SELECT MIN(searchCachedAt) FROM youtube_cache")

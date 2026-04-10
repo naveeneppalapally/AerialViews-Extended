@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [YouTubeCacheEntity::class, YouTubeWatchHistoryEntity::class],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class YouTubeCacheDatabase : RoomDatabase() {
@@ -76,6 +76,14 @@ abstract class YouTubeCacheDatabase : RoomDatabase() {
                     )
                 }
             }
+        private val MIGRATION_6_7 =
+            object : Migration(6, 7) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "ALTER TABLE youtube_cache ADD COLUMN audioStreamUrl TEXT NOT NULL DEFAULT ''",
+                    )
+                }
+            }
 
         @Volatile
         private var instance: YouTubeCacheDatabase? = null
@@ -89,7 +97,7 @@ abstract class YouTubeCacheDatabase : RoomDatabase() {
                                 context.applicationContext,
                                 YouTubeCacheDatabase::class.java,
                                 DATABASE_NAME,
-                            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                             .fallbackToDestructiveMigration()
                             .build()
                             .also { instance = it }

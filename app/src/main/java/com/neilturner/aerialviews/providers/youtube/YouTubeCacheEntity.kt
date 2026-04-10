@@ -9,6 +9,7 @@ data class YouTubeCacheEntity(
     val videoId: String,
     val videoPageUrl: String,
     val streamUrl: String,
+    val audioStreamUrl: String = "",
     val title: String,
     val uploaderName: String = "",
     val durationSeconds: Int = 0,

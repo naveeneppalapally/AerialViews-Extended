@@ -16,6 +16,7 @@ A fork of [AerialViews](https://github.com/theothernt/AerialViews) that adds You
 - Burn-in protection by alternating overlay positions
 - Playlist controls, shuffle, skip, and media length limits
 - Refresh rate switching for 24fps and 50fps content
+- Message overlay API for LAN-based integrations
 
 ## New in this fork
 
@@ -28,6 +29,10 @@ A fork of [AerialViews](https://github.com/theothernt/AerialViews) that adds You
 - Stream URLs auto-renewed before YouTube links expire
 - YouTube mixes with built-in sources in the same playlist
 - Projectivy Launcher integration
+
+## A note on YouTube video quality
+
+The app targets 2160p on 4K displays and 1080p on 1080p displays. A higher resolution label does not always mean better quality. Bitrate, codec support, and how YouTube encoded that specific video all affect what you actually see. Some videos will look sharper than others. If a clip looks soft or out of place, the app moves on automatically when it finishes.
 
 ## Installation
 
@@ -127,14 +132,14 @@ If AerialViews+ does not trigger automatically on a TCL Android TV, first re-ena
 adb shell pm enable com.naveen.aerialviewsplus
 ```
 
-Optional checks (only if you still have issues):
+Optional checks if you still have issues:
 
 ```sh
 adb shell pm list packages -d | grep naveen
 adb shell settings get secure screensaver_components
 ```
 
-If the issue persists, then apply the TCL Auto Launch permission steps in the section above.
+If the issue persists, apply the Auto Launch permission steps in the TCL section above.
 </details>
 
 <details>
@@ -216,7 +221,7 @@ settings get secure screensaver_components
 ```
 
 You should see:
-```sh
+```
 com.naveen.aerialviewsplus/.ui.screensaver.DreamActivity
 ```
 </details>
@@ -335,6 +340,15 @@ Videos may be skipped because of age restrictions, regional blocks, deleted uplo
 </details>
 
 <details>
+<summary>Weather and location overlays are not working</summary>
+&nbsp;
+
+Weather overlays use OpenWeather data and require the overlay to be assigned to a visible slot in Settings. If the slot is not assigned, weather data fetches correctly but nothing appears on screen.
+
+Location lookup falls back to Android Geocoder when network lookups fail. If location naming fails entirely, the overlay slot will be blank rather than showing an error.
+</details>
+
+<details>
 <summary>Can I use this on Nvidia Shield?</summary>
 &nbsp;
 
@@ -361,6 +375,12 @@ It replaces it. Both apps cannot be installed at the same time. All original Aer
 
 This is normal for any app not distributed through the Play Store. Tap **Install anyway**. The source code is fully open on this page if you want to review it.
 </details>
+
+## Weather data
+
+Thanks to [OpenWeather](https://openweathermap.org/) for providing weather data to this and other open-source projects.
+
+[![OpenWeather logo](docs/images/openweather_logo.png)](https://openweathermap.org/)
 
 ## Building from source
 

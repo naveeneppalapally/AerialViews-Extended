@@ -13,7 +13,6 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
-import com.neilturner.aerialviews.utils.DeviceHelper
 import com.neilturner.aerialviews.models.prefs.AmazonVideoPrefs
 import com.neilturner.aerialviews.models.prefs.AppleVideoPrefs
 import com.neilturner.aerialviews.models.prefs.Comm1VideoPrefs
@@ -225,7 +224,7 @@ object YouTubeFeature {
         val configuredQuality = prefs.getString(YouTubeSourceRepository.KEY_QUALITY, null)?.trim()
         val userSelectedQuality = prefs.getBoolean(KEY_QUALITY_USER_SELECTED, false)
         val displayHeight = maxDisplayHeight(context)
-        val deviceDefaultQuality = defaultQualityForDisplay(displayHeight, DeviceHelper.isTV(context))
+        val deviceDefaultQuality = defaultQualityForDisplay(displayHeight)
         val resolvedQuality =
             when {
                 configuredQuality.isNullOrBlank() -> deviceDefaultQuality
@@ -270,12 +269,8 @@ object YouTubeFeature {
         }
     }
 
-    internal fun defaultQualityForDisplay(
-        displayHeight: Int,
-        isTv: Boolean = false,
-    ): String {
+    internal fun defaultQualityForDisplay(displayHeight: Int): String {
         return when {
-            isTv -> UHD_QUALITY
             displayHeight >= UHD_HEIGHT -> UHD_QUALITY
             displayHeight >= QHD_HEIGHT -> QHD_QUALITY
             displayHeight >= FULL_HD_HEIGHT -> FULL_HD_QUALITY

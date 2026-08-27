@@ -1,17 +1,16 @@
 package com.neilturner.aerialviews.utils
 
 import android.os.Bundle
-import androidx.core.os.bundleOf
+import com.google.firebase.Firebase
 import com.google.firebase.analytics.FirebaseAnalytics
-import com.google.firebase.analytics.ktx.analytics
-import com.google.firebase.crashlytics.ktx.crashlytics
-import com.google.firebase.ktx.Firebase
+import com.google.firebase.analytics.analytics
+import com.google.firebase.crashlytics.crashlytics
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
 object FirebaseHelper {
-    private const val LOGGING_END_DATE = "2025-10-01"
+    private const val LOGGING_END_DATE = "2026-09-01"
 
     private fun isWithinLoggingPeriod(): Boolean {
         val simpleDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -25,11 +24,10 @@ object FirebaseHelper {
         screenClass: Any,
     ) {
         val parameters =
-            bundleOf(
-                Pair(FirebaseAnalytics.Param.SCREEN_NAME, screenName),
-                Pair(FirebaseAnalytics.Param.SCREEN_CLASS, screenClass::class.java.simpleName),
-            )
-
+            Bundle().apply {
+                putString(FirebaseAnalytics.Param.SCREEN_NAME, screenName)
+                putString(FirebaseAnalytics.Param.SCREEN_CLASS, screenClass::class.java.simpleName)
+            }
         Firebase.analytics.logEvent(FirebaseAnalytics.Event.SCREEN_VIEW, parameters)
     }
 

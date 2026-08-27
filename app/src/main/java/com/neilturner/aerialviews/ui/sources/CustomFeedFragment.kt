@@ -5,13 +5,13 @@ package com.neilturner.aerialviews.ui.sources
 import android.os.Bundle
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.EditTextPreference
-import androidx.preference.MultiSelectListPreference
 import androidx.preference.Preference
 import com.neilturner.aerialviews.R
+import com.neilturner.aerialviews.data.network.UrlValidator
 import com.neilturner.aerialviews.models.prefs.CustomFeedPrefs
 import com.neilturner.aerialviews.providers.custom.CustomFeedProvider
-import com.neilturner.aerialviews.utils.DialogHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
+import com.neilturner.aerialviews.ui.helpers.DialogHelper
 import kotlinx.coroutines.launch
 
 class CustomFeedFragment : MenuStateFragment() {
@@ -28,11 +28,37 @@ class CustomFeedFragment : MenuStateFragment() {
         urls?.onPreferenceChangeListener =
             Preference.OnPreferenceChangeListener { preference, newValue ->
                 val urlsString = newValue as String
-                val previousValue = (preference as EditTextPreference).text ?: ""
+                val urlsPreference = preference as EditTextPreference
+                val previousValue = urlsPreference.text ?: ""
+                val previousCache = CustomFeedPrefs.urlsCache
+                val previousSummary = CustomFeedPrefs.urlsSummary
 
                 if (urlsString.isNotBlank() && urlsString != previousValue) {
+                    val invalidUrls =
+                        UrlValidator
+                            .validateUrls(urlsString)
+                            .filter { !it.first }
+                    if (invalidUrls.isNotEmpty()) {
+                        DialogHelper.show(
+                            requireContext(),
+                            resources.getString(R.string.samba_videos_test_results),
+                            resources.getString(R.string.custom_media_urls_invalid),
+                        )
+                        updateUrlsSummary(previousSummary)
+                        return@OnPreferenceChangeListener false
+                    }
+
                     CustomFeedPrefs.urls = urlsString
-                    lifecycleScope.launch { validateUrls() }
+                    lifecycleScope.launch {
+                        val isValid = validateUrls()
+                        if (!isValid) {
+                            CustomFeedPrefs.urls = previousValue
+                            CustomFeedPrefs.urlsCache = previousCache
+                            CustomFeedPrefs.urlsSummary = previousSummary
+                            urlsPreference.text = previousValue
+                            updateUrlsSummary(previousSummary)
+                        }
+                    }
                 } else if (urlsString.isBlank()) {
                     CustomFeedPrefs.urlsCache = ""
                     CustomFeedPrefs.urlsSummary = ""
@@ -42,22 +68,6 @@ class CustomFeedFragment : MenuStateFragment() {
                 true
             }
         urls?.let { updateUrlsSummary(CustomFeedPrefs.urlsSummary) }
-
-        val sceneType = findPreference<MultiSelectListPreference>("custom_media_scene_type")
-        sceneType?.onPreferenceChangeListener =
-            Preference.OnPreferenceChangeListener { preference, newValue ->
-                updateMultiSelectSummary(preference as MultiSelectListPreference, newValue as Set<String>)
-                true
-            }
-        sceneType?.let { updateMultiSelectSummary(it, it.values) }
-
-        val timeOfDay = findPreference<MultiSelectListPreference>("custom_media_time_of_day")
-        timeOfDay?.onPreferenceChangeListener =
-            Preference.OnPreferenceChangeListener { preference, newValue ->
-                updateMultiSelectSummary(preference as MultiSelectListPreference, newValue as Set<String>)
-                true
-            }
-        timeOfDay?.let { updateMultiSelectSummary(it, it.values) }
     }
 
     private fun updateUrlsSummary(summary: String = "") {
@@ -70,7 +80,7 @@ class CustomFeedFragment : MenuStateFragment() {
             }
     }
 
-    private suspend fun validateUrls() {
+    private suspend fun validateUrls(): Boolean {
         val loadingMessage = getString(R.string.message_media_searching)
         val progressDialog =
             DialogHelper.progressDialog(
@@ -90,34 +100,6 @@ class CustomFeedFragment : MenuStateFragment() {
         )
 
         updateUrlsSummary(CustomFeedPrefs.urlsSummary)
-    }
-
-    private fun updateMultiSelectSummary(
-        preference: MultiSelectListPreference,
-        selectedValues: Set<String>,
-    ) {
-        val res = context?.resources ?: return
-        val entries = preference.entries
-        val entryValues = preference.entryValues
-
-        if (selectedValues.isEmpty()) {
-            preference.summary = res.getString(R.string.none_selected)
-            return
-        }
-
-        val selectedEntries = mutableListOf<String>()
-        for (value in selectedValues) {
-            val index = entryValues.indexOf(value)
-            if (index >= 0 && index < entries.size) {
-                selectedEntries.add(entries[index].toString())
-            }
-        }
-
-        preference.summary =
-            if (selectedEntries.size == entries.size) {
-                res.getString(R.string.all_selected)
-            } else {
-                selectedEntries.joinToString(", ")
-            }
+        return CustomFeedPrefs.urlsCache.isNotBlank()
     }
 }

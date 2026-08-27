@@ -2,26 +2,35 @@ package com.neilturner.aerialviews.ui.sources
 
 import android.content.SharedPreferences
 import android.os.Bundle
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
+import androidx.preference.MultiSelectListPreference
 import androidx.preference.Preference
 import com.neilturner.aerialviews.R
+import com.neilturner.aerialviews.data.network.UrlParser
 import com.neilturner.aerialviews.models.enums.ImmichAuthType
 import com.neilturner.aerialviews.models.prefs.ImmichMediaPrefs
+import com.neilturner.aerialviews.providers.ProviderFetchResult
 import com.neilturner.aerialviews.providers.immich.Album
 import com.neilturner.aerialviews.providers.immich.ImmichMediaProvider
-import com.neilturner.aerialviews.utils.DialogHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
-import com.neilturner.aerialviews.utils.UrlParser
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
+import com.neilturner.aerialviews.ui.helpers.DialogHelper
+import com.neilturner.aerialviews.ui.helpers.PermissionHelper
+import com.neilturner.aerialviews.utils.setSummaryFromValues
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
 class ImmichVideosFragment :
     MenuStateFragment(),
     SharedPreferences.OnSharedPreferenceChangeListener {
+    private lateinit var requestLocalNetworkPermission: ActivityResultLauncher<String>
     private lateinit var urlPreference: EditTextPreference
+    private lateinit var mediaSelectionPreference: MultiSelectListPreference
     private lateinit var authTypePreference: ListPreference
     private lateinit var validateSslPreference: Preference
     private lateinit var passwordPreference: EditTextPreference
@@ -37,10 +46,16 @@ class ImmichVideosFragment :
         savedInstanceState: Bundle?,
         rootKey: String?,
     ) {
+        requestLocalNetworkPermission =
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
         setPreferencesFromResource(R.xml.sources_immich_videos, rootKey)
         preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(this)
 
+        checkForLocalNetworkPermission()
+
         urlPreference = findPreference("immich_media_url")!!
+        mediaSelectionPreference = findPreference("immich_media_selection")!!
         authTypePreference = findPreference("immich_media_auth_type")!!
         validateSslPreference = findPreference("immich_media_validate_ssl")!!
         passwordPreference = findPreference("immich_media_password")!!
@@ -53,7 +68,6 @@ class ImmichVideosFragment :
         includeRecentPreference = findPreference("immich_media_include_recent")!!
 
         lifecycleScope.launch {
-            limitTextInput()
             updateAuthTypeVisibility()
             updateSummary()
             setupPreferenceClickListeners()
@@ -76,10 +90,18 @@ class ImmichVideosFragment :
         updateSummary()
     }
 
+    private fun checkForLocalNetworkPermission() {
+        if (PermissionHelper.hasLocalNetworkPermission(requireContext())) {
+            return
+        }
+        requestLocalNetworkPermission.launch(PermissionHelper.getLocalNetworkPermission())
+    }
+
     private fun setupPreferenceClickListeners() {
         urlPreference.setOnPreferenceChangeListener { _, newValue ->
             try {
                 UrlParser.parseServerUrl(newValue.toString())
+                clearSelectedAlbumsIfChanged(urlPreference.text.orEmpty(), newValue.toString())
                 true
             } catch (e: IllegalArgumentException) {
                 AlertDialog
@@ -91,18 +113,39 @@ class ImmichVideosFragment :
             }
         }
 
+        apiKeyPreference.setOnPreferenceChangeListener { _, newValue ->
+            clearSelectedAlbumsIfChanged(apiKeyPreference.text.orEmpty(), newValue.toString())
+            true
+        }
+
+        val networkExceptionHandler =
+            CoroutineExceptionHandler { _, exception ->
+                Timber.e(exception, "Unhandled network error")
+            }
+
         findPreference<Preference>("immich_media_test_connection")?.setOnPreferenceClickListener {
-            lifecycleScope.launch { testImmichConnection() }
+            lifecycleScope.launch(networkExceptionHandler) { testImmichConnection() }
             true
         }
 
         selectAlbumsPreference.setOnPreferenceClickListener {
-            lifecycleScope.launch { pickAlbums() }
+            lifecycleScope.launch(networkExceptionHandler) { pickAlbums() }
             true
         }
     }
 
+    private fun clearSelectedAlbumsIfChanged(
+        currentValue: String,
+        newValue: String,
+    ) {
+        if (currentValue != newValue && ImmichMediaPrefs.selectedAlbumIds.isNotEmpty()) {
+            ImmichMediaPrefs.selectedAlbumIds.clear()
+        }
+    }
+
     private fun updateSummary() {
+        mediaSelectionPreference.setSummaryFromValues(ImmichMediaPrefs.mediaSelection)
+
         // Server URL
         val url = urlPreference.text
         if (!url.isNullOrEmpty()) {
@@ -181,16 +224,6 @@ class ImmichVideosFragment :
         }
     }
 
-    private fun limitTextInput() {
-        listOf(
-            "immich_media_url",
-            "immich_media_password",
-            "immich_media_api_key",
-        ).forEach { key ->
-            findPreference<EditTextPreference>(key)?.setOnBindEditTextListener { it.setSingleLine() }
-        }
-    }
-
     private suspend fun testImmichConnection() {
         val loadingMessage = getString(R.string.message_media_searching)
         val progressDialog =
@@ -201,10 +234,14 @@ class ImmichVideosFragment :
         progressDialog.show()
 
         val provider = ImmichMediaProvider(requireContext(), ImmichMediaPrefs)
-        val result = provider.fetchTest()
+        val message =
+            when (val result = provider.fetch()) {
+                is ProviderFetchResult.Success -> result.summary
+                is ProviderFetchResult.Error -> result.message
+            }
 
         progressDialog.dismiss()
-        DialogHelper.showOnMain(requireContext(), getString(R.string.immich_media_test_results), result)
+        DialogHelper.showOnMain(requireContext(), getString(R.string.immich_media_test_results), message)
     }
 
     private suspend fun pickAlbums() {
@@ -218,21 +255,31 @@ class ImmichVideosFragment :
 
         if (ImmichMediaPrefs.url.isNotEmpty() && ImmichMediaPrefs.apiKey.isNotEmpty()) {
             val provider = ImmichMediaProvider(requireContext(), ImmichMediaPrefs)
-            provider.fetchAlbums().fold(
-                onSuccess = { albums ->
-                    progressDialog.dismiss()
-                    showAlbumMultiSelectDialog(albums)
-                },
-                onFailure = { exception ->
-                    Timber.e(exception, "Failed to load albums for selection")
-                    progressDialog.dismiss()
-                    DialogHelper.show(
-                        requireContext(),
-                        "Error",
-                        "Failed to load albums: ${exception.message}",
-                    )
-                },
-            )
+            try {
+                provider.fetchAlbums().fold(
+                    onSuccess = { albums ->
+                        progressDialog.dismiss()
+                        showAlbumMultiSelectDialog(albums)
+                    },
+                    onFailure = { exception ->
+                        Timber.e(exception, "Failed to load albums for selection")
+                        progressDialog.dismiss()
+                        DialogHelper.show(
+                            requireContext(),
+                            "Error",
+                            "Failed to load albums: ${exception.message}",
+                        )
+                    },
+                )
+            } catch (e: Exception) {
+                Timber.e(e, "Exception while fetching albums")
+                progressDialog.dismiss()
+                DialogHelper.show(
+                    requireContext(),
+                    "Error",
+                    "Failed to load albums: ${e.message}",
+                )
+            }
         } else {
             progressDialog.dismiss()
             DialogHelper.show(
@@ -255,7 +302,8 @@ class ImmichVideosFragment :
 
         val albumNames = albums.map { "${it.name} (${it.assetCount} assets)" }.toTypedArray()
         val albumIds = albums.map { it.id }.toTypedArray()
-        val currentSelectedAlbumIds = ImmichMediaPrefs.selectedAlbumIds
+        val availableAlbumIds = albumIds.toSet()
+        val currentSelectedAlbumIds = ImmichMediaPrefs.selectedAlbumIds.intersect(availableAlbumIds)
         val tempSelectedAlbumIds = currentSelectedAlbumIds.toMutableSet()
         val checkedItems =
             BooleanArray(albums.size) { index ->

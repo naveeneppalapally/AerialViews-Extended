@@ -1,115 +1,153 @@
 package com.neilturner.aerialviews.models
 
 import com.neilturner.aerialviews.models.videos.AerialMedia
-import kotlin.random.Random
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import timber.log.Timber
 
 class MediaPlaylist(
-    videos: List<AerialMedia>,
-    private val reshuffleOnWrap: Boolean = false,
-    private val random: Random = Random.Default,
+    initialVideos: List<AerialMedia>,
+    startPosition: Int = -1,
+    val size: Int = initialVideos.size,
+    private var windowOffset: Int = 0,
+    private val fetchChunk: (suspend (offset: Int, limit: Int) -> List<AerialMedia>)? = null,
 ) {
-    private val items = videos.toMutableList()
-    private var position = -1
-    private var nextCycleItems: List<AerialMedia>? = null
+    private var position = startPosition
+    private var _hasReachedEnd = false
 
-    val size: Int = items.size
+    private val windowVideos = initialVideos.toMutableList()
+    private val windowLock = Any()
+    private val scope = CoroutineScope(Dispatchers.IO)
+
+    val currentPosition: Int get() = position
 
     fun nextItem(): AerialMedia {
-        if (items.isEmpty()) {
-            throw NoSuchElementException("Playlist is empty")
-        }
+        position = calculateNext(++position)
+        if (position == 0 && size > 0) _hasReachedEnd = true
 
-        if (position + 1 >= items.size) {
-            prepareNextCycle()
-            applyNextCycleIfAvailable()
-            position = -1
-        }
+        Timber.v("MediaPlaylist: nextItem() -> pos $position / $size (window: ${windowVideos.size})")
+        checkAndRefillWindow()
 
-        position += 1
-        return items[position]
+        return getItemAt(position)
     }
 
     fun previousItem(): AerialMedia {
-        if (items.isEmpty()) {
-            throw NoSuchElementException("Playlist is empty")
-        }
-
         position = calculateNext(--position)
-        return items[position]
+
+        Timber.v("MediaPlaylist: previousItem() -> pos $position / $size (window: ${windowVideos.size})")
+        checkAndRefillWindow()
+
+        return getItemAt(position)
     }
 
+    // Peek APIs restored from the fork — used by prebuild/wrap detection in ScreenController.
     fun peekNextItem(): AerialMedia {
-        if (items.isEmpty()) {
-            throw NoSuchElementException("Playlist is empty")
-        }
-
-        val nextPosition = position + 1
-        if (nextPosition < items.size) {
-            return items[nextPosition]
-        }
-
-        val nextCycle = previewNextCycle()
-        return nextCycle.firstOrNull() ?: items.first()
+        val nextPosition = calculateNext(position + 1)
+        return getItemAt(nextPosition)
     }
 
     fun peekPreviousItem(): AerialMedia {
-        if (items.isEmpty()) {
-            throw NoSuchElementException("Playlist is empty")
-        }
-
         val previousPosition = calculateNext(position - 1)
-        return items[previousPosition]
+        return getItemAt(previousPosition)
     }
 
     fun remainingUntilWrap(): Int {
-        if (items.isEmpty()) {
+        if (size == 0) {
             return 0
         }
+        return (size - 1 - position).coerceAtLeast(0)
+    }
 
-        return (items.size - 1 - position).coerceAtLeast(0)
+    private fun checkAndRefillWindow() {
+        if (fetchChunk == null) return
+
+        val isOutOfBounds = position < windowOffset || position >= windowOffset + windowVideos.size
+        val relativeIndex = position - windowOffset
+        val remaining = windowVideos.size - relativeIndex - 1
+
+        val isNearEnd = remaining <= 5 && (windowOffset + windowVideos.size < size)
+        val isNearStart = relativeIndex <= 5 && windowOffset > 0
+
+        if (isOutOfBounds || isNearEnd || isNearStart) {
+            val newOffset = 0.coerceAtLeast(position - 5)
+            val limit = 50
+
+            if (newOffset != windowOffset) {
+                if (isOutOfBounds) {
+                    refillWindowSync(newOffset)
+                } else {
+                    Timber.i(
+                        "MediaPlaylist: Refilling window. Position: $position, Window: $windowOffset..${windowOffset + windowVideos.size}. New Offset: $newOffset",
+                    )
+                    scope.launch {
+                        val freshData = fetchChunk.invoke(newOffset, limit)
+                        synchronized(windowLock) {
+                            windowOffset = newOffset
+                            windowVideos.clear()
+                            windowVideos.addAll(freshData)
+                            Timber.d("MediaPlaylist: Window refilled. New range: $windowOffset..${windowOffset + windowVideos.size}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun refillWindowSync(newOffset: Int) {
+        if (fetchChunk == null) return
+        val limit = 50
+        try {
+            val freshData =
+                kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    fetchChunk.invoke(newOffset, limit)
+                }
+            synchronized(windowLock) {
+                windowOffset = newOffset
+                windowVideos.clear()
+                windowVideos.addAll(freshData)
+                Timber.d("MediaPlaylist: Window refilled synchronously. New range: $windowOffset..${windowOffset + windowVideos.size}")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "MediaPlaylist: Error refilling window synchronously")
+        }
+    }
+
+    private fun getItemAt(absoluteIndex: Int): AerialMedia {
+        synchronized(windowLock) {
+            val relativeIndex = absoluteIndex - windowOffset
+            if (relativeIndex in windowVideos.indices) {
+                return windowVideos[relativeIndex]
+            }
+        }
+
+        if (fetchChunk != null) {
+            Timber.w("MediaPlaylist: Cache miss at index $absoluteIndex, attempting synchronous refill")
+            refillWindowSync(0.coerceAtLeast(absoluteIndex - 5))
+            synchronized(windowLock) {
+                val relativeIndex = absoluteIndex - windowOffset
+                if (relativeIndex in windowVideos.indices) {
+                    return windowVideos[relativeIndex]
+                }
+            }
+        }
+
+        Timber.w("MediaPlaylist: Cache miss at index $absoluteIndex, returning first available")
+
+        synchronized(windowLock) {
+            return windowVideos.firstOrNull()
+                ?: throw IllegalStateException("Playlist is empty")
+        }
     }
 
     private fun calculateNext(number: Int): Int {
+        if (size == 0) return 0
         val next =
             if (number < 0) {
-                items.size + number
+                size + number
             } else {
-                (number).rem(items.size)
+                (number).rem(size)
             }
         return next
-    }
-
-    private fun previewNextCycle(): List<AerialMedia> {
-        if (!reshuffleOnWrap || items.size < 2) {
-            return items
-        }
-
-        return nextCycleItems ?: buildNextCycleItems().also { nextCycleItems = it }
-    }
-
-    private fun prepareNextCycle() {
-        if (!reshuffleOnWrap || items.size < 2) {
-            return
-        }
-
-        if (nextCycleItems == null) {
-            nextCycleItems = buildNextCycleItems()
-        }
-    }
-
-    private fun applyNextCycleIfAvailable() {
-        val nextCycle = nextCycleItems ?: return
-        items.clear()
-        items.addAll(nextCycle)
-        nextCycleItems = null
-    }
-
-    private fun buildNextCycleItems(): List<AerialMedia> {
-        val shuffled = items.shuffled(random).toMutableList()
-        val currentItem = items.getOrNull(position) ?: return shuffled
-        if (shuffled.size > 1 && shuffled.first() == currentItem) {
-            shuffled.add(shuffled.removeAt(0))
-        }
-        return shuffled
     }
 }

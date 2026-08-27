@@ -7,7 +7,7 @@ import androidx.core.widget.TextViewCompat
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.enums.OverlayType
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
-import com.neilturner.aerialviews.utils.CountdownTimeParser
+import com.neilturner.aerialviews.ui.overlays.utils.CountdownTimeParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
+import kotlin.time.Duration.Companion.milliseconds
 
 class CountdownOverlay : AppCompatTextView {
     var type = OverlayType.EMPTY
@@ -74,7 +75,7 @@ class CountdownOverlay : AppCompatTextView {
                 while (isActive) {
                     updateCountdown()
                     if (isCompleted) break
-                    delay(1000)
+                    delay(1000.milliseconds)
                 }
             }
     }

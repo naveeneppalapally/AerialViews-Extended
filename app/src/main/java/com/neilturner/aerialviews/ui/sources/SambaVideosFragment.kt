@@ -2,6 +2,8 @@ package com.neilturner.aerialviews.ui.sources
 
 import android.content.SharedPreferences
 import android.os.Bundle
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.CheckBoxPreference
 import androidx.preference.EditTextPreference
@@ -9,11 +11,13 @@ import androidx.preference.MultiSelectListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceManager
 import com.neilturner.aerialviews.R
+import com.neilturner.aerialviews.data.network.SambaHelper
 import com.neilturner.aerialviews.models.prefs.SambaMediaPrefs
+import com.neilturner.aerialviews.providers.ProviderFetchResult
 import com.neilturner.aerialviews.providers.samba.SambaMediaProvider
-import com.neilturner.aerialviews.utils.DialogHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
-import com.neilturner.aerialviews.utils.SambaHelper
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
+import com.neilturner.aerialviews.ui.helpers.DialogHelper
+import com.neilturner.aerialviews.ui.helpers.PermissionHelper
 import com.neilturner.aerialviews.utils.setSummaryFromValues
 import com.neilturner.aerialviews.utils.toStringOrEmpty
 import kotlinx.coroutines.launch
@@ -22,14 +26,19 @@ class SambaVideosFragment :
     MenuStateFragment(),
     SharedPreferences.OnSharedPreferenceChangeListener,
     PreferenceManager.OnPreferenceTreeClickListener {
+    private lateinit var requestLocalNetworkPermission: ActivityResultLauncher<String>
+
     override fun onCreatePreferences(
         savedInstanceState: Bundle?,
         rootKey: String?,
     ) {
+        requestLocalNetworkPermission =
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
         setPreferencesFromResource(R.xml.sources_samba_videos, rootKey)
         preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(this)
 
-        limitTextInput()
+        checkForLocalNetworkPermission()
         updateSummary()
     }
 
@@ -58,7 +67,17 @@ class SambaVideosFragment :
         return super.onPreferenceTreeClick(preference)
     }
 
+    private fun checkForLocalNetworkPermission() {
+        if (PermissionHelper.hasLocalNetworkPermission(requireContext())) {
+            return
+        }
+        requestLocalNetworkPermission.launch(PermissionHelper.getLocalNetworkPermission())
+    }
+
     private fun updateSummary() {
+        val mediaSelection = findPreference<MultiSelectListPreference>("samba_media_selection")
+        mediaSelection?.setSummaryFromValues(SambaMediaPrefs.mediaSelection)
+
         val dialects = findPreference<MultiSelectListPreference>("samba_videos_smb_dialects")
         dialects?.setSummaryFromValues(dialects.values)
 
@@ -114,18 +133,6 @@ class SambaVideosFragment :
         encryption?.isChecked = SambaMediaPrefs.enableEncryption
     }
 
-    private fun limitTextInput() {
-        listOf(
-            "samba_videos_hostname",
-            "samba_videos_domainname",
-            "samba_videos_sharename",
-            "samba_videos_username",
-            "samba_videos_password",
-        ).forEach { key ->
-            findPreference<EditTextPreference>(key)?.setOnBindEditTextListener { it.setSingleLine() }
-        }
-    }
-
     private suspend fun testSambaConnection() {
         val loadingMessage = getString(R.string.message_media_searching)
         val progressDialog =
@@ -136,13 +143,17 @@ class SambaVideosFragment :
         progressDialog.show()
 
         val provider = SambaMediaProvider(requireContext(), SambaMediaPrefs)
-        val result = provider.fetchTest()
+        val message =
+            when (val result = provider.fetch()) {
+                is ProviderFetchResult.Success -> result.summary
+                is ProviderFetchResult.Error -> result.message
+            }
 
         progressDialog.dismiss()
         DialogHelper.showOnMain(
             requireContext(),
             resources.getString(R.string.samba_videos_test_results),
-            result,
+            message,
         )
     }
 }

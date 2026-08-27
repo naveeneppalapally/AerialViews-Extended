@@ -1,13 +1,12 @@
 package com.neilturner.aerialviews.ui.settings
 
 import android.os.Bundle
-import androidx.preference.EditTextPreference
 import androidx.preference.Preference
 import com.neilturner.aerialviews.R
+import com.neilturner.aerialviews.data.network.NetworkHelper
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
-import com.neilturner.aerialviews.utils.DeviceIPHelper
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
 import com.neilturner.aerialviews.utils.FirebaseHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
 
 class OverlaysMessageApiFragment : MenuStateFragment() {
     override fun onCreatePreferences(
@@ -22,7 +21,6 @@ class OverlaysMessageApiFragment : MenuStateFragment() {
         FirebaseHelper.analyticsScreenView("Message API", this)
 
         updateIPAddressDisplay()
-        limitTextInput()
     }
 
     override fun onPreferenceTreeClick(preference: Preference): Boolean {
@@ -37,18 +35,11 @@ class OverlaysMessageApiFragment : MenuStateFragment() {
         val ipPreference = findPreference<Preference>("message_api_current_ip")
 
         if (ipPreference != null) {
-            val ipAddress = DeviceIPHelper.getIPAddress(requireContext())
+            val ipAddress = NetworkHelper.getIPAddress(requireContext())
             val port = GeneralPrefs.messageApiPort
 
             // ipPreference.summary = "Device IP: $ipAddress\nAPI URL: http://$ipAddress:$port"
             ipPreference.summary = "API URL: http://$ipAddress:$port"
-        }
-    }
-
-    private fun limitTextInput() {
-        preferenceScreen.findPreference<EditTextPreference>("message_api_port")?.setOnBindEditTextListener { editText ->
-            editText.setSingleLine()
-            editText.inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
     }
 }

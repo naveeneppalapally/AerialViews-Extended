@@ -25,6 +25,7 @@ import com.neilturner.aerialviews.providers.Comm1MediaProvider
 import com.neilturner.aerialviews.providers.Comm2MediaProvider
 import com.neilturner.aerialviews.providers.LocalMediaProvider
 import com.neilturner.aerialviews.providers.MediaProvider
+import com.neilturner.aerialviews.providers.ProviderFetchResult
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.providers.youtube.YouTubeMediaProvider
 import com.neilturner.aerialviews.providers.youtube.YouTubeSourceRepository
@@ -584,13 +585,16 @@ class WallpaperProviderService : Service() {
                             async(Dispatchers.IO) {
                                 val providerKey = provider.javaClass.simpleName
                                 val startedAt = System.currentTimeMillis()
-                                val media = runCatching {
+                                val media: List<AerialMedia> = runCatching {
                                     withTimeoutOrNull(PROVIDER_FETCH_TIMEOUT_MS) {
-                                        provider.fetchMedia()
-                                    } ?: emptyList()
+                                        when (val result = provider.fetch()) {
+                                            is ProviderFetchResult.Success -> result.media
+                                            is ProviderFetchResult.Error -> emptyList<AerialMedia>()
+                                        }
+                                    } ?: emptyList<AerialMedia>()
                                 }.onFailure { exception ->
                                     Timber.w(exception, "Projectivy provider failed: %s", provider.javaClass.simpleName)
-                                }.getOrDefault(emptyList())
+                                }.getOrDefault(emptyList<AerialMedia>())
 
                                 if (media.isNotEmpty()) {
                                     Timber.i("Projectivy provider %s returned %s items (elapsed=%sms)",

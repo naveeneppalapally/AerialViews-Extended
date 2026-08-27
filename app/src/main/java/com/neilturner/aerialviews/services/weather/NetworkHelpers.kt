@@ -1,8 +1,7 @@
 package com.neilturner.aerialviews.services.weather
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
+import com.neilturner.aerialviews.data.network.NetworkHelper
 import okhttp3.Cache
 import okhttp3.CacheControl
 import okhttp3.Interceptor
@@ -14,22 +13,16 @@ import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.hours
 
 object NetworkHelpers {
-    private val timeout = 10L // Seconds = socket, etc timeout
+    private const val TIMEOUT = 10L // Seconds = socket, etc timeout
     private val timeoutUnits = TimeUnit.SECONDS
-    private val cacheSize = 1 * 1024 * 1024L // 10 MB
+    private const val CACHESIZE = 1 * 1024 * 1024L // 10 MB
     private val offlineCacheTimeout = 2.hours.inWholeSeconds.toInt()
-    private val onlineCacheTimeout = 60 // Minutes
+    private const val ONLINECACHETIMEOUT = 60 // Minutes
 
-    @Suppress("DEPRECATION")
-    fun isNetworkAvailable(context: Context): Boolean {
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-    }
+    fun isNetworkAvailable(context: Context): Boolean = NetworkHelper.isNetworkAvailable(context)
 
     fun buildOkHttpClient(context: Context): OkHttpClient {
-        val cache = Cache(File(context.cacheDir, "weather_cache"), cacheSize)
+        val cache = Cache(File(context.cacheDir, "weather_cache"), CACHESIZE)
         return OkHttpClient
             .Builder()
             .cache(cache)
@@ -37,8 +30,8 @@ object NetworkHelpers {
             .addInterceptor(cacheStatusInterceptor)
             .addInterceptor(offlineCacheInterceptor(context))
             .addNetworkInterceptor(onlineCacheInterceptor())
-            .connectTimeout(timeout, timeoutUnits)
-            .readTimeout(timeout, timeoutUnits)
+            .connectTimeout(TIMEOUT, timeoutUnits)
+            .readTimeout(TIMEOUT, timeoutUnits)
             .build()
     }
 
@@ -86,7 +79,7 @@ object NetworkHelpers {
             val cacheControl =
                 CacheControl
                     .Builder()
-                    .maxAge(onlineCacheTimeout, timeoutUnits)
+                    .maxAge(ONLINECACHETIMEOUT, timeoutUnits)
                     .build()
 
             return@Interceptor originalResponse

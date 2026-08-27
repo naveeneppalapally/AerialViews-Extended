@@ -9,6 +9,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -22,25 +23,27 @@ import com.neilturner.aerialviews.models.videos.AerialMedia
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.providers.youtube.YouTubePlaybackUrls
 import com.neilturner.aerialviews.services.philips.PhilipsMediaCodecAdapterFactory
-import com.neilturner.aerialviews.ui.overlays.ProgressBarEvent
-import com.neilturner.aerialviews.ui.overlays.ProgressState
+import com.neilturner.aerialviews.ui.controls.ProgressBarEvent
+import com.neilturner.aerialviews.ui.controls.ProgressState
+import com.neilturner.aerialviews.ui.helpers.LocaleHelper
+import com.neilturner.aerialviews.ui.helpers.PermissionHelper
+import com.neilturner.aerialviews.ui.helpers.RefreshRateHelper
+import com.neilturner.aerialviews.ui.helpers.ToastHelper
+import com.neilturner.aerialviews.ui.helpers.VolumeHelper
 import com.neilturner.aerialviews.utils.FirebaseHelper
-import com.neilturner.aerialviews.utils.LocaleHelper
-import com.neilturner.aerialviews.utils.PermissionHelper
-import com.neilturner.aerialviews.utils.RefreshRateHelper
-import com.neilturner.aerialviews.utils.ToastHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import me.kosert.flowbus.GlobalBus
 import timber.log.Timber
 import kotlin.time.Duration.Companion.milliseconds
 
-@Suppress("SameParameterValue")
+@Suppress("SameParameterValue", "JoinDeclarationAndAssignment")
 class VideoPlayerView
     @OptIn(UnstableApi::class)
     @JvmOverloads
@@ -48,9 +51,8 @@ class VideoPlayerView
         context: Context,
         attrs: AttributeSet? = null,
         defStyleAttr: Int = 0,
-    ) : PlayerView(context, attrs, defStyleAttr),
+    ) : PlayerView(context.applicationContext, attrs, defStyleAttr),
         Player.Listener {
-        @Suppress("JoinDeclarationAndAssignment")
         private val exoPlayer: ExoPlayer
         private var state = VideoState()
 
@@ -72,11 +74,19 @@ class VideoPlayerView
         private var playbackSpeed = GeneralPrefs.playbackSpeed
         private var pausedTimestamp: Long = 0
         private var wasPlaying = false
+        private var isDestroyed = false
 
         private val progressBar =
             GeneralPrefs.progressBarLocation != ProgressBarLocation.DISABLED && GeneralPrefs.progressBarType != ProgressBarType.PHOTOS
 
-        private var isMuted = GeneralPrefs.muteVideos
+        private val volumeHelper =
+            VolumeHelper(
+                getVolume = { exoPlayer.volume },
+                setVolume = { v -> exoPlayer.volume = v },
+            )
+        private var forcedMuted = false
+
+        private var isMuted = !GeneralPrefs.playsVideoAudio
 
         init {
             exoPlayer = VideoPlayerHelper.buildPlayer(context, GeneralPrefs)
@@ -96,15 +106,25 @@ class VideoPlayerView
         }
 
         fun release() {
+            if (isDestroyed) return
+
+            Timber.i("Releasing VideoPlayerView...")
+            isDestroyed = true
+
             pause()
             resolveVideoJob?.cancel()
             mainScopeJob.cancel()
+
+            // Clear surface first to stop rendering, then release the player
+            exoPlayer.setVideoSurface(null)
             player?.release()
+            player = null
 
             removeCallbacks(almostFinishedRunnable)
             removeCallbacks(canChangePlaybackSpeedRunnable)
             removeCallbacks(onErrorRunnable)
 
+            cancelVolumeFade()
             listener = null
         }
 
@@ -128,6 +148,9 @@ class VideoPlayerView
             state.currentMedia = media
             resolveVideoJob?.cancel()
             exoPlayer.stop()
+            cancelVolumeFade()
+            resetRotation()
+
             val forceCropForYouTube = media.source == AerialMediaSource.YOUTUBE
             resizeMode = VideoPlayerHelper.getResizeMode(GeneralPrefs.videoScale, forceCropForYouTube)
             exoPlayer.videoScalingMode = VideoPlayerHelper.getVideoScalingMode(GeneralPrefs.videoScale, forceCropForYouTube)
@@ -156,17 +179,20 @@ class VideoPlayerView
                     if (initialStartPositionMs > 0L) {
                         Log.i("VideoPlayerView", "Applying initial YouTube start during prepare: ${initialStartPositionMs.milliseconds}")
                     }
-                    VideoPlayerHelper.setupMediaSource(exoPlayer, playableMedia, initialStartPositionMs)
+                    VideoPlayerHelper.setupMediaSource(context, exoPlayer, playableMedia, initialStartPositionMs)
 
-                    if (GeneralPrefs.muteVideos) {
-                        VideoPlayerHelper.toggleAudioTrack(exoPlayer, true)
-                    }
+                    applyMuteState()
 
                     // Disable subtitles/text tracks by default
                     VideoPlayerHelper.disableTextTrack(exoPlayer)
 
                     player?.prepare()
                 }
+        }
+
+        fun setForcedMute(enabled: Boolean) {
+            forcedMuted = enabled
+            applyMuteState()
         }
 
         fun increaseSpeed() = changeSpeed(true)
@@ -178,15 +204,45 @@ class VideoPlayerView
         fun seekBackward() = seek(true)
 
         fun toggleMute() {
+            cancelVolumeFade()
+            if (forcedMuted) {
+                applyMuteState()
+                return
+            }
             if (isMuted) {
-                VideoPlayerHelper.toggleAudioTrack(exoPlayer, false)
+                if (GeneralPrefs.muteDisablesAudioTrack) {
+                    VideoPlayerHelper.toggleAudioTrack(exoPlayer, false)
+                }
                 exoPlayer.volume = GeneralPrefs.videoVolume.toFloat() / 100
                 isMuted = false
             } else {
-                VideoPlayerHelper.toggleAudioTrack(exoPlayer, true)
+                if (GeneralPrefs.muteDisablesAudioTrack) {
+                    VideoPlayerHelper.toggleAudioTrack(exoPlayer, true)
+                }
                 exoPlayer.volume = 0f
                 isMuted = true
             }
+        }
+
+        fun fadeOutAudio(duration: Long) {
+            if (isMuted || forcedMuted) return
+            volumeHelper.fadeOut(durationMs = duration)
+        }
+
+        private fun applyMuteState() {
+            val shouldMute = forcedMuted || isMuted
+            if (shouldMute) {
+                if (GeneralPrefs.muteDisablesAudioTrack) {
+                    VideoPlayerHelper.toggleAudioTrack(exoPlayer, true)
+                }
+                exoPlayer.volume = 0f
+            } else {
+                if (GeneralPrefs.muteDisablesAudioTrack) {
+                    VideoPlayerHelper.toggleAudioTrack(exoPlayer, false)
+                }
+                exoPlayer.volume = GeneralPrefs.videoVolume.toFloat() / 100
+            }
+            isMuted = shouldMute && !forcedMuted
         }
 
         fun setOnPlayerListener(listener: OnVideoPlayerEventListener?) {
@@ -229,6 +285,9 @@ class VideoPlayerView
 
                 Player.STATE_ENDED -> {
                     Timber.i("Playback ended...")
+                    if (player?.repeatMode == Player.REPEAT_MODE_OFF) {
+                        listener?.onVideoAlmostFinished()
+                    }
                 }
 
                 Player.STATE_READY -> {}
@@ -237,6 +296,10 @@ class VideoPlayerView
                     Timber.i("Buffering...")
                     if (progressBar) GlobalBus.post(ProgressBarEvent(ProgressState.PAUSE))
                 }
+            }
+
+            if (playbackState == Player.STATE_READY) {
+                emitTrackMetadata()
             }
 
             if (!state.prepared && playbackState == Player.STATE_READY) {
@@ -250,6 +313,17 @@ class VideoPlayerView
                     state.endPosition = result.second
                     state.startPosition = adjustYouTubeStartForIntroSkip(state.startPosition, state.endPosition)
                 }
+
+                // Dynamically set repeat mode based on whether it's a short video that should loop
+                val maxVideoLength = GeneralPrefs.maxVideoLength.toLong() * 1000
+                val isLengthLimited = maxVideoLength >= 10000
+                val isShortVideo = exoPlayer.duration in 1..<maxVideoLength
+                player?.repeatMode =
+                    if (GeneralPrefs.loopUntilSkipped || (isShortVideo && isLengthLimited && GeneralPrefs.loopShortVideos)) {
+                        Player.REPEAT_MODE_ALL
+                    } else {
+                        Player.REPEAT_MODE_OFF
+                    }
 
                 if (state.startPosition > 0) {
                     val currentPosition = player?.currentPosition ?: 0L
@@ -286,7 +360,7 @@ class VideoPlayerView
                     if (!state.ready) {
                         listener?.onVideoPrepared()
                         state.ready = true
-                        
+
                         // Pre-resolve next video immediately when current starts
                         mainScope.launch(Dispatchers.IO) {
                             YouTubeFeature.repository(context).preResolveNext(this)
@@ -320,6 +394,9 @@ class VideoPlayerView
                 Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT -> {
                     state.loopCount++
                     Timber.i("Reason: Looping video, count: ${state.loopCount}")
+                    if (exoPlayer.isPlaying) {
+                        setupAlmostFinishedRunnable()
+                    }
                 }
             }
             super.onMediaItemTransition(mediaItem, reason)
@@ -347,6 +424,71 @@ class VideoPlayerView
                 Log.e("VideoPlayerView", "onPlayerErrorChanged: ${it.errorCodeName} ${it.localizedMessage}", it)
                 Timber.e(it)
             }
+        }
+
+        @Suppress("DEPRECATION")
+        @OptIn(UnstableApi::class)
+        override fun onVideoSizeChanged(videoSize: VideoSize) {
+            super.onVideoSizeChanged(videoSize)
+
+            val w = videoSize.width
+            val h = videoSize.height
+            val unapplied = videoSize.unappliedRotationDegrees
+            Timber.i("Video size: ${w}x${h}, unappliedRotationDegrees=$unapplied")
+
+            if (!GeneralPrefs.portraitVideoRotationEnabled) return
+
+            if (GeneralPrefs.useTextureViewForVideo) {
+                Timber.i("Portrait rotation fix: skipped (TextureView mode)")
+                return
+            }
+
+            // Portrait detection: taller than wide (before any rotation)
+            val isPortrait = h > w
+            if (!isPortrait) {
+                Timber.i("Portrait rotation fix: skipped (landscape video ${w}x${h})")
+                resetRotation()
+                return
+            }
+
+            val degrees = GeneralPrefs.portraitVideoRotationDegrees.toFloatOrNull() ?: return
+            applyRotationFix(degrees)
+        }
+
+        private fun applyRotationFix(degrees: Float) {
+            post {
+                val containerW = width.toFloat()
+                val containerH = height.toFloat()
+                if (containerW == 0f || containerH == 0f) return@post
+
+                // After a 90°/270° rotation the view's layout axes are swapped,
+                // so scale by containerH/containerW to fill the screen width.
+                val scale =
+                    when (degrees) {
+                        90f, 270f -> containerH / containerW
+                        else -> 1f // 180° — aspect ratio unchanged, no scale needed
+                    }
+
+                Timber.i(
+                    "Portrait rotation fix: applying ${degrees}° rotation, scale=$scale " +
+                        "(container ${containerW.toInt()}x${containerH.toInt()})",
+                )
+
+                rotation = degrees
+                scaleX = scale
+                scaleY = scale
+            }
+        }
+
+        private fun resetRotation() {
+            rotation = 0f
+            scaleX = 1f
+            scaleY = 1f
+        }
+
+        private fun emitTrackMetadata() {
+            val extractedMetadata = extractVideoMetadataFromTracks(exoPlayer.currentTracks)
+            listener?.onVideoMetadataExtracted(extractedMetadata)
         }
 
         private suspend fun resolveMediaForPlayback(media: AerialMedia): AerialMedia =
@@ -527,6 +669,10 @@ class VideoPlayerView
             listener?.onVideoPlaybackSpeedChanged()
         }
 
+        private fun cancelVolumeFade() {
+            volumeHelper.cancel()
+        }
+
         private fun setupAlmostFinishedRunnable() {
             removeCallbacks(almostFinishedRunnable)
 
@@ -541,7 +687,14 @@ class VideoPlayerView
 
             // Basic duration and progress
             val duration = state.endPosition - state.startPosition
-            val progress = exoPlayer.currentPosition - state.startPosition
+
+            val loopDuration =
+                if (exoPlayer.duration != androidx.media3.common.C.TIME_UNSET && exoPlayer.duration > 0) {
+                    state.loopCount * exoPlayer.duration
+                } else {
+                    0L
+                }
+            val progress = loopDuration + exoPlayer.currentPosition - state.startPosition
             val fadeDuration = GeneralPrefs.mediaFadeOutDuration.toLong()
 
             // Duration taking into account...
@@ -622,6 +775,8 @@ class VideoPlayerView
             fun onVideoPrepared()
 
             fun onVideoPlaybackSpeedChanged()
+
+            fun onVideoMetadataExtracted(metadata: ExtractedVideoMetadata)
         }
 
         companion object {
@@ -633,6 +788,7 @@ class VideoPlayerView
             const val START_POSITION_SEEK_TOLERANCE_MS: Long = 5_000
             const val YOUTUBE_STREAM_RESOLVE_TIMEOUT_MS: Long = 15_000
             private val RESOLVE_LOG_LOCK = Any()
+
             @Volatile
             private var firstYouTubeResolveTimingLogged = false
         }

@@ -6,8 +6,8 @@ import androidx.preference.ListPreference
 import androidx.preference.Preference
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
 import com.neilturner.aerialviews.utils.FirebaseHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -44,13 +44,13 @@ class OverlaysWeatherForecastFragment : MenuStateFragment() {
     }
 
     private fun loadValues() {
-        val items = GeneralPrefs.weatherForecast.split(",")
+        val items = GeneralPrefs.weatherLine1Layout.split(",")
         items.forEachIndexed { index, item ->
             if (index < prefs.size && !item.isBlank()) {
                 prefs[index]?.value = item
             }
         }
-        Timber.i("Loaded weather forecast preferences: ${GeneralPrefs.weatherForecast}")
+        Timber.i("Loaded weather forecast preferences: ${GeneralPrefs.weatherLine1Layout}")
     }
 
     private fun setupChangeListeners() {
@@ -78,7 +78,7 @@ class OverlaysWeatherForecastFragment : MenuStateFragment() {
                 }
             }
 
-        GeneralPrefs.weatherForecast = values
+        GeneralPrefs.weatherLine1Layout = values
         Timber.i("Weather forecast preferences saved: $values")
     }
 }

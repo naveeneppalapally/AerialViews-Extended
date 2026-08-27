@@ -1,14 +1,15 @@
 package com.neilturner.aerialviews.ui.core
 
 import android.content.Context
+import com.neilturner.aerialviews.data.storage.FileHelper
+import com.neilturner.aerialviews.models.enums.AerialMediaSource
 import com.neilturner.aerialviews.models.enums.AerialMediaType
 import com.neilturner.aerialviews.models.enums.DateType
 import com.neilturner.aerialviews.models.enums.LocationType
 import com.neilturner.aerialviews.models.enums.MetadataType
 import com.neilturner.aerialviews.models.videos.AerialMedia
-import com.neilturner.aerialviews.utils.DateHelper
-import com.neilturner.aerialviews.utils.FileHelper
-import com.neilturner.aerialviews.utils.GeocoderHelper
+import com.neilturner.aerialviews.ui.helpers.DateHelper
+import com.neilturner.aerialviews.ui.helpers.GeocoderHelper
 import com.neilturner.aerialviews.utils.filenameWithoutExtension
 import java.util.Locale
 
@@ -75,8 +76,21 @@ internal class MetadataResolver(
                         }
                 }
 
+                "TITLE" -> {
+                    media.metadata.title
+                        .trim()
+                        .takeIf { it.isNotBlank() && supportsEmbeddedVideoFileMetadata(media) }
+                        ?.let {
+                            return ResolvedMetadata(
+                                text = it,
+                                poi = emptyMap(),
+                                metadataType = MetadataType.STATIC,
+                            )
+                        }
+                }
+
                 else -> {
-                    val common = resolveSharedMetadata(context, media, entry, preferences.videoLocationType, preferences.videoFolderDepth)
+                    val common = resolveSharedMetadata(context, media, entry, preferences)
                     if (common != null) {
                         return common
                     }
@@ -100,28 +114,8 @@ internal class MetadataResolver(
 
         for (entry in selection) {
             when (entry) {
-                "DATE_TAKEN" -> {
-                    val exifDate = media.metadata.exif.date
-                    if (!exifDate.isNullOrBlank()) {
-                        val formatted =
-                            DateHelper.formatExifDate(
-                                date = exifDate,
-                                offset = media.metadata.exif.offset,
-                                type = preferences.photoDateType,
-                                custom = preferences.photoDateCustom,
-                            )
-                        if (!formatted.isNullOrBlank()) {
-                            return ResolvedMetadata(
-                                text = formatted,
-                                poi = emptyMap(),
-                                metadataType = MetadataType.STATIC,
-                            )
-                        }
-                    }
-                }
-
                 else -> {
-                    val common = resolveSharedMetadata(context, media, entry, preferences.photoLocationType, preferences.photoFolderDepth)
+                    val common = resolveSharedMetadata(context, media, entry, preferences)
                     if (common != null) {
                         return common
                     }
@@ -140,10 +134,12 @@ internal class MetadataResolver(
         context: Context,
         media: AerialMedia,
         entry: String,
-        locationType: LocationType,
-        folderDepth: Int,
-    ): ResolvedMetadata? =
-        when (entry) {
+        preferences: Preferences,
+    ): ResolvedMetadata? {
+        val locationType = if (media.type == AerialMediaType.IMAGE) preferences.photoLocationType else preferences.videoLocationType
+        val folderDepth = if (media.type == AerialMediaType.IMAGE) preferences.photoFolderDepth else preferences.videoFolderDepth
+
+        return when (entry) {
             "LOCATION" -> {
                 when (val location = resolveMediaLocation(context, media, locationType)) {
                     is MediaLocationResolution.Resolved -> {
@@ -168,6 +164,30 @@ internal class MetadataResolver(
                 }
             }
 
+            "DATE_TAKEN" -> {
+                val exifDate = media.metadata.exif.date
+                if (!exifDate.isNullOrBlank()) {
+                    val formatted =
+                        DateHelper.formatExifDate(
+                            date = exifDate,
+                            offset = media.metadata.exif.offset,
+                            type = preferences.photoDateType,
+                            custom = preferences.photoDateCustom,
+                        )
+                    if (!formatted.isNullOrBlank()) {
+                        ResolvedMetadata(
+                            text = formatted,
+                            poi = emptyMap(),
+                            metadataType = MetadataType.STATIC,
+                        )
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
+            }
+
             "DESCRIPTION" -> {
                 media.metadata.exif.description
                     ?.trim()
@@ -181,9 +201,35 @@ internal class MetadataResolver(
                     }
             }
 
-            "FILENAME" -> {
-                media.uri.filenameWithoutExtension
+            "ALBUM_NAME" -> {
+                media.metadata.albumName
                     .trim()
+                    .takeIf {
+                        it.isNotBlank() &&
+                            (
+                                (media.source == AerialMediaSource.IMMICH) ||
+                                    (media.source == AerialMediaSource.NCMEMORIES)
+                            )
+                    }?.let {
+                        ResolvedMetadata(
+                            text = it,
+                            poi = emptyMap(),
+                            metadataType = MetadataType.STATIC,
+                        )
+                    }
+            }
+
+            "FILENAME" -> {
+                when (media.source) {
+                    AerialMediaSource.NCMEMORIES -> {
+                        // original filename is stored in short description, not URI
+                        FileHelper.extractFilenameFromPath(media.metadata.shortDescription)
+                    }
+
+                    else -> {
+                        media.uri.filenameWithoutExtension
+                    }
+                }.trim()
                     .takeIf { it.isNotBlank() }
                     ?.let {
                         ResolvedMetadata(
@@ -195,9 +241,24 @@ internal class MetadataResolver(
             }
 
             "FOLDER_FILENAME" -> {
-                FileHelper
-                    .formatFolderAndFilenameFromUri(media.uri, includeFilename = true, pathDepth = folderDepth)
-                    .trim()
+                when (media.source) {
+                    AerialMediaSource.NCMEMORIES -> {
+                        // original folder and filename are stored in short description, not URI
+                        FileHelper.formatFolderAndFilenameFromPath(
+                            media.metadata.shortDescription,
+                            includeFilename = true,
+                            pathDepth = folderDepth,
+                        )
+                    }
+
+                    else -> {
+                        FileHelper.formatFolderAndFilenameFromUri(
+                            media.uri,
+                            includeFilename = true,
+                            pathDepth = folderDepth,
+                        )
+                    }
+                }.trim()
                     .takeIf { it.isNotBlank() }
                     ?.let {
                         ResolvedMetadata(
@@ -209,9 +270,24 @@ internal class MetadataResolver(
             }
 
             "FOLDER_ONLY" -> {
-                FileHelper
-                    .formatFolderAndFilenameFromUri(media.uri, includeFilename = false, pathDepth = folderDepth)
-                    .trim()
+                when (media.source) {
+                    AerialMediaSource.NCMEMORIES -> {
+                        // original folder is stored in short description, not URI
+                        FileHelper.formatFolderAndFilenameFromPath(
+                            media.metadata.shortDescription,
+                            includeFilename = false,
+                            pathDepth = folderDepth,
+                        )
+                    }
+
+                    else -> {
+                        FileHelper.formatFolderAndFilenameFromUri(
+                            media.uri,
+                            includeFilename = false,
+                            pathDepth = folderDepth,
+                        )
+                    }
+                }.trim()
                     .takeIf { it.isNotBlank() }
                     ?.let {
                         ResolvedMetadata(
@@ -226,6 +302,7 @@ internal class MetadataResolver(
                 null
             }
         }
+    }
 
     private suspend fun resolveMediaLocation(
         context: Context,

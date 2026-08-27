@@ -9,14 +9,13 @@ import androidx.preference.Preference
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.services.CodecType
 import com.neilturner.aerialviews.services.Display
-import com.neilturner.aerialviews.services.HDRFormat
-import com.neilturner.aerialviews.services.OutputDescription
+import com.neilturner.aerialviews.services.Display.HDRFormat
+import com.neilturner.aerialviews.services.Display.OutputDescription
 import com.neilturner.aerialviews.services.getCodecs
-import com.neilturner.aerialviews.services.getDisplay
-import com.neilturner.aerialviews.utils.DeviceHelper
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
+import com.neilturner.aerialviews.ui.helpers.DeviceHelper
+import com.neilturner.aerialviews.ui.helpers.PermissionHelper
 import com.neilturner.aerialviews.utils.FirebaseHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
-import com.neilturner.aerialviews.utils.PermissionHelper
 import com.neilturner.aerialviews.utils.roundTo
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -33,7 +32,7 @@ class CapabilitiesFragment : MenuStateFragment() {
 
         lifecycleScope.launch {
             resources = context?.resources!!
-            display = getDisplay(activity)
+            display = Display.get(activity)
         }
     }
 
@@ -204,6 +203,12 @@ class CapabilitiesFragment : MenuStateFragment() {
         val notificationAccess = if (PermissionHelper.hasNotificationListenerPermission(ctx)) granted else denied
         lines.add(String.format(resources.getString(R.string.capabilities_permission_notification_access), notificationAccess))
 
+        // Local network access (Android 17+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+            val localNetworkGranted = if (PermissionHelper.hasLocalNetworkPermission(ctx)) granted else denied
+            lines.add(String.format(resources.getString(R.string.capabilities_permission_local_network), localNetworkGranted))
+        }
+
         // Media / External storage read
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val videoGranted =
@@ -227,10 +232,7 @@ class CapabilitiesFragment : MenuStateFragment() {
         } else {
             val extReadGranted = if (PermissionHelper.hasDocumentReadPermission(ctx)) granted else denied
             lines.add(String.format(resources.getString(R.string.capabilities_permission_read_external), extReadGranted))
-        }
 
-        // External storage write (only meaningful below R / 30)
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             val writeGranted = if (PermissionHelper.hasDocumentWritePermission(ctx)) granted else denied
             lines.add(String.format(resources.getString(R.string.capabilities_permission_write_external), writeGranted))
         }

@@ -1,0 +1,120 @@
+package com.neilturner.aerialviews.services
+
+import android.content.Context
+import androidx.annotation.OptIn
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import com.neilturner.aerialviews.models.music.MusicPlaylist
+import com.neilturner.aerialviews.models.prefs.GeneralPrefs
+import com.neilturner.aerialviews.ui.core.VideoPlayerHelper
+import com.neilturner.aerialviews.ui.helpers.VolumeHelper
+import timber.log.Timber
+
+class MusicPlayer(
+    private val context: Context,
+    private val playlist: MusicPlaylist,
+) {
+    private var player: ExoPlayer? = null
+    private val volumeHelper =
+        VolumeHelper(
+            getVolume = { player?.volume ?: 0f },
+            setVolume = { v -> player?.volume = v },
+        )
+
+    var onMediaItemChanged: (() -> Unit)? = null
+
+    fun createPlayer(): ExoPlayer {
+        player = VideoPlayerHelper.buildAudioPlayer(context.applicationContext)
+        player?.addListener(
+            object : Player.Listener {
+                override fun onMediaItemTransition(
+                    mediaItem: androidx.media3.common.MediaItem?,
+                    reason: Int,
+                ) {
+                    onMediaItemChanged?.invoke()
+                }
+            },
+        )
+        return player!!
+    }
+
+    fun getCurrentTrackIndex(): Int = player?.currentMediaItemIndex ?: 0
+
+    @OptIn(UnstableApi::class)
+    fun play(startTrackIndex: Int = 0) {
+        val player =
+            player ?: run {
+                Timber.w("MusicPlayer: play() called but player not created")
+                return
+            }
+
+        // Load all tracks into ExoPlayer's queue with correct data source per track
+        playlist.tracks.forEach { track ->
+            val mediaSource = VideoPlayerHelper.createAudioMediaSource(context.applicationContext, track)
+            player.addMediaSource(mediaSource)
+        }
+        player.prepare()
+
+        if (startTrackIndex in playlist.tracks.indices) {
+            player.seekTo(startTrackIndex, 0L)
+            Timber.i("MusicPlayer: array size is ${playlist.size}, seeking to index $startTrackIndex")
+        }
+
+        // Apply repeat mode
+        player.repeatMode =
+            if (playlist.repeat) {
+                Player.REPEAT_MODE_ALL
+            } else {
+                Player.REPEAT_MODE_OFF
+            }
+
+        player.volume = 0f
+        player.play()
+        volumeHelper.fadeIn(
+            durationMs = 500,
+            targetVolume = GeneralPrefs.videoVolume.toFloat() / 100,
+        )
+        Timber.i("MusicPlayer: playing ${playlist.size} tracks, repeat=${playlist.repeat}")
+    }
+
+    fun pause() {
+        // Won't do anything unless we delay shutting down of screensaver
+        // onWakeUp or onStop - delay less than 1 second or be killed by OS
+        volumeHelper.fadeOut(durationMs = 500) {
+            player?.pause()
+        }
+        Timber.i("MusicPlayer: pausing")
+    }
+
+    fun resume() {
+        val player = player ?: return
+        player.play()
+        volumeHelper.fadeIn(
+            durationMs = 500,
+            targetVolume = GeneralPrefs.videoVolume.toFloat() / 100,
+        )
+        Timber.i("MusicPlayer: resuming")
+    }
+
+    fun nextTrack() {
+        val player = player ?: return
+        player.seekToNextMediaItem()
+        Timber.i("MusicPlayer: skipped to next track")
+    }
+
+    fun previousTrack() {
+        val player = player ?: return
+        player.seekToPreviousMediaItem()
+        Timber.i("MusicPlayer: skipped to previous track")
+    }
+
+    fun release() {
+        volumeHelper.cancel()
+        player?.release()
+        player = null
+        Timber.i("MusicPlayer: released")
+    }
+
+    fun hasMusic(): Boolean = playlist.size > 0
+}

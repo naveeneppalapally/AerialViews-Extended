@@ -6,7 +6,11 @@ import com.neilturner.aerialviews.models.enums.SearchType
 interface LocalProviderPreferences {
     val enabled: Boolean
     var searchType: SearchType?
-    var mediaType: ProviderMediaType?
+    val mediaSelection: Set<String>
+    val mediaType: ProviderMediaType?
+    val musicEnabled: Boolean
+    val includeVideos: Boolean
+    val includePhotos: Boolean
 
     var filterEnabled: Boolean
     var filterFolder: String
@@ -15,4 +19,6 @@ interface LocalProviderPreferences {
     var legacyVolume: String
     var legacyFolder: String
     var legacySearchSubfolders: Boolean
+
+    fun settingsHash(): String
 }

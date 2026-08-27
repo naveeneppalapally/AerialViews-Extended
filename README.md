@@ -376,6 +376,257 @@ It replaces it. Both apps cannot be installed at the same time. All original Aer
 This is normal for any app not distributed through the Play Store. Tap **Install anyway**. The source code is fully open on this page if you want to review it.
 </details>
 
+## Message API
+
+Aerial Views includes a built-in HTTP API that allows you to display custom messages on your TV from any device on your network. This is useful for showing notifications, status updates, or integrating with home automation systems.
+
+<details>
+<summary>Enabling the Message API</summary>
+&nbsp;
+
+1. Navigate to `Settings > Overlays > Message Overlay`
+2. Enable **Message API** and configure the port (default: `8081`)
+3. Take note of the IP address listed on the screen
+
+</details>
+
+<details>
+<summary>API Endpoints</summary>
+
+#### Check API Status
+
+Verify the API is running:
+
+```bash
+curl http://<tv-ip-address>:8081/status
+```
+
+**Response:**
+```
+Aerial Views message API is running
+```
+
+#### Send a Message
+
+Display a message on the screen:
+
+```bash
+curl -X POST http://<tv-ip-address>:8081/message/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "Hello World!",
+    "duration": 5,
+    "textSize": 18,
+    "textWeight": 300
+  }'
+```
+
+**Request Parameters:**
+
+| Parameter    | Type    | Required | Description                                                   |
+|--------------|---------|----------|---------------------------------------------------------------|
+| `text`       | string  | Yes      | The message text to display (empty string clears the message) |
+| `duration`   | integer | No       | Auto-clear message after N seconds                            |
+| `textSize`   | integer | No       | Font size in sp (default: 18)                                 |
+| `textWeight` | integer | No       | Font weight 100-900 (default: 300)                            |
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "message": "Message 1 processed successfully"
+}
+```
+
+**Response (Error):**
+```json
+{
+  "success": false,
+  "error": "Invalid textSize value: 50. Valid values are: [12, 14, 16, 18, 20, 22, 24]"
+}
+```
+
+#### Clear a Message
+
+Clear the message by sending an empty text:
+
+```bash
+curl -X POST http://<tv-ip-address>:8081/message/1 \
+  -H "Content-Type: application/json" \
+  -d '{"text": ""}'
+```
+
+</details>
+
+<details>
+<summary>Examples</summary>
+&nbsp;
+
+**Python:**
+```python
+import urllib.request
+import json
+
+url = "http://192.168.1.100:8081/message/1"
+data = {
+    "text": "Welcome Home!",
+    "duration": 10
+}
+req = urllib.request.Request(
+    url,
+    data=json.dumps(data).encode("utf-8"),
+    method="POST",
+    headers={"Content-Type": "application/json"}
+)
+with urllib.request.urlopen(req) as response:
+    print(response.read().decode("utf-8"))
+```
+
+**Node.js:**
+```javascript
+fetch('http://192.168.1.100:8081/message/1', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+        text: 'Doorbell pressed!',
+        duration: 5
+    })
+})
+.then(res => res.json())
+.then(console.log);
+```
+
+**Home Assistant (REST Command):**
+```yaml
+rest_command:
+  aerial_views_message:
+    url: "http://192.168.1.100:8081/message/1"
+    method: "post"
+    content_type: "application/json"
+    payload: '{"text": "{{ message }}", "duration": {{ duration | default(5) }} }'
+```
+
+**Bash/Shell:**
+```bash
+#!/bin/bash
+TV_IP="192.168.1.100"
+MESSAGE="Meeting starts in 5 minutes"
+
+curl -X POST "http://$TV_IP:8081/message/1" \
+  -H "Content-Type: application/json" \
+  -d "{\"text\": \"$MESSAGE\", \"duration\": 10}"
+```
+
+</details>
+
+<details>
+<summary>Notes</summary>
+&nbsp;
+
+- Message number (`1` in `/message/1`) refers to the overlay slot (1-4 available)
+- If `duration` is specified, the message auto-clears after that many seconds
+- Valid `textSize` values: `[12, 14, 16, 18, 20, 22, 24]`
+- Valid `textWeight` values: `[100, 200, 300, 400, 500, 600, 700, 800, 900]`
+
+</details>
+
+## Custom feeds
+
+Aerial Views supports adding custom media feeds, allowing you to stream your own videos, expansion packs, or simple media lists from third-party providers.
+
+<details>
+<summary>JSON Feed (entries.json)</summary>
+&nbsp;
+
+The app supports the "community" video format, which is a JSON file (typically named `entries.json`) containing metadata and URLs for different video qualities.
+
+**Example `entries.json`:**
+
+```json
+{
+  "assets": [
+    {
+      "id": "sunset_beach",
+      "accessibilityLabel": "Beautiful sunset over a tropical beach",
+      "type": "aerial",
+      "timeOfDay": "sunset",
+      "url-1080-SDR": "https://example.com/videos/sunset_1080p.mp4",
+      "url-4K-SDR": "https://example.com/videos/sunset_4k.mp4",
+      "pointsOfInterest": {
+        "0": "The setting sun",
+        "30": "Palm trees swaying in the breeze"
+      }
+    }
+  ]
+}
+```
+
+Another example [can be found on GitHub](https://github.com/AerialScreensaver/AerialCommunity/blob/master/entries.json).
+
+</details>
+
+<details>
+<summary>CSV Media List (.csv)</summary>
+&nbsp;
+
+For simple collections of images and videos, you can use a plain CSV file. Each line should contain a URL and an optional description, separated by a comma.
+
+The app automatically determines if an item is a video or a photo based on the file extension.
+
+**Example `media_list.csv`:**
+
+```csv
+url,description
+"https://example.com/photos/landscape.jpg","Mountains at sunset"
+"https://example.com/videos/ocean_waves.mp4","Relaxing ocean waves"
+https://example.com/photos/forest.webp,"A dense green forest"
+```
+
+*Note: Wrapping quotes are optional but recommended for descriptions containing commas.*
+
+</details>
+
+<details>
+<summary>Direct Video Streams</summary>
+&nbsp;
+
+You can also add direct links to video streams. Separate multiple URLs with a comma in the **Custom Media URLs** setting.
+
+Supported formats:
+* **HLS (.m3u8)**: Commonly used for live streams and IPTV.
+* **RTSP**: Used for security cameras and low-latency streaming.
+
+</details>
+
+## Immich Server Setup
+
+Aerial Views supports streaming photos and videos from your self-hosted [Immich](https://immich.app/) server. When setting up API Key authentication, you will need to generate an API key first via the Immich web interface. Look in **Account Settings** then **API Keys** for this option.
+
+<details>
+<summary>Required API Permissions</summary>
+
+To ensure Aerial Views can successfully query your albums, retrieve media list metadata (for
+favorites, recent, or random filters), and stream your video and photo files, your API key must have
+the following permissions selected:
+
+* **Album:** `album.read` (required to list and retrieve album metadata)
+* **Asset:** `asset.read`, `asset.view`, `asset.download` (required to search and read metadata,
+  load thumbnails/previews, and stream/download original files)
+
+:information_source: If you encounter `403 Forbidden` errors, verification failures, or blank
+screens during playback, double-check that the generated API key has all of these permissions
+active.
+</details>
+
+## Nextcloud Memories Setup
+
+You can use either user password or app password in Aerial Views. We strongly suggest app password
+for enhanced security.
+
+You can generate an app password via your Nextcloud web interface under **User Menu > Personal
+Settings > Security (tab) > Devices & Sessions (section)**. Just enter any app name (e.g. "Aerial
+Views") and press "Create new app password" button.
+  
 ## Weather data
 
 Thanks to [OpenWeather](https://openweathermap.org/) for providing weather data to this and other open-source projects.

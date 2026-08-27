@@ -3,8 +3,9 @@ package com.neilturner.aerialviews.ui.overlays.state
 import com.neilturner.aerialviews.models.enums.MetadataType
 import com.neilturner.aerialviews.models.enums.OverlayType
 import com.neilturner.aerialviews.services.MusicEvent
+import com.neilturner.aerialviews.services.weather.ForecastEvent
 import com.neilturner.aerialviews.services.weather.WeatherEvent
-import com.neilturner.aerialviews.ui.overlays.ProgressState
+import com.neilturner.aerialviews.ui.controls.ProgressState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,6 +53,10 @@ class OverlayStateStore {
 
     fun setWeather(event: WeatherEvent) {
         _uiState.update { it.copy(weather = WeatherOverlayState(event)) }
+    }
+
+    fun setForecast(event: ForecastEvent) {
+        _uiState.update { it.copy(forecast = ForecastOverlayState(event)) }
     }
 
     fun setProgress(

@@ -10,10 +10,10 @@ import androidx.lifecycle.lifecycleScope
 import androidx.preference.Preference
 import com.neilturner.aerialviews.BuildConfig
 import com.neilturner.aerialviews.R
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
+import com.neilturner.aerialviews.ui.helpers.ToastHelper
 import com.neilturner.aerialviews.utils.AppUpdateHelper
 import com.neilturner.aerialviews.utils.FirebaseHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
-import com.neilturner.aerialviews.utils.ToastHelper
 import com.neilturner.aerialviews.utils.getPackageInfoCompat
 import java.text.DateFormat
 import java.util.Date

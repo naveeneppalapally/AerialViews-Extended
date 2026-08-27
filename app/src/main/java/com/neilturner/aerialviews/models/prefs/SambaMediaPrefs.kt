@@ -1,15 +1,23 @@
 package com.neilturner.aerialviews.models.prefs
 
 import com.chibatching.kotpref.KotprefModel
-import com.chibatching.kotpref.enumpref.nullableEnumValuePref
 import com.neilturner.aerialviews.R
-import com.neilturner.aerialviews.models.enums.ProviderMediaType
 
 object SambaMediaPrefs : KotprefModel(), SambaProviderPreferences {
     override val kotprefName = "${context.packageName}_preferences"
 
     override var enabled by booleanPref(false, "samba_videos_enabled")
-    override var mediaType by nullableEnumValuePref(ProviderMediaType.VIDEOS_PHOTOS, "samba_media_type")
+    override val mediaSelection by stringSetPref("samba_media_selection") {
+        MediaSelection.defaultSelection
+    }
+    override val mediaType
+        get() = MediaSelection.toMediaType(mediaSelection)
+    override val musicEnabled: Boolean
+        get() = MediaSelection.includesMusic(mediaSelection)
+    override val includeVideos: Boolean
+        get() = MediaSelection.includesVideos(mediaSelection)
+    override val includePhotos: Boolean
+        get() = MediaSelection.includesPhotos(mediaSelection)
     override var hostName by stringPref("", "samba_videos_hostname")
     override var domainName by stringPref("WORKGROUP", "samba_videos_domainname")
     override var shareName by stringPref("", "samba_videos_sharename")
@@ -30,6 +38,8 @@ object SambaMediaPrefs : KotprefModel(), SambaProviderPreferences {
     override var wakeOnLanEnabled by booleanPref(false, "samba_media_wake_on_lan_enabled")
     override var wakeOnLanMacAddress by stringPref("", "samba_media_wake_on_lan_mac_address")
     override var wakeOnLanTimeout by stringPref("120", "samba_media_wake_on_lan_timeout")
+
+    override fun settingsHash(): String = settingsHashWithPrefix("samba_videos_", "samba_media_")
 }
 
 object SambaMediaPrefs2 : KotprefModel(), SambaProviderPreferences {
@@ -42,11 +52,16 @@ object SambaMediaPrefs2 : KotprefModel(), SambaProviderPreferences {
     private var passwordRaw by stringPref("", "samba_videos2_password")
 
     override var enabled by booleanPref(false, "samba_videos2_enabled")
-    override var mediaType: ProviderMediaType?
-        get() = SambaMediaPrefs.mediaType
-        set(value) {
-            SambaMediaPrefs.mediaType = value
-        }
+    override val mediaSelection: Set<String>
+        get() = SambaMediaPrefs.mediaSelection
+    override val mediaType
+        get() = MediaSelection.toMediaType(mediaSelection)
+    override val musicEnabled: Boolean
+        get() = MediaSelection.includesMusic(mediaSelection)
+    override val includeVideos: Boolean
+        get() = MediaSelection.includesVideos(mediaSelection)
+    override val includePhotos: Boolean
+        get() = MediaSelection.includesPhotos(mediaSelection)
     override var hostName: String
         get() = hostNameRaw.ifBlank { SambaMediaPrefs.hostName }
         set(value) {
@@ -89,4 +104,6 @@ object SambaMediaPrefs2 : KotprefModel(), SambaProviderPreferences {
     override var wakeOnLanEnabled by booleanPref(false, "samba_media_wake_on_lan_enabled")
     override var wakeOnLanMacAddress by stringPref("", "samba_media_wake_on_lan_mac_address")
     override var wakeOnLanTimeout by stringPref("120", "samba_media_wake_on_lan_timeout")
+
+    override fun settingsHash(): String = settingsHashWithPrefix("samba_videos2_", "samba_videos_", "samba_media_")
 }

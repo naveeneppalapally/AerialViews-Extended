@@ -4,7 +4,12 @@ import com.neilturner.aerialviews.models.enums.ProviderMediaType
 
 interface SambaProviderPreferences {
     var enabled: Boolean
-    var mediaType: ProviderMediaType?
+    val mediaSelection: Set<String>
+    val mediaType: ProviderMediaType?
+    val musicEnabled: Boolean
+    val includeVideos: Boolean
+    val includePhotos: Boolean
+
     var hostName: String
     var domainName: String
     var shareName: String
@@ -18,4 +23,6 @@ interface SambaProviderPreferences {
     var wakeOnLanEnabled: Boolean
     var wakeOnLanMacAddress: String
     var wakeOnLanTimeout: String
+
+    fun settingsHash(): String
 }

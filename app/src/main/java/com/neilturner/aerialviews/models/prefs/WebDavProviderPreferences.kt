@@ -5,11 +5,18 @@ import com.neilturner.aerialviews.models.enums.SchemeType
 
 interface WebDavProviderPreferences {
     var enabled: Boolean
-    var mediaType: ProviderMediaType?
+    val mediaSelection: Set<String>
+    val mediaType: ProviderMediaType?
+    val musicEnabled: Boolean
+    val includeVideos: Boolean
+    val includePhotos: Boolean
     var scheme: SchemeType?
     var hostName: String
     var pathName: String
     var userName: String
     var password: String
     var searchSubfolders: Boolean
+    var validateSsl: Boolean
+
+    fun settingsHash(): String
 }

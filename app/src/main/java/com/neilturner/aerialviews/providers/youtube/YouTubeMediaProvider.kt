@@ -11,7 +11,8 @@ import com.neilturner.aerialviews.models.videos.AerialMedia
 import com.neilturner.aerialviews.models.videos.AerialExifMetadata
 import com.neilturner.aerialviews.models.videos.AerialMediaMetadata
 import com.neilturner.aerialviews.providers.MediaProvider
-import com.neilturner.aerialviews.utils.NetworkHelper
+import com.neilturner.aerialviews.providers.ProviderFetchResult
+import com.neilturner.aerialviews.data.network.NetworkHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,11 +32,11 @@ class YouTubeMediaProvider(
     override val enabled: Boolean
         get() = YouTubeVideoPrefs.enabled
 
-    override suspend fun fetchMedia(): List<AerialMedia> {
+    override suspend fun fetch(): ProviderFetchResult {
         val cacheSize = repository.getCacheSize()
-        Log.i(TAG, "YouTube fetchMedia startup cacheSize=$cacheSize")
+        Log.i(TAG, "YouTube fetch startup cacheSize=$cacheSize")
         if (cacheSize == 0) {
-            return fetchInitialMedia()
+            return ProviderFetchResult.Success(media = fetchInitialMedia(), summary = "")
         }
 
         // Startup must always prefer immediately playable local cache entries.
@@ -44,18 +45,20 @@ class YouTubeMediaProvider(
         if (startupCachedEntries.isNotEmpty()) {
             Log.i(TAG, "Using local startup cache entries=${startupCachedEntries.size}")
             repository.preWarmInBackground()
-            return startupCachedEntries.toAerialMedia()
+            return ProviderFetchResult.Success(media = startupCachedEntries.toAerialMedia(), summary = "")
         }
 
-        return withTimeoutOrNull(NORMAL_FETCH_TIMEOUT_MS) {
-            fetchCachedMedia()
-        } ?: run {
-            Timber.tag(TAG).w("fetchMedia timed out after %sms, skipping YouTube slot", NORMAL_FETCH_TIMEOUT_MS)
-            emptyList()
-        }
+        val media =
+            withTimeoutOrNull(NORMAL_FETCH_TIMEOUT_MS) {
+                fetchCachedMedia()
+            } ?: run {
+                Timber.tag(TAG).w("fetch timed out after %sms, skipping YouTube slot", NORMAL_FETCH_TIMEOUT_MS)
+                emptyList()
+            }
+        return ProviderFetchResult.Success(media = media, summary = "")
     }
 
-    override suspend fun fetchTest(): String {
+    suspend fun fetchTest(): String {
         return runCatching {
             val refreshedCount = repository.forceRefresh()
             "Refreshed $refreshedCount videos"
@@ -65,7 +68,7 @@ class YouTubeMediaProvider(
         }
     }
 
-    override suspend fun fetchMetadata(): MutableMap<String, Pair<String, Map<Int, String>>> = mutableMapOf()
+    override suspend fun fetchMetadata(media: List<AerialMedia>): List<AerialMedia> = media
 
     private suspend fun fetchInitialMedia(): List<AerialMedia> {
         YouTubeFeature.markCountPending()

@@ -8,13 +8,14 @@ import androidx.preference.MultiSelectListPreference
 import androidx.preference.Preference
 import androidx.preference.SwitchPreference
 import com.neilturner.aerialviews.R
+import com.neilturner.aerialviews.data.preferences.MediaPreferenceHelper
 import com.neilturner.aerialviews.models.prefs.Comm1VideoPrefs
-import com.neilturner.aerialviews.models.videos.Comm1Video
-import com.neilturner.aerialviews.models.videos.Comm1Videos
-import com.neilturner.aerialviews.utils.MediaPreferenceHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
+import com.neilturner.aerialviews.providers.Comm1MediaProvider
+import com.neilturner.aerialviews.providers.ProviderFetchResult
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 class Comm1VideosFragment : MenuStateFragment() {
     override fun onCreatePreferences(
@@ -53,7 +54,7 @@ class Comm1VideosFragment : MenuStateFragment() {
             Preference.OnPreferenceChangeListener { preference, newValue ->
                 updateMultiSelectSummary(preference as MultiSelectListPreference, newValue as Set<String>)
                 lifecycleScope.launch {
-                    delay(100)
+                    delay(100.milliseconds)
                     updateVideoCount(forceRecalculate = true)
                 }
                 true
@@ -65,7 +66,7 @@ class Comm1VideosFragment : MenuStateFragment() {
             Preference.OnPreferenceChangeListener { preference, newValue ->
                 updateMultiSelectSummary(preference as MultiSelectListPreference, newValue as Set<String>)
                 lifecycleScope.launch {
-                    delay(100)
+                    delay(100.milliseconds)
                     updateVideoCount(forceRecalculate = true)
                 }
                 true
@@ -82,13 +83,11 @@ class Comm1VideosFragment : MenuStateFragment() {
             getCachedCount = { Comm1VideoPrefs.count },
             setCachedCount = { Comm1VideoPrefs.count = it },
             fetchMediaCount = { ctx ->
-                MediaPreferenceHelper.countBundledVideos<Comm1Videos, Comm1Video>(
-                    context = ctx,
-                    rawResId = R.raw.comm1,
-                    sceneSelection = Comm1VideoPrefs.scene,
-                    timeOfDaySelection = Comm1VideoPrefs.timeOfDay,
-                    assets = { it.assets },
-                )
+                val provider = Comm1MediaProvider(ctx, Comm1VideoPrefs)
+                when (val result = provider.fetch()) {
+                    is ProviderFetchResult.Success -> result.media.size
+                    is ProviderFetchResult.Error -> 0
+                }
             },
             forceRecalculate = forceRecalculate,
         )

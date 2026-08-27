@@ -25,7 +25,7 @@ import com.neilturner.aerialviews.models.enums.AerialMediaSource
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
 import com.neilturner.aerialviews.models.videos.AerialMedia
 import com.neilturner.aerialviews.ui.core.VideoPlayerHelper
-import com.neilturner.aerialviews.utils.DeviceHelper
+import com.neilturner.aerialviews.ui.helpers.DeviceHelper
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger

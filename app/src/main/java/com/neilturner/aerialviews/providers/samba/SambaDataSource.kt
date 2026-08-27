@@ -9,10 +9,12 @@ import androidx.media3.datasource.DataSpec
 import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.mssmb2.SMB2CreateDisposition
 import com.hierynomus.mssmb2.SMB2ShareAccess
+import com.hierynomus.protocol.transport.TransportException
 import com.hierynomus.smbj.SMBClient
+import com.hierynomus.smbj.common.SMBRuntimeException
 import com.hierynomus.smbj.share.DiskShare
 import com.hierynomus.smbj.share.File
-import com.neilturner.aerialviews.utils.SambaHelper
+import com.neilturner.aerialviews.data.network.SambaHelper
 import com.neilturner.aerialviews.utils.toStringOrEmpty
 import timber.log.Timber
 import java.io.EOFException
@@ -51,11 +53,20 @@ class SambaDataSource : BaseDataSource(true) {
         bytesRead = dataSpec.position
 
         val remoteFile: File
+        val startTime = System.currentTimeMillis()
         try {
             remoteFile = openSambaFile()
+            val connectionTime = System.currentTimeMillis() - startTime
+            Timber.i("SMB connection established in ${connectionTime}ms")
+        } catch (e: TransportException) {
+            Timber.e(e, "SMB transport error opening file")
+            throw IOException("SMB transport failed", e)
+        } catch (e: SMBRuntimeException) {
+            Timber.e(e, "SMB runtime error opening file")
+            throw IOException("SMB connection failed", e)
         } catch (ex: Exception) {
-            Timber.e(ex)
-            return 0
+            Timber.e(ex, "Failed to open SMB file")
+            throw IOException("Could not open SMB file", ex)
         }
 
         inputStream = remoteFile.inputStream
@@ -75,17 +86,22 @@ class SambaDataSource : BaseDataSource(true) {
         buffer: ByteArray,
         offset: Int,
         readLength: Int,
-    ): Int {
+    ): Int =
         try {
-            return readInternal(buffer, offset, readLength)
+            readInternal(buffer, offset, readLength)
+        } catch (e: TransportException) {
+            Timber.e(e, "SMB transport dropped during read")
+            C.RESULT_END_OF_INPUT // not 0 — avoids infinite retry loop
+        } catch (e: SMBRuntimeException) {
+            Timber.e(e, "SMB runtime error during read")
+            C.RESULT_END_OF_INPUT
         } catch (e: Exception) {
-            Timber.e(e)
-            return 0
+            Timber.e(e, "Unexpected read error")
+            C.RESULT_END_OF_INPUT
         }
-    }
 
     @SuppressLint("UnsafeOptInUsageError")
-    override fun getUri(): Uri? = dataSpec.uri
+    override fun getUri(): Uri = dataSpec.uri
 
     @SuppressLint("UnsafeOptInUsageError")
     override fun close() {
@@ -127,6 +143,9 @@ class SambaDataSource : BaseDataSource(true) {
     private fun openSambaFile(): File {
         smbClient = SMBClient(SambaHelper.buildSmbConfig(enableEncryption, smbDialects))
         val connection = smbClient?.connect(hostName)
+        val dialect = connection?.connectionContext?.negotiatedProtocol?.dialect
+        Timber.i("Negotiated SMB Dialect: $dialect")
+
         val authContext = SambaHelper.buildAuthContext(userName, password, domainName)
         val session = connection?.authenticate(authContext)
         val share = session?.connectShare(shareName) as DiskShare

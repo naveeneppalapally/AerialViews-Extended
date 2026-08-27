@@ -1,5 +1,6 @@
 package com.neilturner.aerialviews.utils
 
+import com.neilturner.aerialviews.data.network.UrlParser
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.DisplayName
@@ -51,9 +52,162 @@ internal class UrlParserTest {
     }
 
     @Test
+    @DisplayName("Throws for single number host")
+    fun throwsForSingleNumberHost() {
+        assertThrows(IllegalArgumentException::class.java) {
+            UrlParser.parseServerUrl("1")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            UrlParser.parseServerUrl("http://1")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            UrlParser.parseServerUrl("123")
+        }
+    }
+
+    @Test
     @DisplayName("Returns empty for blank input")
     fun returnsEmptyForBlankInput() {
         val parsed = UrlParser.parseServerUrl("   ")
         assertEquals("", parsed)
+    }
+
+    @Test
+    @DisplayName("Handles corrupted protocol prefix http://ttp//")
+    fun handlesCorruptedProtocolPrefix() {
+        val parsed = UrlParser.parseServerUrl("http://ttp//192.168.1.186:2283")
+        assertEquals("http://192.168.1.186:2283", parsed)
+    }
+
+    @Test
+    @DisplayName("Handles duplicated http:// protocol")
+    fun handlesDuplicatedHttpProtocol() {
+        val parsed = UrlParser.parseServerUrl("http://http://192.168.1.186:2283")
+        assertEquals("http://192.168.1.186:2283", parsed)
+    }
+
+    @Test
+    @DisplayName("Handles duplicated https:// protocol")
+    fun handlesDuplicatedHttpsProtocol() {
+        val parsed = UrlParser.parseServerUrl("https://https://example.com")
+        assertEquals("https://example.com", parsed)
+    }
+
+    @Test
+    @DisplayName("Handles mixed protocol prefixes http://https://")
+    fun handlesMixedProtocolPrefixes() {
+        // When the URL starts with http:// first, it's treated as HTTP
+        // even if it contains https:// later
+        val parsed = UrlParser.parseServerUrl("http://https://example.com")
+        assertEquals("http://example.com", parsed)
+    }
+
+    @Test
+    @DisplayName("Handles protocol with single slash http:/")
+    fun handlesProtocolWithSingleSlash() {
+        val parsed = UrlParser.parseServerUrl("http:/example.com")
+        assertEquals("http://example.com", parsed)
+    }
+
+    @Test
+    @DisplayName("Handles multiple mixed protocol prefixes")
+    fun handlesMultipleMixedProtocolPrefixes() {
+        val parsed = UrlParser.parseServerUrl("https://http://https://example.com")
+        assertEquals("https://example.com", parsed)
+    }
+
+    @Test
+    @DisplayName("Handles IP address with corrupted protocol")
+    fun handlesIpAddressWithCorruptedProtocol() {
+        val parsed = UrlParser.parseServerUrl("http://ttp//10.0.0.1:8080")
+        assertEquals("http://10.0.0.1:8080", parsed)
+    }
+
+    @Test
+    @DisplayName("Handles FQDN with corrupted protocol")
+    fun handlesFqdnWithCorruptedProtocol() {
+        val parsed = UrlParser.parseServerUrl("http://ttp//immich.example.com")
+        assertEquals("http://immich.example.com", parsed)
+    }
+
+    @Test
+    @DisplayName("Handles https with corrupted prefix")
+    fun handlesHttpsWithCorruptedPrefix() {
+        val parsed = UrlParser.parseServerUrl("https://ttps//example.com")
+        assertEquals("https://example.com", parsed)
+    }
+
+    @Test
+    @DisplayName("Handles URL with port and trailing slash")
+    fun handlesUrlWithPortAndTrailingSlash() {
+        val parsed = UrlParser.parseServerUrl("http://192.168.1.1:2283/")
+        assertEquals("http://192.168.1.1:2283", parsed)
+    }
+
+    @Test
+    @DisplayName("Handles various malformed protocol variations")
+    fun handlesVariousMalformedProtocolVariations() {
+        // Test case-insensitive handling
+        val parsed1 = UrlParser.parseServerUrl("HTTP://HTTP://example.com")
+        assertEquals("http://example.com", parsed1)
+
+        val parsed2 = UrlParser.parseServerUrl("HTTP://httP://example.com")
+        assertEquals("http://example.com", parsed2)
+
+        val parsed3 = UrlParser.parseServerUrl("hTTp://example.com")
+        assertEquals("http://example.com", parsed3)
+    }
+
+    @Test
+    @DisplayName("Parses single-label hostname without protocol")
+    fun parsesSingleLabelHostnameWithoutProtocol() {
+        val parsed = UrlParser.parseServerUrl("augustus")
+        assertEquals("http://augustus", parsed)
+    }
+
+    @Test
+    @DisplayName("Parses single-label hostname with port")
+    fun parsesSingleLabelHostnameWithPort() {
+        val parsed = UrlParser.parseServerUrl("augustus:2283")
+        assertEquals("http://augustus:2283", parsed)
+    }
+
+    @Test
+    @DisplayName("Parses single-label hostname with http protocol and port")
+    fun parsesSingleLabelHostnameWithHttpAndPort() {
+        val parsed = UrlParser.parseServerUrl("http://augustus:2283")
+        assertEquals("http://augustus:2283", parsed)
+    }
+
+    @Test
+    @DisplayName("Parses single-label hostname with https protocol and port")
+    fun parsesSingleLabelHostnameWithHttpsAndPort() {
+        val parsed = UrlParser.parseServerUrl("https://augustus:2283")
+        assertEquals("https://augustus:2283", parsed)
+    }
+
+    @Test
+    @DisplayName("Parses single-label hostname with hyphen and port")
+    fun parsesSingleLabelHostnameWithHyphenAndPort() {
+        val parsed = UrlParser.parseServerUrl("my-server:8080")
+        assertEquals("http://my-server:8080", parsed)
+    }
+
+    @Test
+    @DisplayName("Parses single-label hostname with port and trailing slash")
+    fun parsesSingleLabelHostnameWithPortAndTrailingSlash() {
+        val parsed = UrlParser.parseServerUrl("http://augustus:2283/")
+        assertEquals("http://augustus:2283", parsed)
+    }
+
+    @Test
+    @DisplayName("Throws for invalid single-label hostnames starting or ending with hyphen")
+    fun throwsForInvalidSingleLabelHostnamesWithHyphenEdge() {
+        assertThrows(IllegalArgumentException::class.java) {
+            UrlParser.parseServerUrl("-augustus")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            UrlParser.parseServerUrl("augustus-")
+        }
     }
 }

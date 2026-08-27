@@ -4,8 +4,8 @@ import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.preference.EditTextPreference
 import com.neilturner.aerialviews.R
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
 import com.neilturner.aerialviews.utils.FirebaseHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
 import com.neilturner.aerialviews.utils.toStringOrEmpty
 
 class OverlaysMessageFragment :
@@ -22,7 +22,6 @@ class OverlaysMessageFragment :
         super.onResume()
         FirebaseHelper.analyticsScreenView("Message", this)
         preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(this)
-        limitTextInput()
         updateSummary()
     }
 
@@ -70,12 +69,5 @@ class OverlaysMessageFragment :
         } else {
             line4?.summary = getString(R.string.appearance_message_line1_summary)
         }
-    }
-
-    private fun limitTextInput() {
-        preferenceScreen.findPreference<EditTextPreference>("message_line1")?.setOnBindEditTextListener { it.setSingleLine() }
-        preferenceScreen.findPreference<EditTextPreference>("message_line2")?.setOnBindEditTextListener { it.setSingleLine() }
-        preferenceScreen.findPreference<EditTextPreference>("message_line3")?.setOnBindEditTextListener { it.setSingleLine() }
-        preferenceScreen.findPreference<EditTextPreference>("message_line4")?.setOnBindEditTextListener { it.setSingleLine() }
     }
 }

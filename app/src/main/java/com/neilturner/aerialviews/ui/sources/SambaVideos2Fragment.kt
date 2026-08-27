@@ -2,16 +2,20 @@ package com.neilturner.aerialviews.ui.sources
 
 import android.content.SharedPreferences
 import android.os.Bundle
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.EditTextPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceManager
 import com.neilturner.aerialviews.R
+import com.neilturner.aerialviews.data.network.SambaHelper
 import com.neilturner.aerialviews.models.prefs.SambaMediaPrefs2
+import com.neilturner.aerialviews.providers.ProviderFetchResult
 import com.neilturner.aerialviews.providers.samba.SambaMediaProvider
-import com.neilturner.aerialviews.utils.DialogHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
-import com.neilturner.aerialviews.utils.SambaHelper
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
+import com.neilturner.aerialviews.ui.helpers.DialogHelper
+import com.neilturner.aerialviews.ui.helpers.PermissionHelper
 import com.neilturner.aerialviews.utils.toStringOrEmpty
 import kotlinx.coroutines.launch
 
@@ -19,14 +23,19 @@ class SambaVideos2Fragment :
     MenuStateFragment(),
     SharedPreferences.OnSharedPreferenceChangeListener,
     PreferenceManager.OnPreferenceTreeClickListener {
+    private lateinit var requestLocalNetworkPermission: ActivityResultLauncher<String>
+
     override fun onCreatePreferences(
         savedInstanceState: Bundle?,
         rootKey: String?,
     ) {
+        requestLocalNetworkPermission =
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
         setPreferencesFromResource(R.xml.sources_samba_videos2, rootKey)
         preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(this)
 
-        limitTextInput()
+        checkForLocalNetworkPermission()
         updateSummary()
     }
 
@@ -53,6 +62,13 @@ class SambaVideos2Fragment :
         }
 
         return super.onPreferenceTreeClick(preference)
+    }
+
+    private fun checkForLocalNetworkPermission() {
+        if (PermissionHelper.hasLocalNetworkPermission(requireContext())) {
+            return
+        }
+        requestLocalNetworkPermission.launch(PermissionHelper.getLocalNetworkPermission())
     }
 
     private fun updateSummary() {
@@ -97,18 +113,6 @@ class SambaVideos2Fragment :
         }
     }
 
-    private fun limitTextInput() {
-        listOf(
-            "samba_videos2_hostname",
-            "samba_videos2_domainname",
-            "samba_videos2_sharename",
-            "samba_videos2_username",
-            "samba_videos2_password",
-        ).forEach { key ->
-            findPreference<EditTextPreference>(key)?.setOnBindEditTextListener { it.setSingleLine() }
-        }
-    }
-
     private suspend fun testSambaConnection() {
         val loadingMessage = getString(R.string.message_media_searching)
         val progressDialog =
@@ -119,13 +123,17 @@ class SambaVideos2Fragment :
         progressDialog.show()
 
         val provider = SambaMediaProvider(requireContext(), SambaMediaPrefs2)
-        val result = provider.fetchTest()
+        val message =
+            when (val result = provider.fetch()) {
+                is ProviderFetchResult.Success -> result.summary
+                is ProviderFetchResult.Error -> result.message
+            }
 
         progressDialog.dismiss()
         DialogHelper.showOnMain(
             requireContext(),
             resources.getString(R.string.samba_videos_test_results),
-            result,
+            message,
         )
     }
 }

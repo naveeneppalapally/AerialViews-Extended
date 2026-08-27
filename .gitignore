@@ -36,6 +36,11 @@ proguard/
 # Android Studio captures folder
 captures/
 
+# Agents
+.qwen/
+.mimocode/
+.kilo/
+
 # IntelliJ
 *.iml
 .idea/
@@ -98,3 +103,6 @@ lint/tmp/
 /sources_4k.xml
 /main_4k.xml
 /logcat_*.txt
+
+# Secrets file for Act
+.secrets

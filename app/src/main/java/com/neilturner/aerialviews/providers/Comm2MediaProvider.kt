@@ -2,6 +2,8 @@ package com.neilturner.aerialviews.providers
 
 import android.content.Context
 import com.neilturner.aerialviews.R
+import com.neilturner.aerialviews.data.network.JsonHelper.parseJson
+import com.neilturner.aerialviews.data.network.JsonHelper.parseJsonMap
 import com.neilturner.aerialviews.models.enums.AerialMediaSource
 import com.neilturner.aerialviews.models.enums.AerialMediaType
 import com.neilturner.aerialviews.models.enums.ProviderSourceType
@@ -11,8 +13,7 @@ import com.neilturner.aerialviews.models.prefs.ProviderPreferences
 import com.neilturner.aerialviews.models.videos.AerialMedia
 import com.neilturner.aerialviews.models.videos.AerialMediaMetadata
 import com.neilturner.aerialviews.models.videos.Comm2Videos
-import com.neilturner.aerialviews.utils.JsonHelper.parseJson
-import com.neilturner.aerialviews.utils.JsonHelper.parseJsonMap
+import com.neilturner.aerialviews.utils.filenameWithoutExtension
 import timber.log.Timber
 
 class Comm2MediaProvider(
@@ -27,20 +28,28 @@ class Comm2MediaProvider(
     override val enabled: Boolean
         get() = prefs.enabled
 
-    override suspend fun fetchTest(): String = ""
+    override fun settingsHash(): String = prefs.settingsHash()
 
-    override suspend fun fetchMedia(): List<AerialMedia> {
+    override suspend fun fetch(): ProviderFetchResult {
         val videoSignature = currentVideoSignature()
         if (metadata.isEmpty() || videos.isEmpty() || videoSignature != lastVideoSignature) {
             buildVideoAndMetadata()
             lastVideoSignature = videoSignature
         }
-        return videos
+        return ProviderFetchResult.Success(media = videos, summary = "")
     }
 
-    override suspend fun fetchMetadata(): MutableMap<String, Pair<String, Map<Int, String>>> {
+    override suspend fun fetchMetadata(media: List<AerialMedia>): List<AerialMedia> {
         if (metadata.isEmpty()) buildVideoAndMetadata()
-        return metadata
+        val metadataMap = metadata
+        return media.map { item ->
+            val data = metadataMap[item.uri.filenameWithoutExtension.lowercase()]
+            if (data != null) {
+                item.metadata.shortDescription = data.first
+                item.metadata.pointsOfInterest = data.second
+            }
+            item
+        }
     }
 
     private suspend fun buildVideoAndMetadata() {

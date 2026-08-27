@@ -5,9 +5,9 @@ import androidx.preference.Preference
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.enums.OverlayType
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
 import com.neilturner.aerialviews.utils.FirebaseHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
-import com.neilturner.aerialviews.utils.SlotHelper
+import com.neilturner.aerialviews.ui.helpers.SlotHelper
 
 class OverlaysWeatherFragment : MenuStateFragment() {
     private var locationPreference: Preference? = null

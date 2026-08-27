@@ -2,6 +2,8 @@ package com.neilturner.aerialviews.providers.custom
 
 import android.content.Context
 import androidx.core.net.toUri
+import com.neilturner.aerialviews.data.network.JsonHelper
+import com.neilturner.aerialviews.data.network.UrlValidator
 import com.neilturner.aerialviews.models.enums.AerialMediaSource
 import com.neilturner.aerialviews.models.enums.AerialMediaType
 import com.neilturner.aerialviews.models.enums.ProviderSourceType
@@ -9,14 +11,16 @@ import com.neilturner.aerialviews.models.enums.SceneType
 import com.neilturner.aerialviews.models.enums.TimeOfDay
 import com.neilturner.aerialviews.models.enums.VideoQuality
 import com.neilturner.aerialviews.models.prefs.CustomFeedPrefs
+import com.neilturner.aerialviews.models.videos.AerialExifMetadata
 import com.neilturner.aerialviews.models.videos.AerialMedia
 import com.neilturner.aerialviews.models.videos.AerialMediaMetadata
 import com.neilturner.aerialviews.providers.MediaProvider
-import com.neilturner.aerialviews.utils.JsonHelper
-import com.neilturner.aerialviews.utils.UrlValidator
+import com.neilturner.aerialviews.providers.ProviderFetchResult
+import com.neilturner.aerialviews.utils.filenameWithoutExtension
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import retrofit2.Retrofit
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
@@ -32,13 +36,15 @@ class CustomFeedProvider(
     override val enabled: Boolean
         get() = prefs.enabled
 
-    override suspend fun fetchMedia(): List<AerialMedia> {
+    override fun settingsHash(): String = prefs.settingsHash()
+
+    override suspend fun fetch(): ProviderFetchResult {
         videos.clear()
         metadata.clear()
 
         if (prefs.urlsCache.isBlank()) {
             Timber.w("No valid URLs configured")
-            return emptyList()
+            return ProviderFetchResult.Success(media = emptyList(), summary = "")
         }
 
         val quality = prefs.quality
@@ -82,6 +88,12 @@ class CustomFeedProvider(
                     continue
                 }
 
+                // Check if this is a CSV media list
+                if (isCsvUrl(url)) {
+                    processCsvUrl(okHttpClient, url)
+                    continue
+                }
+
                 // Process as entries.json URL
                 processEntriesUrl(customFeedApi, url, quality)
             } catch (e: Exception) {
@@ -92,20 +104,28 @@ class CustomFeedProvider(
         Timber.i("${metadata.count()} metadata items found")
         Timber.i("${videos.count()} $quality videos found")
 
-        return videos
+        return ProviderFetchResult.Success(media = videos, summary = "")
     }
 
-    override suspend fun fetchTest(): String {
+    suspend fun fetchTest(): String {
+        Timber.i("Custom feed validation started. Raw URLs: ${prefs.urls}")
+
         // Step 1: Simple validation of URLs
         val simpleValidation = performSimpleValidation()
         if (simpleValidation.hasErrors) {
+            prefs.urlsCache = ""
             prefs.urlsSummary = simpleValidation.summary
+            Timber.w("Custom feed simple validation failed. Summary: ${simpleValidation.summary}")
             return simpleValidation.message
         }
 
         // Step 2: Advanced validation - fetch and parse each URL
         val advancedValidation = performAdvancedValidation()
         prefs.urlsSummary = advancedValidation.summary
+        Timber.i(
+            "Custom feed validation finished. Has errors: ${advancedValidation.hasErrors}. " +
+                "Summary: ${advancedValidation.summary}. Cached URLs: ${prefs.urlsCache}",
+        )
         return advancedValidation.message
     }
 
@@ -121,6 +141,10 @@ class CustomFeedProvider(
         val validationResults = UrlValidator.validateUrls(prefs.urls)
         val validUrls = validationResults.filter { it.first }
         val invalidUrls = validationResults.filter { !it.first }
+        Timber.d(
+            "Custom feed format validation complete. Valid: ${validUrls.size}, " +
+                "invalid: ${invalidUrls.size}, results: $validationResults",
+        )
 
         if (invalidUrls.isEmpty()) {
             // All URLs are valid format
@@ -163,9 +187,11 @@ class CustomFeedProvider(
 
     private suspend fun performAdvancedValidation(): ValidationResult {
         val urls = UrlValidator.parseUrls(prefs.urls)
+        Timber.i("Custom feed advanced validation parsed ${urls.size} URL(s): $urls")
         val validEntriesUrls = mutableListOf<String>()
         val validRtspUrls = mutableListOf<String>()
         val validHlsUrls = mutableListOf<String>()
+        val validCsvUrls = mutableListOf<String>()
         val errorMessages = mutableMapOf<String, String>()
 
         val okHttpClient =
@@ -203,16 +229,40 @@ class CustomFeedProvider(
                     continue
                 }
 
-                // Check if URL ends with entries.json - parse it directly for videos
+                // Check if this is a CSV media list
+                if (isCsvUrl(url)) {
+                    Timber.i("Custom feed URL detected as CSV: $url")
+                    try {
+                        val csvItems = fetchCsvMediaItems(okHttpClient, url)
+                        if (csvItems.isNotEmpty()) {
+                            validCsvUrls.add(url)
+                            Timber.i(
+                                "%snull",
+                                "Found ${csvItems.size} media items in CSV: $url. " +
+                                    "Videos: ${csvItems.count { it.type == AerialMediaType.VIDEO }}, ",
+                            )
+                        } else {
+                            errorMessages[url] = "CSV contains no supported media items"
+                            Timber.w("CSV parsed successfully but contained no supported media items: $url")
+                        }
+                    } catch (e: Exception) {
+                        errorMessages[url] = "Failed to parse CSV: ${e.message}"
+                        Timber.w(e, "CSV validation failed for URL: $url")
+                    }
+                    continue
+                }
+
+                // Check if URL ends with entries.json - parse it directly for media
                 if (url.endsWith("entries.json", ignoreCase = true)) {
                     try {
                         val customVideos = customFeedApi.getVideos(url)
                         val videoCount = customVideos.assets?.size ?: 0
-                        if (videoCount > 0) {
+                        val photoCount = customVideos.photos?.size ?: 0
+                        if (videoCount + photoCount > 0) {
                             validEntriesUrls.add(url)
-                            Timber.i("Found $videoCount videos in entries.json: $url")
+                            Timber.i("Found $videoCount videos and $photoCount photos in entries.json: $url")
                         } else {
-                            errorMessages[url] = "entries.json contains no videos"
+                            errorMessages[url] = "entries.json contains no media"
                         }
                     } catch (e: Exception) {
                         errorMessages[url] = "Failed to parse entries.json: ${e.message}"
@@ -243,25 +293,53 @@ class CustomFeedProvider(
             }
         }
 
-        // Count total videos from valid entries.json URLs
+        // Count total videos and photos from valid entries.json URLs
         var totalVideos = 0
+        var totalPhotos = 0
         for (entriesUrl in validEntriesUrls) {
             try {
                 val customVideos = customFeedApi.getVideos(entriesUrl)
                 val videoCount = customVideos.assets?.size ?: 0
+                val photoCount = customVideos.photos?.size ?: 0
                 totalVideos += videoCount
-                Timber.d("Found $videoCount videos in $entriesUrl")
+                totalPhotos += photoCount
+                Timber.d("Found $videoCount videos and $photoCount photos in $entriesUrl")
             } catch (e: Exception) {
-                Timber.w(e, "Failed to count videos from: $entriesUrl")
+                Timber.w(e, "Failed to count media from: $entriesUrl")
             }
         }
+        var totalCsvVideos = 0
+        var totalCsvPhotos = 0
+        for (csvUrl in validCsvUrls) {
+            try {
+                val csvItems = fetchCsvMediaItems(okHttpClient, csvUrl)
+                totalCsvVideos += csvItems.count { it.type == AerialMediaType.VIDEO }
+                totalCsvPhotos += csvItems.count { it.type == AerialMediaType.IMAGE }
+                Timber.d("Found ${csvItems.size} media items in $csvUrl")
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to count media items from: $csvUrl")
+            }
+        }
+        totalVideos += totalCsvVideos
+        totalPhotos += totalCsvPhotos
 
         // Save valid URLs to cache
-        val allValidUrls = (validEntriesUrls + validRtspUrls + validHlsUrls).joinToString(",")
+        val allValidUrls =
+            (validEntriesUrls + validRtspUrls + validHlsUrls + validCsvUrls)
+                .joinToString(",")
         prefs.urlsCache = allValidUrls
+        Timber.i(
+            "%snull",
+            "Custom feed valid URL cache updated. Entries: ${validEntriesUrls.size}, " +
+                "RTSP: ${validRtspUrls.size}, HLS: ${validHlsUrls.size}, CSV: ${validCsvUrls.size}, ",
+        )
 
         // Build result message
-        if (validEntriesUrls.isNotEmpty() || validRtspUrls.isNotEmpty() || validHlsUrls.isNotEmpty()) {
+        if (validEntriesUrls.isNotEmpty() ||
+            validRtspUrls.isNotEmpty() ||
+            validHlsUrls.isNotEmpty() ||
+            validCsvUrls.isNotEmpty()
+        ) {
             val message =
                 buildString {
                     append("✅ Validation successful!\n\n")
@@ -270,13 +348,19 @@ class CustomFeedProvider(
                         append("• $totalVideos videos found\n")
                     }
                     if (validEntriesUrls.isNotEmpty()) {
-                        append("• ${validEntriesUrls.size} video feeds\n")
+                        append("• ${validEntriesUrls.size} feeds\n")
                     }
                     if (validRtspUrls.isNotEmpty()) {
                         append("• ${validRtspUrls.size} RTSP streams\n")
                     }
                     if (validHlsUrls.isNotEmpty()) {
                         append("• ${validHlsUrls.size} HLS streams\n")
+                    }
+                    if (validCsvUrls.isNotEmpty()) {
+                        append("• ${validCsvUrls.size} CSV media lists\n")
+                    }
+                    if (totalPhotos > 0) {
+                        append("• $totalPhotos photos found\n")
                     }
 
                     if (errorMessages.isNotEmpty()) {
@@ -287,7 +371,7 @@ class CustomFeedProvider(
                     }
                 }
 
-            val totalUrls = validEntriesUrls.size + validRtspUrls.size + validHlsUrls.size
+            val totalUrls = validEntriesUrls.size + validRtspUrls.size + validHlsUrls.size + validCsvUrls.size
             val summary =
                 buildString {
                     append("$totalUrls URL${if (totalUrls != 1) "s" else ""}: ")
@@ -298,7 +382,12 @@ class CustomFeedProvider(
                             "${validRtspUrls.size} RTSP stream${if (validRtspUrls.size != 1) "s" else ""}",
                         )
                     }
-                    if (validHlsUrls.isNotEmpty()) parts.add("${validHlsUrls.size} HLS stream${if (validHlsUrls.size != 1) "s" else ""}")
+                    if (validHlsUrls.isNotEmpty()) {
+                        parts.add("${validHlsUrls.size} HLS stream${if (validHlsUrls.size != 1) "s" else ""}")
+                    }
+                    if (totalPhotos > 0) {
+                        parts.add("$totalPhotos photo${if (totalPhotos != 1) "s" else ""}")
+                    }
                     append(parts.joinToString(", "))
                 }
 
@@ -333,9 +422,16 @@ class CustomFeedProvider(
         val summary: String,
     )
 
-    override suspend fun fetchMetadata(): MutableMap<String, Pair<String, Map<Int, String>>> {
-        // if (metadata.isEmpty()) buildVideoAndMetadata()
-        return metadata
+    override suspend fun fetchMetadata(media: List<AerialMedia>): List<AerialMedia> {
+        val metadataMap = metadata
+        return media.map { item ->
+            val data = metadataMap[item.uri.filenameWithoutExtension.lowercase()]
+            if (data != null) {
+                item.metadata.shortDescription = data.first
+                item.metadata.pointsOfInterest = data.second
+            }
+            item
+        }
     }
 
     private suspend fun tryParseAsManifest(
@@ -370,6 +466,8 @@ class CustomFeedProvider(
             return@withContext manifestUrls
         }
 
+    private fun isCsvUrl(url: String): Boolean = url.endsWith(".csv", ignoreCase = true) || url.contains(".csv?", ignoreCase = true)
+
     private suspend fun processEntriesUrl(
         apiService: CustomFeedApi,
         url: String,
@@ -380,13 +478,7 @@ class CustomFeedProvider(
                 val customVideos = apiService.getVideos(url)
 
                 customVideos.assets?.forEach { asset ->
-                    val timeOfDay = TimeOfDay.fromString(asset.timeOfDay)
-                    val scene = SceneType.fromString(asset.scene)
-
-                    val timeOfDayMatches = prefs.timeOfDay.contains(timeOfDay.toString())
-                    val sceneMatches = prefs.scene.contains(scene.toString())
-
-                    if (timeOfDayMatches && sceneMatches && prefs.enabled) {
+                    if (prefs.enabled) {
                         videos.add(
                             AerialMedia(
                                 asset.uriAtQuality(quality),
@@ -394,13 +486,11 @@ class CustomFeedProvider(
                                 source = AerialMediaSource.CUSTOM,
                                 metadata =
                                     AerialMediaMetadata(
-                                        timeOfDay = timeOfDay,
-                                        scene = scene,
+                                        timeOfDay = TimeOfDay.UNKNOWN,
+                                        scene = SceneType.UNKNOWN,
                                     ),
                             ),
                         )
-                    } else if (prefs.enabled) {
-                        Timber.d("Filtering out video: ${asset.description}")
                     }
 
                     val data =
@@ -415,10 +505,115 @@ class CustomFeedProvider(
                     }
                 }
 
-                Timber.d("Processed ${customVideos.assets?.size ?: 0} videos from $url")
+                customVideos.photos?.forEach { photo ->
+                    if (prefs.enabled) {
+                        videos.add(
+                            AerialMedia(
+                                photo.uriAtQuality(quality),
+                                type = AerialMediaType.IMAGE,
+                                source = AerialMediaSource.CUSTOM,
+                                metadata =
+                                    AerialMediaMetadata(
+                                        shortDescription = photo.title,
+                                        // Photos have no per-timestamp POI/short-description overlay option
+                                        // (that path is video-only), so surface the feed title via the EXIF
+                                        // "description" field, which the default photo overlay already displays.
+                                        exif = AerialExifMetadata(description = photo.title),
+                                        timeOfDay = TimeOfDay.UNKNOWN,
+                                        scene = SceneType.UNKNOWN,
+                                    ),
+                            ),
+                        )
+                    }
+                }
+
+                Timber.d(
+                    "Processed ${customVideos.assets?.size ?: 0} videos and " +
+                        "${customVideos.photos?.size ?: 0} photos from $url",
+                )
             } catch (e: Exception) {
                 Timber.w(e, "Failed to parse entries from URL: $url")
             }
+        }
+    }
+
+    private suspend fun processCsvUrl(
+        okHttpClient: OkHttpClient,
+        url: String,
+    ) {
+        withContext(Dispatchers.IO) {
+            try {
+                val csvItems = fetchCsvMediaItems(okHttpClient, url)
+                csvItems.forEach { item ->
+                    videos.add(
+                        AerialMedia(
+                            item.url.toUri(),
+                            type = item.type,
+                            source = AerialMediaSource.CUSTOM,
+                            metadata =
+                                AerialMediaMetadata(
+                                    shortDescription = item.description,
+                                    timeOfDay = TimeOfDay.UNKNOWN,
+                                    scene = SceneType.UNKNOWN,
+                                ),
+                        ),
+                    )
+                }
+
+                Timber.d("Processed ${csvItems.size} media items from CSV $url")
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to parse CSV from URL: $url")
+            }
+        }
+    }
+
+    private suspend fun fetchCsvMediaItems(
+        okHttpClient: OkHttpClient,
+        url: String,
+    ): List<CustomFeedCsvParser.CsvMediaItem> =
+        withContext(Dispatchers.IO) {
+            Timber.i("Fetching custom feed CSV: $url")
+            val request = Request.Builder().url(url).build()
+            okHttpClient.newCall(request).execute().use { response ->
+                val contentType = response.body.contentType()
+                val contentLength = response.body.contentLength()
+                Timber.i(
+                    "Custom feed CSV response for $url: HTTP ${response.code}, " +
+                        "contentType=$contentType, contentLength=$contentLength",
+                )
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("HTTP ${response.code}")
+                }
+                val body = response.body.string()
+                Timber.d(
+                    "Custom feed CSV body received from $url: chars=${body.length}, " +
+                        "lines=${body.lineSequence().count()}, preview=${body.logPreview()}",
+                )
+                val items = CustomFeedCsvParser.parse(body)
+                Timber.i(
+                    "%snull",
+                    "Custom feed CSV parse result for $url: items=${items.size}, " +
+                        "videos=${items.count { it.type == AerialMediaType.VIDEO }}, ",
+                )
+                items.take(5).forEachIndexed { index, item ->
+                    Timber.d(
+                        "Custom feed CSV item ${index + 1} for $url: " +
+                            "type=${item.type}, mediaUrl=${item.url}, description=${item.description}",
+                    )
+                }
+                if (items.size > 5) {
+                    Timber.d("Custom feed CSV item log truncated for $url. Remaining items: ${items.size - 5}")
+                }
+                return@withContext items
+            }
+        }
+
+    private fun String.logPreview(maxLength: Int = 300): String {
+        val singleLine = replace(Regex("\\s+"), " ").trim()
+        return if (singleLine.length <= maxLength) {
+            singleLine
+        } else {
+            "${singleLine.take(maxLength)}..."
         }
     }
 

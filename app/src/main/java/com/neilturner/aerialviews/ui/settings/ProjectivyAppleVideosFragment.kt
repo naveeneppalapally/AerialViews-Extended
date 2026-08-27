@@ -8,11 +8,10 @@ import androidx.preference.ListPreference
 import androidx.preference.MultiSelectListPreference
 import androidx.preference.Preference
 import com.neilturner.aerialviews.R
+import com.neilturner.aerialviews.data.preferences.MediaPreferenceHelper
 import com.neilturner.aerialviews.services.Display
-import com.neilturner.aerialviews.services.HDRFormat
-import com.neilturner.aerialviews.services.getDisplay
-import com.neilturner.aerialviews.utils.MediaPreferenceHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
+import com.neilturner.aerialviews.services.Display.HDRFormat
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
 import kotlinx.coroutines.launch
 
 class ProjectivyAppleVideosFragment : MenuStateFragment() {
@@ -25,7 +24,7 @@ class ProjectivyAppleVideosFragment : MenuStateFragment() {
         setPreferencesFromResource(R.xml.settings_projectivy_apple_videos, rootKey)
 
         lifecycleScope.launch {
-            display = getDisplay(activity)
+            display = Display.get(activity)
             setupQualityPreference()
             updateDolbyVisionNoticeVisibility()
         }

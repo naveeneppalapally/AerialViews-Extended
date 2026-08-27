@@ -19,14 +19,19 @@ import com.neilturner.aerialviews.models.prefs.ProjectivyComm1Prefs
 import com.neilturner.aerialviews.models.prefs.ProjectivyComm2Prefs
 import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
+import com.neilturner.aerialviews.ui.helpers.DeviceHelper
 import com.neilturner.aerialviews.utils.AppUpdateHelper
-import com.neilturner.aerialviews.utils.DeviceHelper
+import com.neilturner.aerialviews.utils.LogcatCapture
 import timber.log.Timber
 
 class AerialApp : Application() {
     override fun onCreate() {
         super.onCreate()
         configureLogging()
+
+        if (GeneralPrefs.enableLogCapture) {
+            LogcatCapture.start(applicationContext)
+        }
 
         if (BuildConfig.DEBUG || BuildConfig.FLAVOR.contains("beta", false)) {
             Timber.plant(Timber.DebugTree())

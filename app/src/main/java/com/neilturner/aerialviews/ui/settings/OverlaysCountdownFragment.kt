@@ -4,8 +4,8 @@ import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.preference.EditTextPreference
 import com.neilturner.aerialviews.R
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
 import com.neilturner.aerialviews.utils.FirebaseHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
 import com.neilturner.aerialviews.utils.toStringOrEmpty
 
 class OverlaysCountdownFragment :
@@ -22,7 +22,6 @@ class OverlaysCountdownFragment :
         super.onResume()
         FirebaseHelper.analyticsScreenView("Countdown", this)
         preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(this)
-        limitTextInput()
         updateSummary()
     }
 
@@ -54,10 +53,5 @@ class OverlaysCountdownFragment :
         } else {
             targetMessage?.summary = getString(R.string.appearance_countdown_target_message_summary)
         }
-    }
-
-    private fun limitTextInput() {
-        preferenceScreen.findPreference<EditTextPreference>("countdown_target_time")?.setOnBindEditTextListener { it.setSingleLine() }
-        preferenceScreen.findPreference<EditTextPreference>("countdown_target_message")?.setOnBindEditTextListener { it.setSingleLine() }
     }
 }

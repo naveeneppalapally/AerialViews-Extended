@@ -9,13 +9,14 @@ import androidx.preference.EditTextPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceManager
 import com.neilturner.aerialviews.R
+import com.neilturner.aerialviews.data.network.NetworkHelper
 import com.neilturner.aerialviews.models.prefs.SambaMediaPrefs
-import com.neilturner.aerialviews.utils.DialogHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
-import com.neilturner.aerialviews.utils.NetworkHelper
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
+import com.neilturner.aerialviews.ui.helpers.DialogHelper
 import com.neilturner.aerialviews.utils.toStringOrEmpty
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 class SambaVideosWolFragment :
     MenuStateFragment(),
@@ -38,7 +39,6 @@ class SambaVideosWolFragment :
             }
         }
 
-        limitTextInput()
         updateSummary()
     }
 
@@ -83,13 +83,13 @@ class SambaVideosWolFragment :
 
         val progressDialog = DialogHelper.progressDialog(requireContext(), "Checking host status...")
         progressDialog.show()
-        delay(smallDelay)
+        delay(smallDelay.milliseconds)
 
         val isReachable = NetworkHelper.isHostReachable(hostName, 445)
 
         if (!isReachable) {
             DialogHelper.updateProgressMessage(progressDialog, "Host is down. Sending magic packet...")
-            delay(smallDelay)
+            delay(smallDelay.milliseconds)
             NetworkHelper.sendWakeOnLan(macAddress)
 
             var waitedSeconds = 0L
@@ -100,7 +100,7 @@ class SambaVideosWolFragment :
                     progressDialog,
                     "Waiting for host to wake up... (${waitedSeconds}s/${maxWaitSeconds}s)",
                 )
-                delay(sleepSeconds * 1_000L)
+                delay((sleepSeconds * 1_000L).milliseconds)
                 waitedSeconds += sleepSeconds
                 isReachableAfter = NetworkHelper.isHostReachable(hostName, 445)
                 if (isReachableAfter) break
@@ -146,12 +146,6 @@ class SambaVideosWolFragment :
             timeout?.summary = "${timeout.text} seconds"
         } else {
             timeout?.summary = getString(R.string.advanced_wol_timeout_summary)
-        }
-    }
-
-    private fun limitTextInput() {
-        listOf("samba_media_wake_on_lan_mac_address", "samba_media_wake_on_lan_timeout").forEach { key ->
-            findPreference<EditTextPreference>(key)?.setOnBindEditTextListener { it.setSingleLine() }
         }
     }
 }

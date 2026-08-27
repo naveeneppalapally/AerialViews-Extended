@@ -1,12 +1,17 @@
 package com.neilturner.aerialviews.services
 
 import android.content.Context
+import android.os.Bundle
 import androidx.preference.PreferenceManager
+import com.neilturner.aerialviews.data.network.NetworkHelper
+import com.neilturner.aerialviews.models.LoadingStatus
+import com.neilturner.aerialviews.models.MediaFetchResult
 import com.neilturner.aerialviews.models.MediaPlaylist
 import com.neilturner.aerialviews.models.enums.AerialMediaSource
 import com.neilturner.aerialviews.models.enums.AerialMediaType
 import com.neilturner.aerialviews.models.enums.ProviderSourceType
 import com.neilturner.aerialviews.models.enums.TimeOfDay
+import com.neilturner.aerialviews.models.music.MusicPlaylist
 import com.neilturner.aerialviews.models.prefs.AmazonVideoPrefs
 import com.neilturner.aerialviews.models.prefs.AppleVideoPrefs
 import com.neilturner.aerialviews.models.prefs.Comm1VideoPrefs
@@ -15,25 +20,31 @@ import com.neilturner.aerialviews.models.prefs.CustomFeedPrefs
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
 import com.neilturner.aerialviews.models.prefs.ImmichMediaPrefs
 import com.neilturner.aerialviews.models.prefs.LocalMediaPrefs
+import com.neilturner.aerialviews.models.prefs.MusicPrefs
+import com.neilturner.aerialviews.models.prefs.NCMemoriesMediaPrefs
 import com.neilturner.aerialviews.models.prefs.SambaMediaPrefs
 import com.neilturner.aerialviews.models.prefs.SambaMediaPrefs2
 import com.neilturner.aerialviews.models.prefs.WebDavMediaPrefs
 import com.neilturner.aerialviews.models.prefs.WebDavMediaPrefs2
 import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
+import com.neilturner.aerialviews.models.videos.AerialMedia
 import com.neilturner.aerialviews.providers.AmazonMediaProvider
 import com.neilturner.aerialviews.providers.AppleMediaProvider
 import com.neilturner.aerialviews.providers.Comm1MediaProvider
 import com.neilturner.aerialviews.providers.Comm2MediaProvider
 import com.neilturner.aerialviews.providers.LocalMediaProvider
 import com.neilturner.aerialviews.providers.MediaProvider
+import com.neilturner.aerialviews.providers.ProviderFetchResult
 import com.neilturner.aerialviews.providers.custom.CustomFeedProvider
 import com.neilturner.aerialviews.providers.immich.ImmichMediaProvider
+import com.neilturner.aerialviews.providers.ncmemories.NCMemoriesMediaProvider
 import com.neilturner.aerialviews.providers.samba.SambaMediaProvider
 import com.neilturner.aerialviews.providers.webdav.WebDavMediaProvider
 import com.neilturner.aerialviews.providers.youtube.YouTubeMediaProvider
 import com.neilturner.aerialviews.services.MediaServiceHelper.addMetadataToManifestVideos
-import com.neilturner.aerialviews.services.MediaServiceHelper.buildMediaList
-import com.neilturner.aerialviews.utils.TimeOfDayHelper
+import com.neilturner.aerialviews.services.MediaServiceHelper.buildProviderContent
+import com.neilturner.aerialviews.services.MediaServiceHelper.weightedInterleavedShuffle
+import com.neilturner.aerialviews.utils.FirebaseHelper
 import com.neilturner.aerialviews.utils.filename
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -41,31 +52,114 @@ import timber.log.Timber
 
 class MediaService(
     val context: Context,
+    private val providers: MutableList<MediaProvider> = mutableListOf(),
+    private val config: Config = Config.fromPreferences(),
+    private val hashFn: (() -> String)? = null,
 ) {
-    private val providers = mutableListOf<MediaProvider>()
+    data class Config(
+        val removeDuplicates: Boolean,
+        val ignoreNonManifestVideos: Boolean,
+        val autoTimeOfDay: Boolean,
+        val playlistTimeOfDayDayIncludes: Set<String>,
+        val playlistTimeOfDayNightIncludes: Set<String>,
+        val playlistCache: Boolean,
+        val shuffleVideos: Boolean,
+        val shuffleMusic: Boolean,
+        val repeatMusic: Boolean,
+        val wifiOnly: Boolean = false,
+    ) {
+        companion object {
+            fun fromPreferences() =
+                Config(
+                    removeDuplicates = GeneralPrefs.removeDuplicates,
+                    ignoreNonManifestVideos = GeneralPrefs.ignoreNonManifestVideos,
+                    autoTimeOfDay = GeneralPrefs.autoTimeOfDay,
+                    playlistTimeOfDayDayIncludes = GeneralPrefs.playlistTimeOfDayDayIncludes,
+                    playlistTimeOfDayNightIncludes = GeneralPrefs.playlistTimeOfDayNightIncludes,
+                    playlistCache = GeneralPrefs.playlistCache,
+                    shuffleVideos = GeneralPrefs.shuffleVideos,
+                    shuffleMusic = MusicPrefs.shuffle,
+                    repeatMusic = MusicPrefs.repeat,
+                    wifiOnly = GeneralPrefs.wifiOnly,
+                )
+        }
+    }
+
+    private fun buildCompositeHash(): String {
+        val generalParts =
+            buildList {
+                add(GeneralPrefs.removeDuplicates.toString())
+                add(GeneralPrefs.ignoreNonManifestVideos.toString())
+                add(GeneralPrefs.autoTimeOfDay.toString())
+                if (GeneralPrefs.autoTimeOfDay) add(TimeOfDayHelper.getCurrentTimePeriod().name)
+                add(GeneralPrefs.playlistTimeOfDayDayIncludes.sorted().joinToString(","))
+                add(GeneralPrefs.playlistTimeOfDayNightIncludes.sorted().joinToString(","))
+                add(GeneralPrefs.playlistCache.toString())
+                add(GeneralPrefs.shuffleVideos.toString())
+                add(MusicPrefs.shuffle.toString())
+                add(MusicPrefs.repeat.toString())
+            }
+        val generalHash = generalParts.joinToString("|")
+
+        val providerHashes = providers.map { "${it.type}:${it.settingsHash()}" }
+        return (listOf(generalHash) + providerHashes).joinToString("||").hashCode().toString()
+    }
 
     init {
-        providers.add(Comm1MediaProvider(context, Comm1VideoPrefs))
-        providers.add(Comm2MediaProvider(context, Comm2VideoPrefs))
-        providers.add(AmazonMediaProvider(context, AmazonVideoPrefs))
-        providers.add(LocalMediaProvider(context, LocalMediaPrefs))
-        providers.add(SambaMediaProvider(context, SambaMediaPrefs))
-        providers.add(SambaMediaProvider(context, SambaMediaPrefs2))
-        providers.add(WebDavMediaProvider(context, WebDavMediaPrefs))
-        providers.add(WebDavMediaProvider(context, WebDavMediaPrefs2))
-        providers.add(ImmichMediaProvider(context, ImmichMediaPrefs))
-        providers.add(AppleMediaProvider(context, AppleVideoPrefs))
-        providers.add(CustomFeedProvider(context, CustomFeedPrefs))
-        providers.add(YouTubeMediaProvider(context))
+        if (providers.isEmpty()) {
+            providers.add(Comm1MediaProvider(context, Comm1VideoPrefs))
+            providers.add(Comm2MediaProvider(context, Comm2VideoPrefs))
+            providers.add(AmazonMediaProvider(context, AmazonVideoPrefs))
+            providers.add(LocalMediaProvider(context, LocalMediaPrefs))
+            providers.add(SambaMediaProvider(context, SambaMediaPrefs))
+            providers.add(SambaMediaProvider(context, SambaMediaPrefs2))
+            providers.add(WebDavMediaProvider(context, WebDavMediaPrefs))
+            providers.add(WebDavMediaProvider(context, WebDavMediaPrefs2))
+            providers.add(ImmichMediaProvider(context, ImmichMediaPrefs))
+            providers.add(NCMemoriesMediaProvider(context, NCMemoriesMediaPrefs))
+            providers.add(AppleMediaProvider(context, AppleVideoPrefs))
+            providers.add(CustomFeedProvider(context, CustomFeedPrefs))
+            providers.add(YouTubeMediaProvider(context))
+        }
         providers.sortBy { it.type == ProviderSourceType.REMOTE }
     }
 
-    suspend fun fetchMedia(): MediaPlaylist =
+    suspend fun fetchMedia(onStatus: (status: LoadingStatus) -> Unit = {}): MediaFetchResult =
         withContext(Dispatchers.IO) {
             normalizeYouTubeSourceModeIfNeeded()
 
-            // Build media list from all providers
-            var media = buildMediaList(providers)
+            val settingsHash = hashFn?.invoke() ?: buildCompositeHash()
+            val networkType = NetworkHelper.getNetworkType(context)
+            val filterRemote = config.wifiOnly && !NetworkHelper.isOnWifiOrEthernet(context)
+            Timber.i("MediaService: Network: $networkType | WiFi-only mode: ${config.wifiOnly} | Filtering remote sources: $filterRemote")
+            val cacheRepo =
+                if (config.playlistCache) {
+                    com.neilturner.aerialviews.data
+                        .PlaylistCacheRepository(context)
+                } else {
+                    null
+                }
+
+            if (config.playlistCache) {
+                if (cacheRepo != null && cacheRepo.isCacheValid(settingsHash)) {
+                    val cached = cacheRepo.getCachedPlaylist(filterRemote = filterRemote)
+                    if (cached != null) {
+                        onStatus(LoadingStatus.RESUMING)
+                        Timber.i("MediaService: USING CACHED PLAYLIST")
+                        return@withContext cached
+                    } else {
+                        Timber.w("MediaService: Cache reported valid but failed to load")
+                    }
+                } else {
+                    Timber.i("MediaService: Cache INVALID or missing, fetching fresh items")
+                }
+                onStatus(LoadingStatus.BUILDING)
+            } else {
+                Timber.i("MediaService: Cache DISABLED, fetching fresh items")
+                onStatus(LoadingStatus.LOADING)
+            }
+
+            var (media, tracks) = buildProviderContent(providers)
             if (media.isEmpty()) {
                 val youtubeOnlyMedia = tryYouTubeFallback()
                 if (youtubeOnlyMedia.isNotEmpty()) {
@@ -79,7 +173,7 @@ class MediaService(
             Timber.i("Total media items: ${media.size}, videos ${videos.size}, photos ${photos.size}")
 
             // Remove duplicates based on filename (with extension!)
-            if (GeneralPrefs.removeDuplicates) {
+            if (config.removeDuplicates) {
                 val numVideos = videos.size
                 val numPhotos = photos.size
                 videos =
@@ -94,10 +188,12 @@ class MediaService(
                     }
                 photos =
                     photos.distinctBy { photo ->
-                        if (photo.source == AerialMediaSource.IMMICH) {
-                            photo.uri.toString().lowercase()
-                        } else {
-                            photo.uri.filename.lowercase()
+                        when (photo.source) {
+                            AerialMediaSource.IMMICH,
+                            AerialMediaSource.YOUTUBE,
+                            -> photo.uri.toString().lowercase()
+
+                            else -> photo.uri.filename.lowercase()
                         }
                     }
                 Timber.i("Duplicates removed: videos ${numVideos - videos.size}, photos ${numPhotos - photos.size}")
@@ -112,7 +208,7 @@ class MediaService(
             Timber.i("Photos with metadata: matched ${matchedPhotos.size}, unmatched ${unmatchedPhotos.size}")
 
             // Discard unmatched manifest videos
-            if (GeneralPrefs.ignoreNonManifestVideos) {
+            if (config.ignoreNonManifestVideos) {
                 val (youtubeVideos, otherUnmatchedVideos) =
                     unmatchedVideos.partition { video ->
                         video.source == AerialMediaSource.YOUTUBE
@@ -128,10 +224,10 @@ class MediaService(
 
             var filteredMedia = unmatchedVideos + matchedVideos + unmatchedPhotos + matchedPhotos
 
-            if (GeneralPrefs.autoTimeOfDay) {
+            if (config.autoTimeOfDay) {
                 val currentTimePeriod = TimeOfDayHelper.getCurrentTimePeriod()
-                val dayIncludes = GeneralPrefs.playlistTimeOfDayDayIncludes
-                val nightIncludes = GeneralPrefs.playlistTimeOfDayNightIncludes
+                val dayIncludes = config.playlistTimeOfDayDayIncludes
+                val nightIncludes = config.playlistTimeOfDayNightIncludes
                 val dayIncludesSunrise = dayIncludes.contains("SUNRISE")
                 val dayIncludesSunset = dayIncludes.contains("SUNSET")
                 val nightIncludesSunrise = nightIncludes.contains("SUNRISE")
@@ -173,17 +269,96 @@ class MediaService(
                 Timber.i("Media items after time filtering: ${filteredMedia.size}")
             }
 
-            if (GeneralPrefs.shuffleVideos) {
+            if (config.shuffleVideos) {
+                filteredMedia = weightedInterleavedShuffle(filteredMedia)
                 val youtubeMixWeight = YouTubeVideoPrefs.mixWeight.toIntOrNull() ?: 1
                 filteredMedia = MediaServiceHelper.applyYouTubeMixWeight(filteredMedia, youtubeMixWeight)
-                Timber.i("Shuffling media items with YouTube mix weight %s", youtubeMixWeight)
+                Timber.i("Shuffling media items with weighted source interleaving (YouTube mix weight %s)", youtubeMixWeight)
             }
 
+            val musicPlaylist =
+                tracks
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { availableTracks ->
+                        val orderedTracks = if (config.shuffleMusic) availableTracks.shuffled() else availableTracks
+                        MusicPlaylist(
+                            tracks = orderedTracks,
+                            shuffle = config.shuffleMusic,
+                            repeat = config.repeatMusic,
+                        )
+                    }
+
             Timber.i("Total media items: ${filteredMedia.size}")
-            return@withContext MediaPlaylist(
-                filteredMedia,
-                reshuffleOnWrap = GeneralPrefs.shuffleVideos,
+
+            // Track enabled media sources and media counts
+            trackMediaUsage(filteredMedia)
+
+            if (config.playlistCache && cacheRepo != null) {
+                // Cache enabled: save to DB, return windowed playlist that streams from DB
+                cacheRepo.cachePlaylist(
+                    media = filteredMedia,
+                    musicPlaylist = musicPlaylist,
+                    settingsHash = settingsHash,
+                    shuffleEnabled = config.shuffleVideos,
+                )
+
+                val cachedResult = cacheRepo.getCachedPlaylist(filterRemote = filterRemote)
+                if (cachedResult != null) {
+                    Timber.i("MediaService: Fresh playlist cached and loaded from DB (${filteredMedia.size} items)")
+                    return@withContext cachedResult
+                }
+                Timber.w("MediaService: Failed to read back cached playlist, falling back to in-memory")
+            } else {
+                Timber.i("MediaService: Cache disabled, using full in-memory playlist (${filteredMedia.size} items)")
+            }
+
+            // Cache disabled or cache read-back failed: all items in memory, no DB
+            if (filterRemote) {
+                val before = filteredMedia.size
+                filteredMedia = filteredMedia.filter { it.source !in remoteSources }
+                Timber.i("MediaService: WiFi-only filter removed ${before - filteredMedia.size} remote items (in-memory path)")
+            }
+
+            MediaFetchResult(
+                mediaPlaylist = MediaPlaylist(filteredMedia),
+                musicPlaylist = musicPlaylist,
             )
+        }
+
+    private fun trackMediaUsage(media: List<AerialMedia>) {
+        // Count distinct sources
+        val sourceCount = media.map { it.source }.distinct().size
+
+        // Count videos and photos
+        val videoCount = media.count { it.type == AerialMediaType.VIDEO }
+        val photoCount = media.count { it.type == AerialMediaType.IMAGE }
+
+        val bundle = Bundle()
+        bundle.putString("total_videos", generalizeCount(videoCount))
+        bundle.putString("total_photos", generalizeCount(photoCount))
+        bundle.putString("total_sources", sourceCount.toString())
+
+        FirebaseHelper.analyticsEvent(
+            "media_sources_usage",
+            bundle,
+        )
+
+        Timber.d("Media usage tracked: ${bundle.keySet().joinToString(", ") { "$it=${bundle.getString(it)}" }}")
+    }
+
+    private fun generalizeCount(count: Int): String =
+        when {
+            count == 0 -> "0"
+
+            count < 10 -> "<10"
+
+            count < 100 -> "${(count / 10) * 10}"
+
+            // Round to nearest 10
+            count < 1000 -> "${(count / 100) * 100}"
+
+            // Round to nearest 100
+            else -> "${(count / 1000) * 1000}" // Round to nearest 1000
         }
 
     private fun normalizeYouTubeSourceModeIfNeeded() {
@@ -226,12 +401,26 @@ class MediaService(
 
     private suspend fun tryYouTubeFallback() =
         runCatching {
-            YouTubeMediaProvider(context).fetchMedia()
+            val result = YouTubeMediaProvider(context).fetch()
+            (result as? ProviderFetchResult.Success)?.media ?: emptyList()
         }.onFailure { exception ->
             Timber.w(exception, "YouTube fallback fetch failed")
         }.getOrDefault(emptyList())
 
     companion object {
+        private val remoteSources =
+            setOf(
+                AerialMediaSource.APPLE,
+                AerialMediaSource.AMAZON,
+                AerialMediaSource.COMM1,
+                AerialMediaSource.COMM2,
+                AerialMediaSource.CUSTOM,
+                AerialMediaSource.RTSP,
+                AerialMediaSource.HLS,
+                AerialMediaSource.IMMICH,
+                AerialMediaSource.NCMEMORIES,
+            )
+
         private const val KEY_SOURCE_MODE = "source_mode"
         private const val SOURCE_MODE_YOUTUBE = "youtube"
     }

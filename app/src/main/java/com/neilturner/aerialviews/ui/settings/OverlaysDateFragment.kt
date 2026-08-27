@@ -8,9 +8,9 @@ import androidx.preference.ListPreference
 import androidx.preference.Preference
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.enums.DateType
-import com.neilturner.aerialviews.utils.DateHelper
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
+import com.neilturner.aerialviews.ui.helpers.DateHelper
 import com.neilturner.aerialviews.utils.FirebaseHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -31,7 +31,6 @@ class OverlaysDateFragment : MenuStateFragment() {
     override fun onResume() {
         super.onResume()
         FirebaseHelper.analyticsScreenView("Date", this)
-        limitTextInput()
         updateSummary()
     }
 
@@ -64,10 +63,6 @@ class OverlaysDateFragment : MenuStateFragment() {
             Timber.e(e)
             DateType.COMPACT
         }
-
-    private fun limitTextInput() {
-        preferenceScreen.findPreference<EditTextPreference>("date_custom")?.setOnBindEditTextListener { it.setSingleLine() }
-    }
 
     private fun dateFormatting(
         type: DateType,

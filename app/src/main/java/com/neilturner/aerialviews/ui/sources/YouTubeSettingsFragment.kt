@@ -16,13 +16,14 @@ import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.providers.youtube.YouTubeFeature
 import com.neilturner.aerialviews.providers.youtube.YouTubeSourceRepository
-import com.neilturner.aerialviews.services.getDisplay
+
+import com.neilturner.aerialviews.services.Display
 import com.neilturner.aerialviews.services.supportsUltraHdOutput
 import com.neilturner.aerialviews.services.supports1440pOutput
-import com.neilturner.aerialviews.utils.DeviceHelper
-import com.neilturner.aerialviews.utils.DialogHelper
-import com.neilturner.aerialviews.utils.MenuStateFragment
-import com.neilturner.aerialviews.utils.ToastHelper
+import com.neilturner.aerialviews.ui.helpers.DeviceHelper
+import com.neilturner.aerialviews.ui.helpers.DialogHelper
+import com.neilturner.aerialviews.ui.controls.MenuStateFragment
+import com.neilturner.aerialviews.ui.helpers.ToastHelper
 import kotlinx.coroutines.launch
 
 class YouTubeSettingsFragment : MenuStateFragment() {
@@ -288,7 +289,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             if (isTv) {
                 null
             } else {
-                runCatching { getDisplay(requireActivity()) }.getOrNull()
+                runCatching { Display.get(requireContext()) }.getOrNull()
             }
         val supportsUltraHd =
             isTv || display?.let { runCatching { it.supportsUltraHdOutput() }.getOrDefault(false) } ?: false

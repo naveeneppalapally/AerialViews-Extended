@@ -6,6 +6,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -23,13 +24,21 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import com.neilturner.aerialviews.models.enums.AerialMediaSource
 import com.neilturner.aerialviews.models.enums.ImmichAuthType
 import com.neilturner.aerialviews.models.enums.LimitLongerVideos
+import com.neilturner.aerialviews.models.enums.SchemeType
 import com.neilturner.aerialviews.models.enums.VideoScale
+import com.neilturner.aerialviews.models.music.MusicTrack
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
 import com.neilturner.aerialviews.models.prefs.ImmichMediaPrefs
+import com.neilturner.aerialviews.models.prefs.NCMemoriesMediaPrefs
+import com.neilturner.aerialviews.models.prefs.WebDavMediaPrefs
+import com.neilturner.aerialviews.models.prefs.WebDavMediaPrefs2
 import com.neilturner.aerialviews.models.prefs.YouTubeVideoPrefs
 import com.neilturner.aerialviews.models.videos.AerialMedia
+import com.neilturner.aerialviews.providers.ncmemories.NCMemoriesDataSourceFactory
 import com.neilturner.aerialviews.providers.samba.SambaDataSourceFactory
 import com.neilturner.aerialviews.providers.webdav.WebDavDataSourceFactory
+import com.neilturner.aerialviews.providers.webdav.WebDavHostParser
+import com.neilturner.aerialviews.providers.webdav.defaultPortFor
 import com.neilturner.aerialviews.providers.youtube.NewPipeHelper
 import com.neilturner.aerialviews.services.philips.CustomRendererFactory
 import timber.log.Timber
@@ -82,17 +91,29 @@ object VideoPlayerHelper {
         }
 
     @OptIn(UnstableApi::class)
+    fun buildAudioPlayer(context: Context): ExoPlayer {
+        val loadControl =
+            DefaultLoadControl
+                .Builder()
+                .setBufferDurationsMs(
+                    10_000,
+                    20_000,
+                    3_000,
+                    5_000,
+                ).build()
+
+        return ExoPlayer
+            .Builder(context)
+            .setLoadControl(loadControl)
+            .build()
+    }
+
+    @OptIn(UnstableApi::class)
     fun buildPlayer(
         context: Context,
         prefs: GeneralPrefs,
     ): ExoPlayer {
-        val parametersBuilder =
-            Parameters
-                .Builder()
-                .setPreferredTextLanguage(null)
-                .setIgnoredTextSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                .setDisabledTextTrackSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+        val parametersBuilder = Parameters.Builder()
 
         if (prefs.enableTunneling) {
             parametersBuilder
@@ -110,21 +131,18 @@ object VideoPlayerHelper {
 
         if (prefs.philipsDolbyVisionFix) {
             rendererFactory = CustomRendererFactory(context)
-            rendererFactory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
-            if (prefs.allowFallbackDecoders) {
-                rendererFactory.setEnableDecoderFallback(true)
-            }
         }
 
         val loadControl =
             DefaultLoadControl
                 .Builder()
                 .setBufferDurationsMs(
-                    30_000, // Minimum buffer duration
-                    180_000, // Maximum buffer duration
-                    5_000, // Buffer before initial playback
-                    10_000, // Buffer after rebuffering
-                ).build()
+                    if (prefs.reduceBufferMemory) 2_000 else 30_000,
+                    if (prefs.reduceBufferMemory) 10_000 else 180_000,
+                    if (prefs.reduceBufferMemory) 500 else 5_000,
+                    if (prefs.reduceBufferMemory) 1_000 else 10_000,
+                ).setTargetBufferBytes(C.LENGTH_UNSET)
+                .build()
 
         val player =
             ExoPlayer
@@ -134,13 +152,12 @@ object VideoPlayerHelper {
                 .setRenderersFactory(rendererFactory)
                 .build()
 
-        player.videoScalingMode = getVideoScalingMode(prefs.videoScale)
-
-        if (prefs.enablePlaybackLogging) {
+        if (prefs.enableLogCapture) {
             player.addAnalyticsListener(EventLogger())
+            player.addAnalyticsListener(PlaybackDiagnosticsListener(context))
         }
 
-        if (!prefs.muteVideos) {
+        if (prefs.playsVideoAudio) {
             player.volume =
                 prefs.videoVolume.toFloat() / 100
         } else {
@@ -152,74 +169,22 @@ object VideoPlayerHelper {
             player.videoChangeFrameRateStrategy = C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF
         }
 
+        player.videoScalingMode = getVideoScalingMode(prefs.videoScale)
+
         player.setPlaybackSpeed(prefs.playbackSpeed.toFloat())
         return player
     }
 
     @OptIn(UnstableApi::class)
     fun setupMediaSource(
+        context: Context,
         player: ExoPlayer,
         media: AerialMedia,
         startPositionMs: Long = C.TIME_UNSET,
     ) {
         val mediaItem = MediaItem.fromUri(media.uri)
-        when (media.source) {
-            AerialMediaSource.SAMBA -> {
-                val mediaSource =
-                    ProgressiveMediaSource
-                        .Factory(SambaDataSourceFactory())
-                        .createMediaSource(mediaItem)
-                setMediaSourceWithOptionalStart(player, mediaSource, startPositionMs)
-            }
-
-            AerialMediaSource.RTSP -> {
-                val mediaSource =
-                    RtspMediaSource
-                        .Factory()
-                        .setDebugLoggingEnabled(true)
-                        .setForceUseRtpTcp(true)
-                        .createMediaSource(mediaItem)
-                setMediaSourceWithOptionalStart(player, mediaSource, startPositionMs)
-            }
-
-            AerialMediaSource.IMMICH -> {
-                val dataSourceFactory =
-                    DefaultHttpDataSource
-                        .Factory()
-                        .setAllowCrossProtocolRedirects(true)
-                        .setConnectTimeoutMs(TimeUnit.SECONDS.toMillis(30).toInt())
-                        .setReadTimeoutMs(TimeUnit.SECONDS.toMillis(30).toInt())
-
-                // Add necessary headers for Immich
-                if (ImmichMediaPrefs.authType == ImmichAuthType.API_KEY) {
-                    dataSourceFactory.setDefaultRequestProperties(
-                        mapOf("X-API-Key" to ImmichMediaPrefs.apiKey),
-                    )
-                }
-
-                // If SSL validation is disabled, we need to set the appropriate flags
-                if (!ImmichMediaPrefs.validateSsl) {
-                    System.setProperty("javax.net.ssl.trustAll", "true")
-                }
-
-                val mediaSource =
-                    ProgressiveMediaSource
-                        .Factory(dataSourceFactory)
-                        .createMediaSource(mediaItem)
-
-                setMediaSourceWithOptionalStart(player, mediaSource, startPositionMs)
-                Timber.d("Setting up Immich media source with URI: ${media.uri}")
-            }
-
-            AerialMediaSource.WEBDAV -> {
-                val mediaSource =
-                    ProgressiveMediaSource
-                        .Factory(WebDavDataSourceFactory())
-                        .createMediaSource(mediaItem)
-                setMediaSourceWithOptionalStart(player, mediaSource, startPositionMs)
-            }
-
-            AerialMediaSource.YOUTUBE -> {
+        val mediaSource =
+            if (media.source == AerialMediaSource.YOUTUBE) {
                 val dataSourceFactory =
                     DefaultHttpDataSource
                         .Factory()
@@ -228,24 +193,95 @@ object VideoPlayerHelper {
                         .setConnectTimeoutMs(TimeUnit.SECONDS.toMillis(30).toInt())
                         .setReadTimeoutMs(TimeUnit.SECONDS.toMillis(30).toInt())
 
-                val mediaSource = buildYouTubeMediaSource(media, dataSourceFactory)
                 Timber.i(
                     "Created YouTube media source (merged=%s, video=%s, audio=%s)",
                     media.audioStreamUrl.isNotBlank(),
                     media.uri,
                     media.audioStreamUrl.ifBlank { "none" },
                 )
+                buildYouTubeMediaSource(media, dataSourceFactory)
+            } else {
+                createMediaSource(context, mediaItem, media.source)
+            }
+        setMediaSourceWithOptionalStart(player, mediaSource, startPositionMs)
+    }
 
-                setMediaSourceWithOptionalStart(player, mediaSource, startPositionMs)
+    @OptIn(UnstableApi::class)
+    fun createAudioMediaSource(
+        context: Context,
+        track: MusicTrack,
+    ) = createMediaSource(context, MediaItem.fromUri(track.uri), track.source)
+
+    @OptIn(UnstableApi::class)
+    private fun createMediaSource(
+        context: Context,
+        mediaItem: MediaItem,
+        source: AerialMediaSource,
+    ) = when (source) {
+        AerialMediaSource.SAMBA -> {
+            ProgressiveMediaSource
+                .Factory(SambaDataSourceFactory())
+                .createMediaSource(mediaItem)
+        }
+
+        AerialMediaSource.RTSP -> {
+            RtspMediaSource
+                .Factory()
+                .setDebugLoggingEnabled(true)
+                .setForceUseRtpTcp(true)
+                .createMediaSource(mediaItem)
+        }
+
+        AerialMediaSource.IMMICH -> {
+            val dataSourceFactory =
+                DefaultHttpDataSource
+                    .Factory()
+                    .setAllowCrossProtocolRedirects(true)
+                    .setConnectTimeoutMs(TimeUnit.SECONDS.toMillis(30).toInt())
+                    .setReadTimeoutMs(TimeUnit.SECONDS.toMillis(30).toInt())
+
+            // Add necessary headers for Immich
+            if (ImmichMediaPrefs.authType == ImmichAuthType.API_KEY) {
+                dataSourceFactory.setDefaultRequestProperties(
+                    mapOf("X-API-Key" to ImmichMediaPrefs.apiKey),
+                )
             }
 
-            else -> {
-                if (startPositionMs > 0L) {
-                    player.setMediaItem(mediaItem, startPositionMs)
-                } else {
-                    player.setMediaItem(mediaItem)
-                }
+            // If SSL validation is disabled, we need to set the appropriate flags
+            if (!ImmichMediaPrefs.validateSsl) {
+                System.setProperty("javax.net.ssl.trustAll", "true")
             }
+
+            Timber.d("Setting up Immich media source with URI: ${mediaItem.localConfiguration?.uri}")
+            ProgressiveMediaSource
+                .Factory(dataSourceFactory)
+                .createMediaSource(mediaItem)
+        }
+
+        AerialMediaSource.NCMEMORIES -> {
+            // If SSL validation is disabled, we need to set the appropriate flags
+            if (!NCMemoriesMediaPrefs.validateSsl) {
+                System.setProperty("javax.net.ssl.trustAll", "true")
+            }
+
+            Timber.d("Setting up Nextcloud Memories media source with URI: ${mediaItem.localConfiguration?.uri}")
+            ProgressiveMediaSource
+                .Factory(NCMemoriesDataSourceFactory())
+                .createMediaSource(mediaItem)
+        }
+
+        AerialMediaSource.WEBDAV -> {
+            val validateSsl = getWebDavValidateSslFromUri(mediaItem.localConfiguration!!.uri)
+            ProgressiveMediaSource
+                .Factory(WebDavDataSourceFactory(validateSsl))
+                .createMediaSource(mediaItem)
+        }
+
+        else -> {
+            val dataSourceFactory = DefaultDataSource.Factory(context)
+            ProgressiveMediaSource
+                .Factory(dataSourceFactory)
+                .createMediaSource(mediaItem)
         }
     }
 
@@ -313,11 +349,11 @@ object VideoPlayerHelper {
         val playbackPolicy = resolvePlaybackPolicy(type, prefs)
         val maxVideoLength = playbackPolicy.maxVideoLengthMs
         val isLengthLimited = maxVideoLength >= TEN_SECONDS
-        val isShortVideo = effectiveDuration < maxVideoLength
+        val isShortVideo = effectiveDuration < maxVideoLength && effectiveDuration > 0
 
         if (type == AerialMediaSource.RTSP) {
             Timber.i("Calculating RTSP stream length...")
-            val duration = if (isLengthLimited) maxVideoLength else 0
+            val duration = if (isLengthLimited) maxVideoLength else 0L
             return Pair(0, duration)
         }
 
@@ -412,7 +448,7 @@ object VideoPlayerHelper {
     ): Pair<Long, Long> {
         if (duration <= 0 || range < 5) {
             Timber.e("Invalid duration or range: duration=$duration, range=$range%")
-            return Pair(0, 0)
+            return Pair(0, duration)
         }
         val seekPosition = (duration * range / 100.0).toLong()
         val randomPosition = Random.nextLong(seekPosition)
@@ -451,13 +487,36 @@ object VideoPlayerHelper {
         return Pair(segmentStart, segmentEnd)
     }
 
+    private fun getWebDavValidateSslFromUri(uri: android.net.Uri): Boolean {
+        val host = uri.host?.lowercase() ?: return true
+        val port = if (uri.port == -1) null else uri.port
+
+        if (WebDavMediaPrefs.hostName.isNotBlank()) {
+            val parsed = runCatching { WebDavHostParser.parse(WebDavMediaPrefs.hostName) }.getOrNull()
+            if (parsed != null && parsed.host.equals(host, ignoreCase = true)) {
+                val prefPort = parsed.port ?: defaultPortFor(WebDavMediaPrefs.scheme ?: SchemeType.HTTP)
+                if (port == null || port == prefPort) return WebDavMediaPrefs.validateSsl
+            }
+        }
+
+        if (WebDavMediaPrefs2.hostName.isNotBlank()) {
+            val parsed = runCatching { WebDavHostParser.parse(WebDavMediaPrefs2.hostName) }.getOrNull()
+            if (parsed != null && parsed.host.equals(host, ignoreCase = true)) {
+                val prefPort = parsed.port ?: defaultPortFor(WebDavMediaPrefs2.scheme ?: SchemeType.HTTP)
+                if (port == null || port == prefPort) return WebDavMediaPrefs2.validateSsl
+            }
+        }
+
+        return true
+    }
+
     private fun calculateLoopingVideo(
         duration: Long,
         maxLength: Long,
     ): Pair<Long, Long> {
         if (duration <= 0 || maxLength < TEN_SECONDS) {
-            Timber.e("Invalid duration or max length: duration=$duration, maxLength=$maxLength%")
-            return Pair(0, 0)
+            Timber.e("Invalid duration or video length: duration=$duration, maxLength=$maxLength%")
+            return Pair(0, duration)
         }
         val loopCount = ceil(maxLength / duration.toDouble()).toInt()
         val targetDuration = duration * loopCount

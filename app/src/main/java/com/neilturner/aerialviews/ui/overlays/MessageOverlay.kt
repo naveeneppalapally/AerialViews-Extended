@@ -14,8 +14,8 @@ import androidx.core.widget.TextViewCompat
 import com.neilturner.aerialviews.R
 import com.neilturner.aerialviews.models.enums.OverlayType
 import com.neilturner.aerialviews.models.prefs.GeneralPrefs
+import com.neilturner.aerialviews.ui.helpers.FontHelper
 import com.neilturner.aerialviews.ui.overlays.state.MessageOverlayState
-import com.neilturner.aerialviews.utils.FontHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,6 +23,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import kotlin.time.Duration.Companion.milliseconds
 
 class MessageOverlay : AppCompatTextView {
     var type = OverlayType.EMPTY
@@ -131,7 +132,7 @@ class MessageOverlay : AppCompatTextView {
         if (!text.isNullOrBlank() && durationSeconds != null && durationSeconds > 0) {
             clearJob =
                 mainScope.launch {
-                    delay(durationSeconds * 1000L)
+                    delay((durationSeconds * 1000L).milliseconds)
                     if (!text.isNullOrBlank()) {
                         Timber.i("$type: Auto-clearing message after $durationSeconds seconds")
                         clearJob = null
@@ -170,7 +171,7 @@ class MessageOverlay : AppCompatTextView {
             .setDuration(300)
             .start()
         Timber.i("$type: Fading out...")
-        delay(300)
+        delay(300.milliseconds)
     }
 
     private suspend fun fadeIn() {
@@ -179,7 +180,7 @@ class MessageOverlay : AppCompatTextView {
             .setDuration(300)
             .start()
         Timber.i("$type: Fading in...")
-        delay(300)
+        delay(300.milliseconds)
     }
 
     private fun updateTextAndStyle() {

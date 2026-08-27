@@ -16,7 +16,7 @@ plugins {
 
 android {
     namespace = "com.neilturner.aerialviews"
-    compileSdk = 36
+    compileSdk = 37
 
     var betaVersion = ""
     val keyProps = loadProperties("secrets.properties")
@@ -37,7 +37,7 @@ android {
     defaultConfig {
         applicationId = "com.naveen.aerialviewsplus"
         minSdk = 23 // Android v6
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 104
         versionName = "1.2"
         betaVersion = "-beta12"
@@ -203,13 +203,19 @@ android {
     }
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     // Support all favors except F-Droid
-    "githubImplementation"(libs.bundles.firebase)
-    "betaImplementation"(libs.bundles.firebase)
-    "googleplayImplementation"(libs.bundles.firebase)
-    "googleplaybetaImplementation"(libs.bundles.firebase)
-    "amazonImplementation"(libs.bundles.firebase)
+    val firebaseFlavors = listOf(
+        "github", "beta", "googleplay", "googleplaybeta", "amazon"
+    )
+    firebaseFlavors.forEach { flavor ->
+        "${flavor}Implementation"(platform(libs.firebase.bom))
+        "${flavor}Implementation"(libs.bundles.firebase)
+    }
 
     implementation(libs.bundles.kotlin)
     implementation(libs.bundles.androidx)
@@ -219,10 +225,11 @@ dependencies {
     implementation(libs.bundles.retrofit)
 
     implementation(libs.bundles.ktor)
+    implementation(libs.bundles.room)
+    ksp(libs.room.compiler)
     implementation(libs.bundles.exoplayer)
     implementation(libs.media3.dash)
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx)
+    implementation(libs.media3.container)
     implementation(libs.sardine.android)
     implementation(libs.smbj)
     implementation(libs.timber)
@@ -231,7 +238,6 @@ dependencies {
     implementation(libs.newpipe.extractor) {
         exclude(group = "com.google.protobuf", module = "protobuf-javalite")
     }
-    ksp(libs.room.compiler)
 
     debugImplementation(libs.leakcanary)
 

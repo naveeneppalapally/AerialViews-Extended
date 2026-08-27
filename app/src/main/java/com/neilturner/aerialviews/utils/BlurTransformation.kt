@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.core.graphics.scale
 import coil3.size.Size
 import coil3.transform.Transformation
+import com.neilturner.aerialviews.ui.helpers.FastBlurCompat
 import timber.log.Timber
 
 /**

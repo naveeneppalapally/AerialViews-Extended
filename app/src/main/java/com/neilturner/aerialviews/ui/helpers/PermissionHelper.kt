@@ -1,0 +1,127 @@
+package com.neilturner.aerialviews.ui.helpers
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+
+object PermissionHelper {
+    // TIRAMISU / 33 / 13
+    // R / 30 / 11
+
+    // Images + Videos + Audio = Read permission
+
+    fun hasMediaReadPermission(context: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+
+    // Photo + Video only (used to determine if local media should remain enabled).
+    // Audio is optional — music simply won't play if that permission is missing.
+    fun hasVideoImagePermission(context: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+
+    fun hasAudioReadPermission(context: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
+        } else {
+            // Pre-TIRAMISU: READ_EXTERNAL_STORAGE covers audio too
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+
+    fun getReadMediaPermissions(): Array<String> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            arrayOf(
+                Manifest.permission.READ_MEDIA_VIDEO,
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.READ_MEDIA_AUDIO,
+                Manifest.permission.ACCESS_MEDIA_LOCATION,
+            )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            arrayOf(
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.ACCESS_MEDIA_LOCATION,
+            )
+        } else {
+            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+
+    fun isReadMediaPermissionGranted(results: Map<String, Boolean>): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            results.getOrDefault(Manifest.permission.READ_MEDIA_VIDEO, false) &&
+                results.getOrDefault(Manifest.permission.READ_MEDIA_IMAGES, false) &&
+                results.getOrDefault(Manifest.permission.READ_MEDIA_AUDIO, false)
+        } else {
+            try {
+                results.getValue(Manifest.permission.READ_EXTERNAL_STORAGE)
+            } catch (ex: NoSuchElementException) {
+                false
+            }
+        }
+
+    // Checks only photo + video in the callback results (audio is optional for local media).
+    fun isVideoImagePermissionGranted(results: Map<String, Boolean>): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            results.getOrDefault(Manifest.permission.READ_MEDIA_VIDEO, false) &&
+                results.getOrDefault(Manifest.permission.READ_MEDIA_IMAGES, false)
+        } else {
+            try {
+                results.getValue(Manifest.permission.READ_EXTERNAL_STORAGE)
+            } catch (ex: NoSuchElementException) {
+                false
+            }
+        }
+
+    // Text/Document = Read/Write permission
+
+    fun hasDocumentReadPermission(context: Context): Boolean {
+        // Android 11 / 30 and above
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            true
+        } else {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    fun hasDocumentWritePermission(context: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            true
+        } else {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+
+    fun getWriteDocumentPermission(): String =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // WRITE_EXTERNAL_STORAGE is useless above Android 10
+            // So request existing permission anyway
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        } else {
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+        }
+
+    fun hasNotificationListenerPermission(context: Context): Boolean =
+        NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+
+    fun hasSystemOverlayPermission(context: Context): Boolean = Settings.canDrawOverlays(context)
+
+    fun hasLocalNetworkPermission(context: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+            ContextCompat.checkSelfPermission(context, "android.permission.ACCESS_LOCAL_NETWORK") == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+
+    fun getLocalNetworkPermission(): String = "android.permission.ACCESS_LOCAL_NETWORK"
+}

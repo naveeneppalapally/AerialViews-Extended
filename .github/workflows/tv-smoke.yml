@@ -36,6 +36,19 @@ jobs:
           sudo udevadm trigger --name-match=kvm
           ls -l /dev/kvm
 
+      - name: Start fake video server for playback test
+        run: |
+          mkdir -p /tmp/www
+          if command -v ffmpeg >/dev/null 2>&1; then
+            ffmpeg -y -loglevel error -f lavfi -i testsrc=duration=30:size=1280x720:rate=30 -f lavfi -i sine=frequency=440:duration=30 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest /tmp/www/BigBuckBunny.mp4
+          else
+            curl -sL -o /tmp/www/BigBuckBunny.mp4 https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4
+          fi
+          ls -l /tmp/www/
+          nohup python3 -m http.server 18080 --directory /tmp/www >/tmp/http-server.log 2>&1 &
+          sleep 2
+          curl -sI http://127.0.0.1:18080/BigBuckBunny.mp4 | head -n 5
+
       - name: Run TV emulator smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -55,9 +68,10 @@ jobs:
             adb shell settings put global window_animation_scale 0 || true
             adb shell settings put global transition_animation_scale 0 || true
             adb shell settings put global animator_duration_scale 0 || true
-            ./gradlew --no-daemon :app:connectedGithubDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.neilturner.aerialviews.ui.screensaver.ScreensaverYouTubeBehaviorTest
+            ./gradlew --no-daemon :app:connectedGithubDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.neilturner.aerialviews.ui.screensaver.ScreensaverYouTubeBehaviorTest; TEST_EXIT=$?
             adb exec-out screencap -p > /tmp/tv-frame.png || true
             adb logcat -d > /tmp/logcat.txt || true
+            exit $TEST_EXIT
 
       - name: Upload smoke artifacts
         if: always()

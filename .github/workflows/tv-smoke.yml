@@ -29,6 +29,13 @@ jobs:
           java-version: '21'
           cache: gradle
 
+      - name: Enable KVM for emulator hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
       - name: Run TV emulator smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -36,7 +43,12 @@ jobs:
           target: android-tv
           arch: x86
           profile: tv_1080p
+          cores: 4
+          ram-size: 4096M
+          heap-size: 512M
           disable-animations: true
+          disable-linux-hw-accel: false
+          emulator-boot-timeout: 900
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-audio -no-boot-anim
           script: |
             adb wait-for-device

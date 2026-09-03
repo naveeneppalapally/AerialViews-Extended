@@ -711,6 +711,8 @@
 
     <!-- Main / Settings / Appearance / Brightness -->
     <string name="appearance_brightness_level_title">Brightness level during media playback</string>
+    <string name="appearance_vivid_title">Vivid video colours</string>
+    <string name="appearance_vivid_summary">Boosts saturation for a punchier, HDR-like look. Disables tunneled playback while on.</string>
 
     <!-- Main / Settings / Appearance / Startup + Shutdown -->
     <string name="appearance_loading_show_title">Show loading message</string>

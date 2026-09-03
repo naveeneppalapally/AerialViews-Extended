@@ -8,6 +8,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.effect.Contrast
+import androidx.media3.effect.HslAdjustment
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -49,6 +51,9 @@ import kotlin.time.Duration.Companion.milliseconds
 
 object VideoPlayerHelper {
     private const val TEN_SECONDS = 10 * 1000
+    private const val VIVID_SATURATION = 1.35f
+    private const val VIVID_LIGHTNESS = 0.02f
+    private const val VIVID_CONTRAST = 0.08f
 
     fun toggleAudioTrack(
         player: ExoPlayer,
@@ -115,7 +120,8 @@ object VideoPlayerHelper {
     ): ExoPlayer {
         val parametersBuilder = Parameters.Builder()
 
-        if (prefs.enableTunneling) {
+        // Video effects bypass the tunneled playback path, so vivid mode needs it off
+        if (prefs.enableTunneling && !prefs.vividVideo) {
             parametersBuilder
                 .setTunnelingEnabled(true)
         }
@@ -170,6 +176,20 @@ object VideoPlayerHelper {
         }
 
         player.videoScalingMode = getVideoScalingMode(prefs.videoScale)
+
+        if (prefs.vividVideo) {
+            Timber.i("Applying vivid video effect (saturation + contrast boost)")
+            player.setVideoEffects(
+                listOf(
+                    HslAdjustment
+                        .Builder()
+                        .adjustSaturation(VIVID_SATURATION)
+                        .adjustLightness(VIVID_LIGHTNESS)
+                        .build(),
+                    Contrast(VIVID_CONTRAST),
+                ),
+            )
+        }
 
         player.setPlaybackSpeed(prefs.playbackSpeed.toFloat())
         return player

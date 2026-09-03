@@ -178,6 +178,7 @@ object GeneralPrefs : KotprefModel() {
 
     // Brightness / Dimness
     var videoBrightness by stringPref("100", "video_brightness")
+    var vividVideo by booleanPref(false, "vivid_video")
 
     // Gradients
     var showTopGradient by booleanPref(false, "gradient_top_show")

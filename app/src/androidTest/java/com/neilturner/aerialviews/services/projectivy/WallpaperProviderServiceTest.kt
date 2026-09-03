@@ -84,7 +84,7 @@ class WallpaperProviderServiceTest {
 
         val service = bindWallpaperService()
 
-        val firstUri = service.getWallpapers(Event.TimeElapsed()).first().uri
+        val firstUri = service.getWallpapers(Event.TimeElapsed).first().uri
         val (startSeconds, endSeconds) = extractTimeWindow(firstUri)
 
         assertEquals(
@@ -108,7 +108,7 @@ class WallpaperProviderServiceTest {
 
         val service = bindWallpaperService()
 
-        val firstUri = service.getWallpapers(Event.TimeElapsed()).first().uri
+        val firstUri = service.getWallpapers(Event.TimeElapsed).first().uri
         val (startSeconds, endSeconds) = extractTimeWindow(firstUri)
 
         assertEquals(
@@ -132,7 +132,7 @@ class WallpaperProviderServiceTest {
 
         val service = bindWallpaperService()
 
-        val firstUri = service.getWallpapers(Event.TimeElapsed()).first().uri
+        val firstUri = service.getWallpapers(Event.TimeElapsed).first().uri
         val (startSeconds, endSeconds) = extractTimeWindow(firstUri)
 
         assertTrue(
@@ -154,7 +154,7 @@ class WallpaperProviderServiceTest {
     fun youtubeProjectivyUrisUseDirectPlayableStreams() {
         val service = bindWallpaperService()
 
-        val wallpapers = service.getWallpapers(Event.TimeElapsed())
+        val wallpapers = service.getWallpapers(Event.TimeElapsed)
 
         assertFalse("Expected Projectivy to return YouTube wallpapers", wallpapers.isEmpty())
         assertTrue(
@@ -174,7 +174,7 @@ class WallpaperProviderServiceTest {
     fun returnsMultipleWallpapersPerProjectivySnapshot() {
         val service = bindWallpaperService()
 
-        val wallpapers = service.getWallpapers(Event.TimeElapsed())
+        val wallpapers = service.getWallpapers(Event.TimeElapsed)
 
         assertTrue(
             "Expected Projectivy snapshots to expose multiple wallpapers so the launcher can rotate them, got ${wallpapers.size}",
@@ -199,7 +199,7 @@ class WallpaperProviderServiceTest {
         )
 
         val service = bindWallpaperService()
-        val wallpapers = service.getWallpapers(Event.TimeElapsed())
+        val wallpapers = service.getWallpapers(Event.TimeElapsed)
         val sampledWallpapers = wallpapers.take(5)
         val sampledItags =
             sampledWallpapers.mapNotNull { wallpaper ->
@@ -278,13 +278,13 @@ class WallpaperProviderServiceTest {
     @Test
     fun remembersServedWallpaperAcrossServiceRelaunch() {
         val firstService = bindWallpaperService()
-        val firstWallpaper = firstService.getWallpapers(Event.TimeElapsed()).first().uri
+        val firstWallpaper = firstService.getWallpapers(Event.TimeElapsed).first().uri
 
         unbindWallpaperService()
         stopWallpaperService()
 
         val secondService = bindWallpaperService()
-        val secondWallpaper = secondService.getWallpapers(Event.TimeElapsed()).first().uri
+        val secondWallpaper = secondService.getWallpapers(Event.TimeElapsed).first().uri
 
         assertNotEquals(
             "Expected Projectivy relaunch to avoid serving the same first wallpaper again",
@@ -299,7 +299,7 @@ class WallpaperProviderServiceTest {
         val servedUris = mutableListOf<String>()
 
         repeat(PROJECTIVY_DIRECT_WINDOW_SIZE) { index ->
-            val wallpapers = service.getWallpapers(Event.TimeElapsed())
+            val wallpapers = service.getWallpapers(Event.TimeElapsed)
             assertFalse("Expected wallpapers for request $index", wallpapers.isEmpty())
             servedUris += wallpapers.first().uri
         }
@@ -319,14 +319,14 @@ class WallpaperProviderServiceTest {
     fun cachedWallpaperResponsesStayFast() {
         val service = bindWallpaperService()
         val firstDurationMs = measureTimeMillis {
-            assertFalse(service.getWallpapers(Event.TimeElapsed()).isEmpty())
+            assertFalse(service.getWallpapers(Event.TimeElapsed).isEmpty())
         }
         val cachedDurationsMs =
             buildList {
                 repeat(5) {
                     add(
                         measureTimeMillis {
-                            assertFalse(service.getWallpapers(Event.TimeElapsed()).isEmpty())
+                            assertFalse(service.getWallpapers(Event.TimeElapsed).isEmpty())
                         },
                     )
                 }
@@ -361,7 +361,7 @@ class WallpaperProviderServiceTest {
 
             val durationMs =
                 measureTimeMillis {
-                    val wallpapers = service.getWallpapers(Event.TimeElapsed())
+                    val wallpapers = service.getWallpapers(Event.TimeElapsed)
                     assertFalse("Expected wallpapers for request $index", wallpapers.isEmpty())
                     servedUris += wallpapers.first().uri
                 }
@@ -472,7 +472,7 @@ class WallpaperProviderServiceTest {
                 service = bindWallpaperService()
             }
 
-            val wallpapers = service.getWallpapers(Event.TimeElapsed())
+            val wallpapers = service.getWallpapers(Event.TimeElapsed)
             assertEquals(
                 "Expected Projectivy to return a full wallpaper batch for $roundLabel batch ${batchIndex + 1}",
                 PROJECTIVY_DIRECT_WINDOW_SIZE,

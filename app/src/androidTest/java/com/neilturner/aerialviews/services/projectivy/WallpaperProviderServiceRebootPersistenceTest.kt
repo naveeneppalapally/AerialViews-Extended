@@ -54,7 +54,7 @@ class WallpaperProviderServiceRebootPersistenceTest {
         YouTubeInstrumentationFixtures.seedProjectivyYouTubeCache(database, entryCount = 200)
 
         val service = bindWallpaperService()
-        val firstWallpaper = service.getWallpapers(Event.TimeElapsed()).first().uri
+        val firstWallpaper = service.getWallpapers(Event.TimeElapsed).first().uri
 
         prefs.edit {
             putString(KEY_TEST_LAST_URI, firstWallpaper)
@@ -74,7 +74,7 @@ class WallpaperProviderServiceRebootPersistenceTest {
         assertTrue("Expected primed wallpaper URI before reboot validation", lastWallpaperBeforeReboot.isNotBlank())
 
         val service = bindWallpaperService()
-        val firstWallpaperAfterReboot = service.getWallpapers(Event.TimeElapsed()).first().uri
+        val firstWallpaperAfterReboot = service.getWallpapers(Event.TimeElapsed).first().uri
 
         assertNotEquals(
             "Expected Projectivy reboot to preserve wallpaper novelty across process death",

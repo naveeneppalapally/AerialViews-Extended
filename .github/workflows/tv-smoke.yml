@@ -40,13 +40,12 @@ jobs:
         run: |
           mkdir -p /tmp/www
           rm -f /tmp/test-failed
-          ffmpeg -y -loglevel error -f lavfi -i testsrc=duration=30:size=640x360:rate=24 -c:v mpeg4 -q:v 5 -pix_fmt yuv420p -an /tmp/www/BigBuckBunny.mp4 || true
-          SIZE=$(stat -c%s /tmp/www/BigBuckBunny.mp4 2>/dev/null || echo 0)
-          echo "Generated test video bytes: $SIZE"
-          if [ "$SIZE" -lt 100000 ]; then
-            echo "ffmpeg output too small, downloading sample video instead"
-            curl -sL -o /tmp/www/BigBuckBunny.mp4 https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4
+          curl -sL --max-time 120 -o /tmp/www/BigBuckBunny.mp4 https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/720/Big_Buck_Bunny_720_10s_1MB.mp4 || true
+          if ! file /tmp/www/BigBuckBunny.mp4 | grep -q "ISO Media"; then
+            echo "Primary sample invalid, trying fallback"
+            curl -sL --max-time 120 -o /tmp/www/BigBuckBunny.mp4 https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4 || true
           fi
+          file /tmp/www/BigBuckBunny.mp4
           ls -l /tmp/www/
           nohup python3 -m http.server 18080 --directory /tmp/www >/tmp/http-server.log 2>&1 &
           sleep 2

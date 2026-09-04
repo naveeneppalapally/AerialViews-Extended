@@ -132,5 +132,10 @@
                     app:entryValues="@array/youtube_playback_max_minutes_values"
                     app:defaultValue="@string/youtube_playback_max_minutes_default"
                     app:useSimpleSummaryProvider="true" />
+
+                <Preference
+                    app:key="yt_mix_weight_link"
+                    app:title="@string/youtube_mix_weight_title"
+                    app:selectable="false" />
         </PreferenceCategory>
 </PreferenceScreen>

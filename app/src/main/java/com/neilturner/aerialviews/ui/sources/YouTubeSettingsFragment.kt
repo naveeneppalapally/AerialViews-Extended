@@ -1,7 +1,7 @@
 package com.neilturner.aerialviews.ui.sources
 
 import android.os.Bundle
-import android.os.SystemClock
+import android.text.format.DateUtils
 import android.util.Log
 import android.view.View
 import android.widget.Toast
@@ -29,18 +29,6 @@ import kotlinx.coroutines.launch
 class YouTubeSettingsFragment : MenuStateFragment() {
     private val viewModel by viewModels<YouTubeSettingsViewModel>()
     private var refreshInProgress = false
-    private var transientCategoryMessage: String? = null
-    private var transientCategoryMessageUntilElapsedMs: Long = 0L
-    private var transientCategoryRemainingCount: Int? = null
-    private val clearTransientCategoryMessageRunnable =
-        Runnable {
-            transientCategoryMessage = null
-            transientCategoryRemainingCount = null
-            transientCategoryMessageUntilElapsedMs = 0L
-            if (isAdded) {
-                renderSettingsState(viewModel.settingsUiState.value)
-            }
-        }
     private val sharedPreferenceListener =
         android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             when (key) {
@@ -52,19 +40,22 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                         refreshInProgress = false
                         viewModel.setDisplayedCacheSize(0)
                         updateVideoCount(staticCount = 0)
-                        updateCacheCountPreference(cachedCount = 0, stage = YouTubeRefreshStage.IDLE, transientMessage = null)
+                        updateCacheCountPreference(cachedCount = 0, stage = YouTubeRefreshStage.IDLE)
                     } else {
                         viewModel.refreshCacheSize()
                     }
+                    updateMixWeightLink()
+                }
+                YouTubeSourceRepository.KEY_MIX_WEIGHT -> {
+                    updateMixWeightLink()
                 }
                 in CATEGORY_PREFERENCE_KEYS -> {
-                    val changedToEnabled =
-                        PreferenceManager
-                            .getDefaultSharedPreferences(requireContext())
-                            .getBoolean(key, true)
-                    Log.d(TAG, "Category pref persisted: key=$key enabled=$changedToEnabled")
-                    view?.post { queueCategoryRefresh(changedToEnabled, showStartedToast = false) }
-                        ?: queueCategoryRefresh(changedToEnabled, showStartedToast = false)
+                    Log.d(TAG, "Category pref persisted: key=$key")
+                    // Debounced + coalesced in the ViewModel; immediate
+                    // started-toast here so toggle-ON (minutes of backfill)
+                    // gives instant feedback.
+                    view?.post { queueCategoryRefresh(showStartedToast = true) }
+                        ?: queueCategoryRefresh(showStartedToast = true)
                 }
             }
         }
@@ -80,10 +71,8 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         } else {
             viewModel.setDisplayedCacheSize(0)
         }
-        if (YouTubeVideoPrefs.enabled && isCountPending()) {
-            markRefreshInProgress()
-            viewModel.refreshIfCachePending()
-        }
+        // No refreshIfCachePending() here: onResume() runs immediately after
+        // first creation and covers it. Kicking in both double-starts refresh.
     }
 
     override fun onViewCreated(
@@ -121,13 +110,9 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             viewModel.events.collect { event ->
                 when (event) {
                     is YouTubeSettingsViewModel.YouTubeSettingsEvent.CategoryRemoved -> {
-                        val removedMessage =
-                            getString(R.string.youtube_videos_removed_toast, event.removedCount, event.remainingCount)
-                        transientCategoryMessage = removedMessage
-                        transientCategoryMessageUntilElapsedMs = SystemClock.elapsedRealtime() + CATEGORY_MESSAGE_DURATION_MS
-                        transientCategoryRemainingCount = event.remainingCount
-                        view.removeCallbacks(clearTransientCategoryMessageRunnable)
-                        view.postDelayed(clearTransientCategoryMessageRunnable, CATEGORY_MESSAGE_DURATION_MS)
+                        // Toast carries the transient message; the summary below
+                        // always renders live state (loading progress, then the
+                        // final count) so it never implies an early finish.
                         Log.i(
                             TAG,
                             "Showing category-removed toast: removed=${event.removedCount}, " +
@@ -137,31 +122,22 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                         updateCacheCountPreference(
                             cachedCount = event.remainingCount,
                             stage = YouTubeRefreshStage.EXTRACTING,
-                            transientMessage = removedMessage,
                         )
                         ToastHelper.show(
                             requireContext(),
-                            removedMessage,
+                            getString(R.string.youtube_videos_removed_toast, event.removedCount, event.remainingCount),
                             Toast.LENGTH_LONG,
                         )
                     }
                     is YouTubeSettingsViewModel.YouTubeSettingsEvent.CategoryAdded -> {
-                        val addedMessage =
-                            getString(R.string.youtube_videos_added_toast, event.addedCount, event.totalCount)
-                        transientCategoryMessage = addedMessage
-                        transientCategoryMessageUntilElapsedMs = SystemClock.elapsedRealtime() + CATEGORY_MESSAGE_DURATION_MS
-                        transientCategoryRemainingCount = event.totalCount
-                        view.removeCallbacks(clearTransientCategoryMessageRunnable)
-                        view.postDelayed(clearTransientCategoryMessageRunnable, CATEGORY_MESSAGE_DURATION_MS)
                         updateVideoCount(staticCount = event.totalCount)
                         updateCacheCountPreference(
                             cachedCount = event.totalCount,
                             stage = YouTubeRefreshStage.EXTRACTING,
-                            transientMessage = addedMessage,
                         )
                         ToastHelper.show(
                             requireContext(),
-                            addedMessage,
+                            getString(R.string.youtube_videos_added_toast, event.addedCount, event.totalCount),
                             Toast.LENGTH_LONG,
                         )
                     }
@@ -193,6 +169,7 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
     override fun onResume() {
         super.onResume()
+        updateMixWeightLink()
         if (YouTubeVideoPrefs.enabled) {
             viewModel.refreshCacheSize()
         } else {
@@ -218,11 +195,6 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         super.onStop()
     }
 
-    override fun onDestroyView() {
-        view?.removeCallbacks(clearTransientCategoryMessageRunnable)
-        super.onDestroyView()
-    }
-
     private fun setupPreferences() {
         configureQualityPreference()
         configurePlaybackLengthPreferences()
@@ -241,10 +213,13 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                         updateCacheCountPreference(
                             cachedCount = existingCount,
                             stage = YouTubeRefreshStage.IDLE,
-                            transientMessage = null,
                         )
                         // Keep cache warm but avoid a forced full rebuild when enabling with existing data.
-                        queueBackgroundRefresh(R.string.youtube_refresh_started, immediate = false)
+                        queueBackgroundRefresh(
+                            R.string.youtube_refresh_started,
+                            immediate = false,
+                            forceSearchRefresh = false,
+                        )
                     } else {
                         viewModel.setDisplayedCacheSize(0)
                         queueBackgroundRefresh(R.string.youtube_rebuilding_library, immediate = true)
@@ -254,28 +229,25 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                 refreshInProgress = false
                 viewModel.setDisplayedCacheSize(0)
                 updateVideoCount(staticCount = 0)
-                updateCacheCountPreference(cachedCount = 0, stage = YouTubeRefreshStage.IDLE, transientMessage = null)
+                updateCacheCountPreference(cachedCount = 0, stage = YouTubeRefreshStage.IDLE)
             }
             true
         }
 
         findPreference<Preference>("yt_refresh_now")?.setOnPreferenceClickListener {
+            // Instant feedback: the worker's first progress emit is seconds
+            // away, and without this double-taps queue duplicate rebuilds.
+            markRefreshInProgress()
+            viewLifecycleOwner.lifecycleScope.launch {
+                ToastHelper.show(requireContext(), R.string.youtube_rebuilding_library, Toast.LENGTH_LONG)
+            }
             viewModel.refreshNow()
             true
         }
 
         CATEGORY_PREFERENCE_KEYS.forEach { key ->
             findPreference<SwitchPreference>(key)?.setOnPreferenceChangeListener { _, newValue ->
-                val changedToEnabled =
-                    when (newValue) {
-                        is Boolean -> newValue
-                        is String -> newValue.toBooleanStrictOrNull() ?: newValue.toBoolean()
-                        else -> null
-                    }
-                Log.d(
-                    TAG,
-                    "Category toggle changed: key=$key newValue=$newValue parsedEnabled=$changedToEnabled",
-                )
+                Log.d(TAG, "Category toggle changed: key=$key newValue=$newValue")
                 // Persist first; sharedPreferenceListener will trigger category refresh from committed state.
                 true
             }
@@ -319,6 +291,15 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             val highestSupported = supportedValues.firstOrNull() ?: "best"
             qualityPreference.value = highestSupported
             Log.d(TAG, "Reset quality to $highestSupported (was: $currentValue, not optimal for this display)")
+            // Fragment scope, not view scope: this runs in onCreatePreferences
+            // before the view exists.
+            lifecycleScope.launch {
+                ToastHelper.show(
+                    requireContext(),
+                    getString(R.string.youtube_quality_reset_notice, qualityPreference.entry),
+                    Toast.LENGTH_LONG,
+                )
+            }
         }
 
         qualityPreference.setOnPreferenceChangeListener { _, _ ->
@@ -400,7 +381,6 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             updateCacheCountPreference(
                 cachedCount = 0,
                 stage = YouTubeRefreshStage.IDLE,
-                transientMessage = null,
             )
             return
         }
@@ -412,23 +392,18 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                 ?.takeIf { progressCount ->
                     progressCount >= 0 && state.stage != YouTubeRefreshStage.IDLE
                 }
-        val transientMessage = currentTransientCategoryMessage()
-        val forcedCategoryCount = currentTransientCategoryCount()
         val targetCount = state.progress?.total
-        val effectiveLiveCount = if (forcedCategoryCount != null) null else liveCount
         val effectiveStaticCount =
             when {
-                forcedCategoryCount != null -> forcedCategoryCount
                 state.isRefreshing && liveCount == null -> null
                 else -> state.cacheCount
             }
-        val counterValueForSummary = effectiveLiveCount ?: effectiveStaticCount
-        updateVideoCount(liveCount = effectiveLiveCount, staticCount = effectiveStaticCount)
+        val counterValueForSummary = liveCount ?: effectiveStaticCount
+        updateVideoCount(liveCount = liveCount, staticCount = effectiveStaticCount)
         updateCacheCountPreference(
             cachedCount = counterValueForSummary,
             stage = state.stage,
             targetCount = targetCount ?: YOUTUBE_LIBRARY_TARGET_COUNT,
-            transientMessage = transientMessage,
         )
     }
 
@@ -454,26 +429,45 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             }
     }
 
+    private fun updateMixWeightLink() {
+        val linkPreference = findPreference<Preference>("yt_mix_weight_link") ?: return
+        // Mirrors SourcesFragment: mix level only applies in combined mode.
+        val sourceMode =
+            preferenceManager.sharedPreferences?.getString(KEY_SOURCE_MODE, SOURCE_MODE_COMBINED)
+        if (!YouTubeVideoPrefs.enabled || sourceMode != SOURCE_MODE_COMBINED) {
+            linkPreference.summary = getString(R.string.youtube_mix_weight_disabled_summary)
+            return
+        }
+        val values = resources.getStringArray(R.array.youtube_mix_weight_values)
+        val entries = resources.getStringArray(R.array.youtube_mix_weight_entries)
+        val index = values.indexOf(YouTubeVideoPrefs.mixWeight).takeIf { it >= 0 } ?: 0
+        val label = entries.getOrElse(index) { YouTubeVideoPrefs.mixWeight }
+        linkPreference.summary = getString(R.string.youtube_mix_weight_link_summary, label)
+    }
+
     private fun isCountPending(): Boolean =
         YouTubeVideoPrefs.count.toIntOrNull()?.let { it < 0 } ?: true
 
     private fun queueBackgroundRefresh(
         messageResId: Int,
         immediate: Boolean = false,
+        forceSearchRefresh: Boolean = true,
     ) {
         markRefreshInProgress()
-        viewModel.setDisplayedCacheSize(0)
+        // Never blank the displayed count here: these refreshes preserve the
+        // existing library (warm/quality change), so keep showing the last
+        // known count until live progress arrives. Zeroing read as data loss.
         view?.post {
             if (immediate) {
-                viewModel.scheduleBackgroundRefresh(delayMs = 0L)
+                viewModel.scheduleBackgroundRefresh(delayMs = 0L, forceSearchRefresh = forceSearchRefresh)
             } else {
-                viewModel.scheduleBackgroundRefresh()
+                viewModel.scheduleBackgroundRefresh(forceSearchRefresh = forceSearchRefresh)
             }
         } ?: run {
             if (immediate) {
-                viewModel.scheduleBackgroundRefresh(delayMs = 0L)
+                viewModel.scheduleBackgroundRefresh(delayMs = 0L, forceSearchRefresh = forceSearchRefresh)
             } else {
-                viewModel.scheduleBackgroundRefresh()
+                viewModel.scheduleBackgroundRefresh(forceSearchRefresh = forceSearchRefresh)
             }
         }
         viewLifecycleOwner.lifecycleScope.launch {
@@ -481,15 +475,12 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         }
     }
 
-    private fun queueCategoryRefresh(
-        changedToEnabled: Boolean? = null,
-        showStartedToast: Boolean = false,
-    ) {
+    private fun queueCategoryRefresh(showStartedToast: Boolean = true) {
         markRefreshInProgress()
-        viewModel.onCategoryChanged(changedToEnabled)
+        viewModel.onCategoryChanged()
         if (showStartedToast) {
             viewLifecycleOwner.lifecycleScope.launch {
-                ToastHelper.show(requireContext(), R.string.youtube_category_refresh_started, Toast.LENGTH_LONG)
+                ToastHelper.show(requireContext(), R.string.youtube_categories_changed_notice, Toast.LENGTH_LONG)
             }
         }
     }
@@ -498,12 +489,11 @@ class YouTubeSettingsFragment : MenuStateFragment() {
         cachedCount: Int?,
         stage: YouTubeRefreshStage,
         targetCount: Int = YOUTUBE_LIBRARY_TARGET_COUNT,
-        transientMessage: String? = currentTransientCategoryMessage(),
+        emptyHint: String? = null,
     ) {
         val cacheCountPreference = findPreference<Preference>(PREFERENCE_CACHE_COUNT) ?: return
         cacheCountPreference.summary =
             when {
-                !transientMessage.isNullOrBlank() -> transientMessage
                 stage == YouTubeRefreshStage.SEARCHING -> getString(R.string.youtube_refresh_searching)
                 stage != YouTubeRefreshStage.IDLE &&
                     cachedCount != null &&
@@ -513,6 +503,8 @@ class YouTubeSettingsFragment : MenuStateFragment() {
                         cachedCount.coerceAtMost(targetCount),
                         targetCount,
                     )
+                cachedCount != null && cachedCount > 0 -> describeFreshLibrary(cachedCount)
+                cachedCount != null && cachedCount == 0 && !emptyHint.isNullOrBlank() -> emptyHint
                 cachedCount != null && cachedCount >= 0 ->
                     getString(R.string.youtube_cache_count_summary, cachedCount)
                 stage != YouTubeRefreshStage.IDLE -> getString(R.string.youtube_cache_count_pending)
@@ -520,23 +512,21 @@ class YouTubeSettingsFragment : MenuStateFragment() {
             }
     }
 
-    private fun currentTransientCategoryMessage(): String? {
-        if (transientCategoryMessageUntilElapsedMs <= 0L) {
-            return null
+    private fun describeFreshLibrary(cachedCount: Int): String {
+        val lastSearchAt =
+            PreferenceManager
+                .getDefaultSharedPreferences(requireContext())
+                .getLong(YouTubeSourceRepository.KEY_LAST_SEARCH_AT, 0L)
+        if (lastSearchAt <= 0L) {
+            return getString(R.string.youtube_cache_count_summary, cachedCount)
         }
-        val now = SystemClock.elapsedRealtime()
-        if (now > transientCategoryMessageUntilElapsedMs) {
-            transientCategoryMessage = null
-            transientCategoryRemainingCount = null
-            transientCategoryMessageUntilElapsedMs = 0L
-            return null
-        }
-        return transientCategoryMessage
-    }
-
-    private fun currentTransientCategoryCount(): Int? {
-        currentTransientCategoryMessage() ?: return null
-        return transientCategoryRemainingCount
+        val relative =
+            DateUtils.getRelativeTimeSpanString(
+                lastSearchAt,
+                System.currentTimeMillis(),
+                DateUtils.MINUTE_IN_MILLIS,
+            ).toString()
+        return getString(R.string.youtube_cache_count_summary_updated, cachedCount, relative)
     }
 
     private fun markRefreshInProgress() {
@@ -551,14 +541,21 @@ class YouTubeSettingsFragment : MenuStateFragment() {
 
     private fun markRefreshFailed() {
         refreshInProgress = false
-        updateCacheCountPreference(YouTubeVideoPrefs.count.toIntOrNull(), YouTubeRefreshStage.IDLE)
+        val count = YouTubeVideoPrefs.count.toIntOrNull()
+        updateCacheCountPreference(
+            count,
+            YouTubeRefreshStage.IDLE,
+            // Empty after a failure is actionable; a bare "0" is not.
+            emptyHint = getString(R.string.youtube_cache_empty_retry),
+        )
     }
 
     companion object {
         private const val TAG = "YouTubeSettingsFragment"
         private const val PREFERENCE_CACHE_COUNT = "yt_cache_count"
         private const val YOUTUBE_LIBRARY_TARGET_COUNT = 200
-        private const val CATEGORY_MESSAGE_DURATION_MS = 4500L
+        private const val KEY_SOURCE_MODE = "source_mode"
+        private const val SOURCE_MODE_COMBINED = "combined"
         private val CATEGORY_PREFERENCE_KEYS =
             listOf(
                 "yt_category_nature",

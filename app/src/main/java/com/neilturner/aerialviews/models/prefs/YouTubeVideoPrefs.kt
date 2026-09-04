@@ -12,9 +12,9 @@ object YouTubeVideoPrefs : KotprefModel() {
     var mixWeight by stringPref(YouTubeSourceRepository.DEFAULT_MIX_WEIGHT, YouTubeSourceRepository.KEY_MIX_WEIGHT)
     var shuffle by booleanPref(YouTubeSourceRepository.DEFAULT_SHUFFLE, YouTubeSourceRepository.KEY_SHUFFLE)
     var playbackLengthMode by stringPref("limit", "yt_playback_length_mode")
-    var playbackMaxMinutesStr by stringPref("12", "yt_playback_max_minutes")
+    var playbackMaxMinutesStr by stringPref("30", "yt_playback_max_minutes")
     var playbackMaxMinutes: Int
-        get() = playbackMaxMinutesStr.toIntOrNull()?.coerceAtLeast(1) ?: 12
+        get() = playbackMaxMinutesStr.toIntOrNull()?.coerceAtLeast(1) ?: 30
         set(value) { playbackMaxMinutesStr = value.coerceAtLeast(1).toString() }
     var count by stringPref("-1", YouTubeSourceRepository.KEY_COUNT)
     var categoryNature by booleanPref(true, "yt_category_nature")
@@ -25,4 +25,28 @@ object YouTubeVideoPrefs : KotprefModel() {
     var categoryOcean by booleanPref(true, "yt_category_ocean")
     var categoryWeather by booleanPref(true, "yt_category_weather")
     var categoryWinter by booleanPref(true, "yt_category_winter")
+
+    /**
+     * Explicit behavior-only hash for playlist-cache invalidation. A blanket
+     * prefix hash is wrong here: yt_ keys include volatile state (count,
+     * play history, last-search timestamp) that changes on every refresh and
+     * would invalidate the cache constantly.
+     */
+    fun settingsHash(): String =
+        listOf(
+            enabled,
+            quality,
+            shuffle,
+            mixWeight,
+            playbackLengthMode,
+            playbackMaxMinutesStr,
+            categoryNature,
+            categoryAnimals,
+            categoryDrone,
+            categoryCities,
+            categorySpace,
+            categoryOcean,
+            categoryWeather,
+            categoryWinter,
+        ).joinToString("|").hashCode().toString()
 }

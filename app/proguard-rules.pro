@@ -24,6 +24,10 @@
 -keep class com.neilturner.aerialviews.data.** { *; }
 -keep class com.neilturner.aerialviews.providers.** { *; }
 
+# NewPipe Extractor (reflection-heavy stream extraction, must survive minification)
+-keep class org.schabi.newpipe.** { *; }
+-dontwarn org.schabi.newpipe.**
+
 # Sardine Android / XmlPullParser / Simple XML
 -keep class org.xmlpull.v1.** { *; }
 -dontwarn android.content.res.XmlResourceParser

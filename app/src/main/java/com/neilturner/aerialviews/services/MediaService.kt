@@ -179,9 +179,12 @@ class MediaService(
                 videos =
                     videos.distinctBy { videos ->
                         when (videos.source) {
-                            AerialMediaSource.IMMICH,
-                            AerialMediaSource.YOUTUBE,
-                            -> videos.uri.toString().lowercase()
+                            AerialMediaSource.IMMICH -> videos.uri.toString().lowercase()
+                            // Direct googlevideo URLs carry unique sig/expire params, so the
+                            // URI never dedups. The stable key is the videoId in description.
+                            AerialMediaSource.YOUTUBE ->
+                                videos.metadata.exif.description?.lowercase()?.takeIf { it.isNotBlank() }
+                                    ?: videos.uri.toString().lowercase()
 
                             else -> videos.uri.filename.lowercase()
                         }
@@ -189,9 +192,10 @@ class MediaService(
                 photos =
                     photos.distinctBy { photo ->
                         when (photo.source) {
-                            AerialMediaSource.IMMICH,
-                            AerialMediaSource.YOUTUBE,
-                            -> photo.uri.toString().lowercase()
+                            AerialMediaSource.IMMICH -> photo.uri.toString().lowercase()
+                            AerialMediaSource.YOUTUBE ->
+                                photo.metadata.exif.description?.lowercase()?.takeIf { it.isNotBlank() }
+                                    ?: photo.uri.toString().lowercase()
 
                             else -> photo.uri.filename.lowercase()
                         }
@@ -373,11 +377,11 @@ class MediaService(
             return
         }
 
+        // Never force-enable YouTube here: a read-path fetch must not override
+        // an explicit user disable. Fresh installs default it on in AerialApp;
+        // an empty result falls through to the existing YouTube fallback and
+        // loading-retry handling.
         var changed = false
-        if (!YouTubeVideoPrefs.enabled) {
-            YouTubeVideoPrefs.enabled = true
-            changed = true
-        }
         if (AppleVideoPrefs.enabled) {
             AppleVideoPrefs.enabled = false
             changed = true
@@ -395,7 +399,7 @@ class MediaService(
             changed = true
         }
         if (changed) {
-            Timber.i("Normalized providers for source_mode=youtube (YouTube on, default aerial providers off)")
+            Timber.i("Normalized providers for source_mode=youtube (default aerial providers off)")
         }
     }
 
@@ -419,6 +423,7 @@ class MediaService(
                 AerialMediaSource.HLS,
                 AerialMediaSource.IMMICH,
                 AerialMediaSource.NCMEMORIES,
+                AerialMediaSource.YOUTUBE,
             )
 
         private const val KEY_SOURCE_MODE = "source_mode"

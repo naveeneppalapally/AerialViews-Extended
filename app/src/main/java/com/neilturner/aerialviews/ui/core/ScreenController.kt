@@ -593,7 +593,10 @@ class ScreenController(
                     withContext(Dispatchers.IO) {
                         runCatching {
                             if (YouTubeVideoPrefs.enabled) {
-                                YouTubeFeature.repository(context).warmCache(forceSearchRefresh = true)
+                                // Stream-URL-only refresh: a full search rebuild on every
+                                // playlist wrap drained battery/data and contended the
+                                // refresh mutex. Daily worker covers full refreshes.
+                                YouTubeFeature.repository(context).warmCache(forceSearchRefresh = false)
                             }
                             MediaService(context).fetchMedia().mediaPlaylist
                         }.onFailure { exception ->

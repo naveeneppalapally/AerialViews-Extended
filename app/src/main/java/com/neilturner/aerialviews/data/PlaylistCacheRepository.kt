@@ -1,6 +1,7 @@
 package com.neilturner.aerialviews.data
 
 import android.content.Context
+import android.net.Uri
 import androidx.core.net.toUri
 import com.neilturner.aerialviews.models.MediaFetchResult
 import com.neilturner.aerialviews.models.MediaPlaylist
@@ -78,6 +79,7 @@ class PlaylistCacheRepository(
             AerialMediaSource.HLS,
             AerialMediaSource.IMMICH,
             AerialMediaSource.NCMEMORIES,
+            AerialMediaSource.YOUTUBE,
         ).map { it.name }
 
     private suspend fun fetchChunk(
@@ -184,6 +186,32 @@ class PlaylistCacheRepository(
             }
         }
 
+    /**
+     * googlevideo direct URLs expire in ~5.5h but this cache lives for weeks,
+     * and read-back drops streamUrl anyway. Persist YouTube items as stable
+     * watch URLs so playback always resolves a fresh stream via the repo.
+     */
+    private fun stableCacheUri(media: AerialMedia): String {
+        if (media.source != AerialMediaSource.YOUTUBE) {
+            return media.uri.toString()
+        }
+        val raw = media.uri.toString()
+        if (isYouTubeWatchUrl(raw)) {
+            return raw
+        }
+        val videoId = media.metadata.exif.description?.trim().orEmpty()
+        if (videoId.isBlank() || videoId.any { it.isWhitespace() || it == '/' }) {
+            return raw
+        }
+        return "https://www.youtube.com/watch?v=$videoId"
+    }
+
+    private fun isYouTubeWatchUrl(url: String): Boolean {
+        val parsed = runCatching { Uri.parse(url) }.getOrNull() ?: return false
+        val host = parsed.host.orEmpty().lowercase()
+        return host.contains("youtube.com") || host.contains("youtu.be")
+    }
+
     private fun mapEntityToMedia(entity: CachedMediaEntity): AerialMedia =
         AerialMedia(
             uri = entity.uri.toUri(),
@@ -222,7 +250,7 @@ class PlaylistCacheRepository(
             media.mapIndexed { index, m ->
                 CachedMediaEntity(
                     playlistOrder = index,
-                    uri = m.uri.toString(),
+                    uri = stableCacheUri(m),
                     type = m.type.name,
                     source = m.source.name,
                     shortDescription = m.metadata.shortDescription,

@@ -103,68 +103,24 @@ class YouTubeSettingsViewModel(
         }
     }
 
-    fun forceRefresh() {
-        if (_refreshState.value == RefreshState.Loading) {
-            return
-        }
-
-        viewModelScope.launch {
-            _refreshState.value = RefreshState.Loading
-            // Diagnostic: immediately emit 0% progress to confirm the flow and observer are working
-            repository.publishProgress(0, 200)
-
-            
-            _refreshState.value =
-                try {
-                    val count = repository.forceRefresh()
-                    RefreshState.Success(count)
-                } catch (exception: Exception) {
-                    Timber.e(exception, "YouTube refresh failed")
-                    RefreshState.Error
-                }
-        }
-    }
-
-    fun triggerInitialProgress() {
-        viewModelScope.launch {
-            repository.publishProgress(0, 200)
-        }
-    }
-
     fun refreshNow() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.triggerFullLibraryRebuild()
         }
     }
 
-    fun refreshInBackground() {
-        YouTubeFeature.requestImmediateRefresh(getApplication(), forceSearchRefresh = true)
+    fun refreshInBackground(forceSearchRefresh: Boolean = true) {
+        YouTubeFeature.requestImmediateRefresh(getApplication(), forceSearchRefresh)
     }
 
-    fun onCategoryChanged(
-        changedToEnabled: Boolean? = null,
-    ) {
+    fun onCategoryChanged() {
         backgroundRefreshJob?.cancel()
         backgroundRefreshJob =
             viewModelScope.launch {
-                val toggledOff = changedToEnabled == false
-                val toggledOn = changedToEnabled == true
-                val optimisticRemovalSnapshot =
-                    if (toggledOff) {
-                        runCatching { repository.previewCategoryRemovalSnapshot() }
-                            .getOrNull()
-                            ?.also { preview ->
-                                _cacheSize.value = preview.remainingCount
-                                _events.send(
-                                    YouTubeSettingsEvent.CategoryRemoved(
-                                        removedCount = preview.removedCount,
-                                        remainingCount = preview.remainingCount,
-                                    ),
-                                )
-                            }
-                    } else {
-                        null
-                    }
+                // Debounce: rapid toggles coalesce into one delta refresh run
+                // against the final prefs state, instead of serializing one
+                // multi-minute backfill per toggle on the refresh mutex.
+                kotlinx.coroutines.delay(CATEGORY_TOGGLE_DEBOUNCE_MS)
                 try {
                     val result = repository.applyCategoryDeltaRefresh()
                     Timber.i(
@@ -176,7 +132,9 @@ class YouTubeSettingsViewModel(
                         result.finalCount,
                         result.allCategoriesDisabled,
                     )
-                    if (!toggledOff && (result.removedCategoriesCount > 0 || result.removedCount > 0)) {
+                    // Single source of truth: toast only the actual outcome.
+                    // (The old optimistic pre-toast could contradict this.)
+                    if (result.removedCategoriesCount > 0 || result.removedCount > 0) {
                         _events.send(
                             YouTubeSettingsEvent.CategoryRemoved(
                                 removedCount = result.removedCount,
@@ -184,7 +142,7 @@ class YouTubeSettingsViewModel(
                             ),
                         )
                     }
-                    if (toggledOn && result.insertedCount > 0) {
+                    if (result.insertedCount > 0) {
                         _events.send(
                             YouTubeSettingsEvent.CategoryAdded(
                                 addedCount = result.insertedCount,
@@ -194,7 +152,7 @@ class YouTubeSettingsViewModel(
                     }
                     if (result.allCategoriesDisabled) {
                         _events.send(YouTubeSettingsEvent.AllCategoriesDisabled)
-                    } else if (toggledOn && result.insertedCount == 0 && result.libraryFull) {
+                    } else if (result.insertedCount == 0 && result.libraryFull) {
                         // User tried to turn on a category but we didn't insert anything because cache is full
                         _events.send(YouTubeSettingsEvent.LibraryFullOnCategory)
                     }
@@ -202,29 +160,18 @@ class YouTubeSettingsViewModel(
                     throw exception
                 } catch (exception: Exception) {
                     Timber.e(exception, "Failed to apply YouTube category delta refresh")
-                    if (toggledOff && optimisticRemovalSnapshot == null) {
-                        val currentCount =
-                            runCatching { repository.getCacheSize() }
-                                .getOrElse { _cacheSize.value.coerceAtLeast(0) }
-                        _events.send(
-                            YouTubeSettingsEvent.CategoryRemoved(
-                                removedCount = 0,
-                                remainingCount = currentCount,
-                            ),
-                        )
-                    }
                 }
             }
     }
 
-    fun scheduleBackgroundRefresh(delayMs: Long = 750L) {
+    fun scheduleBackgroundRefresh(delayMs: Long = 750L, forceSearchRefresh: Boolean = true) {
         backgroundRefreshJob?.cancel()
         backgroundRefreshJob =
             viewModelScope.launch {
                 if (delayMs > 0) {
                     kotlinx.coroutines.delay(delayMs)
                 }
-                refreshInBackground()
+                refreshInBackground(forceSearchRefresh)
             }
     }
 
@@ -249,6 +196,10 @@ class YouTubeSettingsViewModel(
             progress.first < 0 -> YouTubeRefreshStage.SEARCHING
             else -> YouTubeRefreshStage.EXTRACTING
         }
+
+    companion object {
+        private const val CATEGORY_TOGGLE_DEBOUNCE_MS = 1500L
+    }
 }
 
 sealed interface RefreshState {

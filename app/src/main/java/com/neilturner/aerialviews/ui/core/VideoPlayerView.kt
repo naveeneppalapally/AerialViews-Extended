@@ -70,6 +70,7 @@ class VideoPlayerView
         private val mainScopeJob = SupervisorJob()
         private val mainScope = CoroutineScope(Dispatchers.Main + mainScopeJob)
         private var resolveVideoJob: Job? = null
+        private var lastStaleUrlRetryVideoId: String? = null
         private var canChangePlaybackSpeed = true
         private var playbackSpeed = GeneralPrefs.playbackSpeed
         private var pausedTimestamp: Long = 0
@@ -415,7 +416,58 @@ class VideoPlayerView
                 }
             }
 
+            if (tryStaleYouTubeUrlRetry()) {
+                return
+            }
             post(onErrorRunnable)
+        }
+
+        /**
+         * Direct googlevideo URLs go stale (~5.5h TTL) while sitting in a built
+         * playlist. ExoPlayer surfaces that as a generic playback error. Retry
+         * once with a freshly resolved stream before giving up and skipping.
+         * Returns true if a retry was launched.
+         */
+        private fun tryStaleYouTubeUrlRetry(): Boolean {
+            val failedMedia = state.currentMedia ?: return false
+            if (failedMedia.source != AerialMediaSource.YOUTUBE) {
+                return false
+            }
+            val failedUrl = failedMedia.uri.toString()
+            if (isYouTubePageUrl(failedUrl)) {
+                return false
+            }
+            val videoId = failedMedia.metadata.exif.description?.trim().orEmpty()
+            if (videoId.isBlank() || videoId == lastStaleUrlRetryVideoId) {
+                return false
+            }
+            lastStaleUrlRetryVideoId = videoId
+            Log.i("VideoPlayerView", "Retrying stale YouTube direct URL with fresh resolve: $videoId")
+            mainScope.launch {
+                val resolved =
+                    withContext(Dispatchers.IO) {
+                        withTimeoutOrNull(YOUTUBE_STREAM_RESOLVE_TIMEOUT_MS) {
+                            runCatching {
+                                YouTubeFeature.repository(context).resolveVideoPlayback(
+                                    "https://www.youtube.com/watch?v=$videoId",
+                                )
+                            }.getOrNull()
+                        }
+                    }
+                if (resolved == null || isDestroyed) {
+                    post(onErrorRunnable)
+                    return@launch
+                }
+                setVideo(
+                    failedMedia.copy(
+                        uri = resolved.videoUrl.toUri(),
+                        streamUrl = resolved.videoUrl,
+                        audioStreamUrl = resolved.audioUrl,
+                    ),
+                )
+                start()
+            }
+            return true
         }
 
         override fun onPlayerErrorChanged(error: PlaybackException?) {
@@ -757,7 +809,9 @@ class VideoPlayerView
 
             val knownDurationMs = (media.metadata.exif.durationSeconds ?: 0).toLong() * 1000L
             if (knownDurationMs <= 0L) {
-                return YOUTUBE_INTRO_SKIP_MS
+                // Unknown duration: never blind-seek. A 30s skip into a short
+                // clip lands past the end and loops error/skip.
+                return 0L
             }
             if (knownDurationMs < YOUTUBE_INTRO_SKIP_MIN_DURATION_MS) {
                 return 0L

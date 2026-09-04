@@ -98,7 +98,11 @@ abstract class YouTubeCacheDatabase : RoomDatabase() {
                                 YouTubeCacheDatabase::class.java,
                                 DATABASE_NAME,
                             ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
-                            .fallbackToDestructiveMigration()
+                            // All upgrade paths have explicit migrations; only wipe on
+                            // downgrade (e.g. beta back to stable), never on upgrade.
+                            // A full destructive fallback here silently discarded the
+                            // cache and the 7-day watch history, causing repeats.
+                            .fallbackToDestructiveMigrationOnDowngrade()
                             .build()
                             .also { instance = it }
                 }

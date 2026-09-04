@@ -89,7 +89,7 @@
         <item>20</item>
         <item>30</item>
     </string-array>
-    <string name="youtube_playback_max_minutes_default" translatable="false">12</string>
+    <string name="youtube_playback_max_minutes_default" translatable="false">30</string>
     <string-array name="source_mode_entries" translatable="false">
         <item>AerialViews only</item>
         <item>YouTube only</item>

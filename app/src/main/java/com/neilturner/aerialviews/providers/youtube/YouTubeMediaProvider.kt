@@ -23,8 +23,8 @@ import timber.log.Timber
 
 class YouTubeMediaProvider(
     context: Context,
+    private val repository: YouTubeSourceRepository = YouTubeFeature.repository(context),
 ) : MediaProvider(context) {
-    private val repository by lazy { YouTubeFeature.repository(context) }
     private val providerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override val type = ProviderSourceType.REMOTE
@@ -32,40 +32,23 @@ class YouTubeMediaProvider(
     override val enabled: Boolean
         get() = YouTubeVideoPrefs.enabled
 
-    override suspend fun fetch(): ProviderFetchResult {
-        val cacheSize = repository.getCacheSize()
-        Log.i(TAG, "YouTube fetch startup cacheSize=$cacheSize")
-        if (cacheSize == 0) {
-            return ProviderFetchResult.Success(media = fetchInitialMedia(), summary = "")
-        }
+    // Quality/category/strategy changes must invalidate the playlist cache;
+    // the base implementation returns a constant, which kept stale playlists
+    // (and stale stream URLs) alive across settings changes.
+    override fun settingsHash(): String =
+        YouTubeVideoPrefs.settingsHash() + "|selector=v" + YouTubeSourceRepository.STREAM_SELECTION_STRATEGY_VERSION
 
+    override suspend fun fetch(): ProviderFetchResult {
         // Startup must always prefer immediately playable local cache entries.
         // Signature/version refresh can run in background, but should not block initial playback.
         val startupCachedEntries = repository.getCachedVideosSnapshot()
-        if (startupCachedEntries.isNotEmpty()) {
-            Log.i(TAG, "Using local startup cache entries=${startupCachedEntries.size}")
-            repository.preWarmInBackground()
-            return ProviderFetchResult.Success(media = startupCachedEntries.toAerialMedia(), summary = "")
+        if (startupCachedEntries.isEmpty()) {
+            return ProviderFetchResult.Success(media = fetchInitialMedia(), summary = "")
         }
 
-        val media =
-            withTimeoutOrNull(NORMAL_FETCH_TIMEOUT_MS) {
-                fetchCachedMedia()
-            } ?: run {
-                Timber.tag(TAG).w("fetch timed out after %sms, skipping YouTube slot", NORMAL_FETCH_TIMEOUT_MS)
-                emptyList()
-            }
-        return ProviderFetchResult.Success(media = media, summary = "")
-    }
-
-    suspend fun fetchTest(): String {
-        return runCatching {
-            val refreshedCount = repository.forceRefresh()
-            "Refreshed $refreshedCount videos"
-        }.getOrElse { exception ->
-            Timber.tag(TAG).e(exception, "Failed to refresh YouTube media")
-            "Refresh failed: ${exception.localizedMessage ?: "Unknown error"}"
-        }
+        Log.i(TAG, "Using local startup cache entries=${startupCachedEntries.size}")
+        repository.preWarmInBackground()
+        return ProviderFetchResult.Success(media = startupCachedEntries.toAerialMedia(), summary = "")
     }
 
     override suspend fun fetchMetadata(media: List<AerialMedia>): List<AerialMedia> = media
@@ -100,15 +83,6 @@ class YouTubeMediaProvider(
         Log.i(TAG, "Startup bootstrap URLs queued for pre-resolve count=${bootstrapMedia.take(BOOTSTRAP_PRE_RESOLVE_COUNT).size}")
         Log.i(TAG, "Using bootstrap startup playlist size=${bootstrapMedia.size}")
         return bootstrapMedia
-    }
-
-    private suspend fun fetchCachedMedia(): List<AerialMedia> {
-        return try {
-            repository.getLocalCachedVideos().toAerialMedia()
-        } catch (exception: Exception) {
-            Timber.tag(TAG).w(exception, "fetchMedia failed")
-            emptyList()
-        }
     }
 
     private suspend fun waitForStartupCacheWarm(): List<YouTubeCacheEntity> =
@@ -220,7 +194,6 @@ class YouTubeMediaProvider(
     companion object {
         private const val INITIAL_CACHE_WARM_WAIT_MS = 6_000L
         private const val INITIAL_CACHE_POLL_INTERVAL_MS = 250L
-        private const val NORMAL_FETCH_TIMEOUT_MS = 3_000L
         private const val BOOTSTRAP_PRE_RESOLVE_COUNT = 2
         private const val DIRECT_PLAYBACK_WINDOW = 12
         private const val TAG = "YouTubeMedia"

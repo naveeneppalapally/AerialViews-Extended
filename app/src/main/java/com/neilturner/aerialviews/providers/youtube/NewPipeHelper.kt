@@ -19,6 +19,7 @@ import org.schabi.newpipe.extractor.downloader.Request
 import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.exceptions.AgeRestrictedContentException
 import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException
+import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException
 import org.schabi.newpipe.extractor.exceptions.ExtractionException
 import org.schabi.newpipe.extractor.exceptions.GeographicRestrictionException
 import org.schabi.newpipe.extractor.linkhandler.LinkHandler
@@ -29,6 +30,7 @@ import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.VideoStream
 import java.net.URLEncoder
+import java.io.IOException
 import java.time.ZonedDateTime
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -105,6 +107,7 @@ object NewPipeHelper {
         preferVideoOnly: Boolean = false,
         allowAdaptiveManifests: Boolean = true,
         preferAdaptiveManifests: Boolean = false,
+        preferManifests: Boolean = false,
     ): String =
         extractPlaybackStreams(
             videoPageUrl = videoPageUrl,
@@ -113,6 +116,7 @@ object NewPipeHelper {
             preferVideoOnly = preferVideoOnly,
             allowAdaptiveManifests = allowAdaptiveManifests,
             preferAdaptiveManifests = preferAdaptiveManifests,
+            preferManifests = preferManifests,
         ).videoUrl
 
     suspend fun extractPlaybackStreams(
@@ -122,6 +126,7 @@ object NewPipeHelper {
         preferVideoOnly: Boolean = false,
         allowAdaptiveManifests: Boolean = true,
         preferAdaptiveManifests: Boolean = false,
+        preferManifests: Boolean = false,
     ): PlaybackStreams =
         withContext(Dispatchers.IO) {
             init()
@@ -134,9 +139,16 @@ object NewPipeHelper {
                     preferVideoOnly = preferVideoOnly,
                     allowAdaptiveManifests = allowAdaptiveManifests,
                     preferAdaptiveManifests = preferAdaptiveManifests,
+                    preferManifests = preferManifests,
                 )
             } catch (exception: AgeRestrictedContentException) {
                 Timber.tag(TAG).d("Age-restricted stream rejected: %s", videoPageUrl)
+                throw exception
+            } catch (exception: SignInConfirmNotBotException) {
+                // IP-level bot gate, not a bad video: open the circuit breaker
+                // so callers back off instead of hammering (which extends it).
+                YouTubeThrottling.noteBotBlock()
+                Timber.tag(TAG).w("YouTube bot gate for %s, cooling down", videoPageUrl)
                 throw exception
             } catch (exception: GeographicRestrictionException) {
                 Timber.tag(TAG).d("Geo-blocked stream rejected: %s", videoPageUrl)
@@ -208,13 +220,13 @@ object NewPipeHelper {
         category: QueryFormulaEngine.ContentCategory?,
         baseCandidates: List<StreamInfoItem>,
     ): List<StreamInfoItem> {
+        // Dedup by videoId only. A previous second pass deduped by normalized
+        // title fingerprint, which dropped distinct videos sharing generic
+        // titles ("4K Nature Relaxation Film") and shrank the pool so far that
+        // the healthy-pool fallbacks refetched needlessly.
         return baseCandidates
             .asSequence()
             .distinctBy { extractVideoId(it.getUrl()) ?: it.getUrl() }
-            .distinctBy {
-                val fallbackKey = extractVideoId(it.getUrl()) ?: it.getUrl()
-                normalizeTitleFingerprint(it.getName()).ifBlank { fallbackKey }
-            }
             .sortedByDescending { candidate ->
                 val titleLower = candidate.getName().lowercase(Locale.US)
                 QueryFormulaEngine.categoryMatchScore(
@@ -248,6 +260,7 @@ object NewPipeHelper {
         preferVideoOnly: Boolean,
         allowAdaptiveManifests: Boolean,
         preferAdaptiveManifests: Boolean,
+        preferManifests: Boolean,
     ): PlaybackStreams {
         val service = NewPipe.getService("YouTube")
         val videoId =
@@ -279,6 +292,7 @@ object NewPipeHelper {
             preferVideoOnly = preferVideoOnly,
             allowAdaptiveManifests = allowAdaptiveManifests,
             preferAdaptiveManifests = preferAdaptiveManifests,
+            preferManifests = preferManifests,
         )?.takeIf { playback -> playback.videoUrl.isNotBlank() }
             ?: throw YouTubeExtractionException("No playable stream found for $videoPageUrl")
     }
@@ -294,7 +308,22 @@ object NewPipeHelper {
         preferVideoOnly: Boolean,
         allowAdaptiveManifests: Boolean,
         preferAdaptiveManifests: Boolean,
+        preferManifests: Boolean,
     ): PlaybackStreams? {
+        // Adaptive-first (like the official YouTube/TizenTube player): a DASH
+        // manifest starts instantly at a low rendition and ramps to the best
+        // sustainable quality, instead of gambling one fixed progressive file
+        // that either stalls (too big) or looks soft (too small).
+        if (preferManifests && allowAdaptiveManifests) {
+            dashUrl?.takeIf { it.isNotBlank() }?.let {
+                Log.i(TAG, "STREAM PICKED: DASH manifest (adaptive)")
+                return PlaybackStreams(videoUrl = it)
+            }
+            hlsUrl?.takeIf { it.isNotBlank() }?.let {
+                Log.i(TAG, "STREAM PICKED: HLS manifest (adaptive)")
+                return PlaybackStreams(videoUrl = it)
+            }
+        }
         val effectiveScreenHeight =
             if (isAmlogicDevice() && screenHeight in 1 until 1080) {
                 1080
@@ -303,7 +332,17 @@ object NewPipeHelper {
             }
         val screenTargetHeight = targetHeightForScreen(effectiveScreenHeight)
         val qualityTargetHeight = preferredHeightForQuality(preferredQuality)
-        val targetHeight = if (qualityTargetHeight > 0) qualityTargetHeight else screenTargetHeight
+        // "best" (Highest Available) means the best this screen can show, not
+        // unconditionally 4K: a 1080p TV must not download 2160p files it can
+        // never display. Explicit pins below still behave exactly as before.
+        val targetHeight =
+            if (preferredQuality.trim().equals("best", ignoreCase = true)) {
+                minOf(screenTargetHeight, 2160)
+            } else if (qualityTargetHeight > 0) {
+                qualityTargetHeight
+            } else {
+                screenTargetHeight
+            }
         val minimumFallbackHeight = minimumAllowedHeight(targetHeight)
         Log.i(
             TAG,
@@ -357,8 +396,13 @@ object NewPipeHelper {
             }
         }
 
+        // Fallbacks stay within budget AND above the bitrate floor: a weak
+        // high-res file (e.g. 720p at 140kbps) must not beat a strong lower
+        // one. Anything weaker falls through to adaptive DASH (which carries
+        // proper-bitrate renditions) or skips the video entirely.
         return playableProgressiveStreams
-            .filter { stream -> streamHeight(stream) >= minimumFallbackHeight }
+            .filter { stream -> streamHeight(stream) in minimumFallbackHeight..targetHeight }
+            .filter(::meetsBitrateFloor)
                 .sortedWith(streamQualityComparator())
                 .firstOrNull()
                 ?.let { stream ->
@@ -366,7 +410,8 @@ object NewPipeHelper {
                 PlaybackStreams(videoUrl = stream.getContent())
             }
             ?: playableAnyStreams
-                .filter { stream -> streamHeight(stream) >= minimumFallbackHeight }
+                .filter { stream -> streamHeight(stream) in minimumFallbackHeight..targetHeight }
+                .filter(::meetsBitrateFloor)
                 .sortedWith(streamQualityComparator())
                 .firstOrNull()
                 ?.let { stream ->
@@ -657,6 +702,10 @@ object NewPipeHelper {
     private fun resolutionPriority(preferredHeight: Int): List<Int> =
         buildList {
             add(preferredHeight)
+            // Nearest above first (a strong 1080p beats a starved 720p when
+            // targeting 720p), then below in descending order. Entries above
+            // maxTargetHeight simply find no candidates downstream.
+            addAll(RESOLUTION_PRIORITY.filter { it > preferredHeight }.sorted())
             addAll(RESOLUTION_PRIORITY.filter { it < preferredHeight })
         }.distinct()
 
@@ -748,18 +797,16 @@ object NewPipeHelper {
     }
 
     private fun isLikelyAI(item: StreamInfoItem): Boolean {
+        // Title/channel signals only: exact-hour durations (1h/2h/...) are the
+        // most common length for legitimate ambient loops, so duration alone
+        // must never flag a video.
         val titleLower = item.getName().lowercase(Locale.US)
         val uploaderLower = item.getUploaderName().orEmpty().lowercase(Locale.US)
-        val duration = item.getDuration().toInt()
 
-        val titleMatch = isLikelyAiTitle(titleLower)
-        val channelMatch =
+        return isLikelyAiTitle(titleLower) ||
             AI_CHANNEL_PATTERNS.any { pattern ->
                 uploaderLower.contains(pattern)
             }
-        val durationMatch = duration in SUSPICIOUS_EXACT_DURATIONS
-
-        return titleMatch || channelMatch || durationMatch
     }
 
     private fun isBumperOrVlogTitle(titleLower: String): Boolean =
@@ -901,13 +948,6 @@ object NewPipeHelper {
         SYNTHETIC_WALLPAPER_BLACKLIST.any { token ->
             titleLower.contains(token)
         }
-
-    private fun normalizeTitleFingerprint(title: String): String =
-        title
-            .lowercase(Locale.US)
-            .replace("\\b(4k|8k|hdr|uhd|ambient|no music|no talking|screensaver|hours?|hour|mins?|minutes?)\\b".toRegex(), " ")
-            .replace("[^a-z0-9]+".toRegex(), " ")
-            .trim()
 
     private fun decoderSupport(
         codecFamily: CodecFamily,
@@ -1130,13 +1170,16 @@ object NewPipeHelper {
             screenHeight >= 2160 -> 2160
             screenHeight >= 1440 -> 1440
             screenHeight >= 1080 -> 1080
-            else -> 1080 // Default to 1080p target even on 720p screens for better supersampled quality
+            // Deliberately supersample 1080p on 720p screens: 1080p YouTube
+            // renditions carry far higher bitrates than 720p ones, and the
+            // downscale looks markedly better than native 720p playback.
+            else -> 1080
         }
 
     private fun preferredHeightForQuality(preferredQuality: String): Int {
         val quality = preferredQuality.lowercase(Locale.US)
         return when {
-            quality == "best" -> 2160 // Target 4K if available for 'best'
+            quality == "best" -> 2160 // Ceiling only; callers resolve "best" against the screen first
             quality.contains("2160") || quality.contains("4k") -> 2160
             quality.contains("1440") -> 1440
             quality.contains("1080") -> 1080
@@ -1145,8 +1188,10 @@ object NewPipeHelper {
         }
     }
 
-    private fun maxTargetHeight(targetHeight: Int): Int =
-        if (targetHeight <= 1080) 2160 else ((targetHeight * 1.2f).toInt()).coerceAtLeast(targetHeight)
+    // Screen-bounded ceiling: an explicit low pick may use one step above
+    // its target (1080p downscaled beats starved 720p), but never 4K waste
+    // for a sub-4K target, and never above the target once at/above 1080p.
+    private fun maxTargetHeight(targetHeight: Int): Int = maxOf(targetHeight, 1080)
 
     private fun minimumAllowedHeight(targetHeight: Int): Int =
         when {
@@ -1177,9 +1222,25 @@ object NewPipeHelper {
                     response.code,
                     response.message,
                     response.headers.toMultimap(),
-                    if (request.httpMethod() == "HEAD") "" else response.body.string(),
+                    if (request.httpMethod() == "HEAD") "" else readCappedBody(response),
                     response.request.url.toString(),
                 )
+            }
+        }
+
+        private fun readCappedBody(response: okhttp3.Response): String {
+            val body = response.body ?: return ""
+            val declaredLength = body.contentLength()
+            if (declaredLength > MAX_DOWNLOAD_BYTES) {
+                throw IOException("NewPipe response too large ($declaredLength bytes): ${response.request.url}")
+            }
+            body.source().use { source ->
+                source.request(MAX_DOWNLOAD_BYTES + 1)
+                val buffered = source.buffer
+                if (buffered.size > MAX_DOWNLOAD_BYTES) {
+                    throw IOException("NewPipe response exceeded ${MAX_DOWNLOAD_BYTES} bytes: ${response.request.url}")
+                }
+                return buffered.readUtf8()
             }
         }
 
@@ -1224,6 +1285,7 @@ object NewPipeHelper {
         get() = getRelatedItems()
 
     private const val MAX_RESULTS_PER_QUERY = 24
+    private const val MAX_DOWNLOAD_BYTES = 8L * 1024L * 1024L // YouTube pages/manifests are KBs; refuse absurd bodies before OOM
     private const val MIN_QUERY_MATCH_RESULTS = 4
     private const val MIN_PREFERRED_RESULTS_PER_QUERY = 6
     private val AI_WORD_REGEX = Regex("\\bai\\b", RegexOption.IGNORE_CASE)
@@ -1424,7 +1486,6 @@ object NewPipeHelper {
             "stillness",
             "slow motion",
         )
-    private val SUSPICIOUS_EXACT_DURATIONS = setOf(3600, 7200, 10800, 14400, 21600)
     private const val SHORT_TEXT_HEAVY_MAX_DURATION_SECONDS = 8 * 60L
     private const val MIN_DASH_PREFERRED_HEIGHT = 1080
     private const val MIN_PREFERRED_PROGRESSIVE_HEIGHT = 1080
@@ -1627,7 +1688,9 @@ object NewPipeHelper {
                 .substringBefore('#')
                 .substringAfterLast('/')
 
-        return trimmedPath.takeIf { it.isNotBlank() }
+        // A bare endpoint path (".../watch" with no ?v=) is not a video ID;
+        // without this guard every malformed URL collapsed to cache key "watch".
+        return trimmedPath.takeIf { it.isNotBlank() && it.lowercase(Locale.US) !in NON_VIDEO_ID_PATH_SEGMENTS }
     }
 
     fun playbackRequestHeaders(): Map<String, String> =
@@ -1664,4 +1727,15 @@ object NewPipeHelper {
     }
 
     private val QUERY_VIDEO_ID_REGEX = Regex("[?&]v=([^&#]+)")
+    private val NON_VIDEO_ID_PATH_SEGMENTS =
+        setOf(
+            "watch",
+            "results",
+            "playlist",
+            "channel",
+            "feed",
+            "hashtag",
+            "shorts",
+            "live",
+        )
 }

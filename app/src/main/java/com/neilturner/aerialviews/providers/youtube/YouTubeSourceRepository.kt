@@ -11,6 +11,7 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -43,7 +44,15 @@ class YouTubeSourceRepository(
     private val cacheDao: YouTubeCacheDao,
     private val watchHistoryDao: YouTubeWatchHistoryDao,
     private val sharedPreferences: SharedPreferences,
+    private val searcher: VideoSearcher = NewPipeVideoSearcher(),
+    extractor: StreamExtractor? = null,
 ) {
+    // Lazy so constructing the repository never touches the network stack or
+    // Context.applicationContext until an extraction is actually requested.
+    // (Eager default args broke mocked-Context tests and would do real work.)
+    private val streamExtractor: StreamExtractor by lazy {
+        extractor ?: NewPipeStreamExtractor(context.applicationContext)
+    }
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pendingManualFullRebuild = AtomicBoolean(false)
     
@@ -57,10 +66,19 @@ class YouTubeSourceRepository(
         try {
             isRefreshing = true
             _isRefreshingFlow.value = true
-            withTimeout(5 * 60 * 1000L) { // 5-minute safety timeout
-                _cacheLoadingProgress.emit(Pair(0, TARGET_CACHE_SIZE))
-                cacheDao.clearAll()
-                performLoadFreshSearchResults(replaceExistingCache = true)
+            // Snapshot before refresh so a network failure/timeout can never wipe the library.
+            val snapshot = cacheDao.getAllGood()
+            try {
+                withTimeout(5 * 60 * 1000L) { // 5-minute safety timeout
+                    _cacheLoadingProgress.emit(Pair(0, TARGET_CACHE_SIZE))
+                    performLoadFreshSearchResults(replaceExistingCache = true)
+                }
+            } catch (exception: Exception) {
+                if (cacheDao.countGoodEntries() == 0 && snapshot.isNotEmpty()) {
+                    runCatching { cacheDao.insertAll(snapshot) }
+                    Timber.tag(TAG).w("Restored %s cached YouTube entries after failed library rebuild", snapshot.size)
+                }
+                throw exception
             }
         } catch (exception: Exception) {
             Timber.tag(TAG).e(exception, "Forced library rebuild failed or timed out")
@@ -100,14 +118,6 @@ class YouTubeSourceRepository(
         data object AlreadyInProgress : RefreshEvent
     }
 
-    fun publishProgress(current: Int, total: Int) {
-        _cacheLoadingProgress.tryEmit(Pair(current, total))
-    }
-
-    suspend fun clearProgress() {
-        _cacheLoadingProgress.emit(null)
-    }
-
     @Volatile
     private var isRefreshing = false
 
@@ -120,6 +130,22 @@ class YouTubeSourceRepository(
 
     @Volatile
     private var preResolvingJob: Job? = null
+
+    @Volatile
+    private var preResolvingTarget: String? = null
+
+    private val historyTracker =
+        YouTubeHistoryTracker(
+            cacheDao = cacheDao,
+            watchHistoryDao = watchHistoryDao,
+            sharedPreferences = sharedPreferences,
+        )
+
+    private val categoryManager =
+        YouTubeCategoryManager(
+            cacheDao = cacheDao,
+            sharedPreferences = sharedPreferences,
+        )
 
     init {
         initializeCategorySnapshotIfNeeded()
@@ -277,33 +303,16 @@ class YouTubeSourceRepository(
         val removedCategoriesCount: Int,
     )
 
-    data class CategoryRemovalPreview(
-        val removedCount: Int,
-        val remainingCount: Int,
-    )
-
-    suspend fun previewCategoryRemovalSnapshot(): CategoryRemovalPreview =
+    suspend fun previewCategoryRemovalSnapshot(): YouTubeCategoryManager.CategoryRemovalPreview =
         withContext(Dispatchers.IO) {
-            val entries = cacheDao.getAllGood()
-            val enabledKeys = enabledCategoryKeys().toSet()
-            if (enabledKeys.isEmpty()) {
-                return@withContext CategoryRemovalPreview(
-                    removedCount = entries.size,
-                    remainingCount = 0,
-                )
-            }
-            val removableIds = removableCategoryVideoIds(entries, enabledKeys)
-            CategoryRemovalPreview(
-                removedCount = removableIds.size,
-                remainingCount = (entries.size - removableIds.size).coerceAtLeast(0),
-            )
+            categoryManager.previewCategoryRemovalSnapshot()
         }
 
     suspend fun applyCategoryDeltaRefresh(): DeltaRefreshResult =
         withContext(Dispatchers.IO) {
             refreshMutex.withLock {
                 val currentEnabled = enabledCategoryKeys().toSet()
-                val previousEnabled = readCategorySnapshot().ifEmpty { currentEnabled }
+                val previousEnabled = categoryManager.readCategorySnapshot().ifEmpty { currentEnabled }
                 val removedCategories = previousEnabled - currentEnabled
                 val addedCategories = currentEnabled - previousEnabled
                 val removedCategoriesCount = removedCategories.size
@@ -317,7 +326,7 @@ class YouTubeSourceRepository(
                     isRefreshing = true
                     _cacheLoadingProgress.emit(null)
 
-                    removedCount = applyCurrentCategoryFilterInternal()
+                    removedCount = categoryManager.applyCurrentCategoryFilterInternal()
 
                     var entriesSnapshot = cacheDao.getAllGood()
                     countAfterRemoval = entriesSnapshot.size
@@ -327,7 +336,7 @@ class YouTubeSourceRepository(
                     val currentEnabledList = currentEnabled.toList()
                     val categoryPlan = currentEnabledList.takeIf { it.isNotEmpty() }
                         ?.let { enabled ->
-                            buildCategoryBalancePlan(enabled, entriesSnapshot, TARGET_CACHE_SIZE)
+                            categoryManager.buildCategoryBalancePlan(enabled, entriesSnapshot, TARGET_CACHE_SIZE)
                         }
                     var preferredDeficitOrder = categoryPlan?.deficitCategories ?: emptyList()
 
@@ -339,7 +348,7 @@ class YouTubeSourceRepository(
                     if (needsRebalance) {
                         val plan = categoryPlan
                         val rebalanceOutcome =
-                            rebalanceOverQuotaCategories(entriesSnapshot, plan.targets)
+                            categoryManager.rebalanceOverQuotaCategories(entriesSnapshot, plan.targets, recentPlaybackCutoff())
                         if (rebalanceOutcome.evictedVideoIds.isNotEmpty()) {
                             val evicted = cacheDao.deleteByVideoIds(rebalanceOutcome.evictedVideoIds)
                             removedCount += evicted
@@ -350,14 +359,14 @@ class YouTubeSourceRepository(
                     }
 
                     if (countAfterRemoval < TARGET_CACHE_SIZE && currentEnabledList.isNotEmpty()) {
-                        val targets = categoryPlan?.targets ?: allocateCategoryTargets(currentEnabledList, TARGET_CACHE_SIZE)
+                        val targets = categoryPlan?.targets ?: categoryManager.allocateCategoryTargets(currentEnabledList, TARGET_CACHE_SIZE)
                         var entriesForBackfill = entriesSnapshot
                         var remainingBackfill = (TARGET_CACHE_SIZE - countAfterRemoval).coerceAtLeast(0)
                         var rounds = 0
                         while (remainingBackfill > 0 && rounds < CATEGORY_DELTA_BACKFILL_ROUNDS) {
-                            val counts = computeCategoryCounts(entriesForBackfill, targets.keys)
+                            val counts = categoryManager.computeCategoryCounts(entriesForBackfill, targets.keys)
                             val categoriesToFill =
-                                computeDeficitPriorityList(
+                                categoryManager.computeDeficitPriorityList(
                                     targets = targets,
                                     counts = counts,
                                     preferredOrder = preferredDeficitOrder,
@@ -439,7 +448,7 @@ class YouTubeSourceRepository(
 
     suspend fun markAsPlayed(videoId: String) =
         withContext(Dispatchers.IO) {
-            cacheDao.getAllGood().firstOrNull { it.videoId == videoId }?.let(::recordPlayback)
+            cacheDao.getAllGood().firstOrNull { it.videoId == videoId }?.let { recordPlayback(it) }
         }
 
     fun playbackUrl(entry: YouTubeCacheEntity): String =
@@ -467,7 +476,14 @@ class YouTubeSourceRepository(
     }
 
     fun preResolveNext(scope: CoroutineScope) {
+        // Single-slot pre-resolve: don't cancel an identical in-flight request.
+        // Callers fire this on every playlist build and playback start, which
+        // previously thrashed extractions so none ever completed.
+        if (preResolvingJob?.isActive == true && preResolvingTarget == null) {
+            return
+        }
         preResolvingJob?.cancel()
+        preResolvingTarget = null
         preResolvingJob =
             scope.launch(Dispatchers.IO) {
                 ensureStreamQualitySignatureFresh()
@@ -503,39 +519,49 @@ class YouTubeSourceRepository(
         videoPageUrl: String,
         scope: CoroutineScope,
     ) {
+        if (preResolvingJob?.isActive == true && preResolvingTarget == videoPageUrl) {
+            return
+        }
         preResolvingJob?.cancel()
+        preResolvingTarget = videoPageUrl
         preResolvingJob =
             scope.launch(Dispatchers.IO) {
-                ensureStreamQualitySignatureFresh()
-
                 try {
-                    val entry =
-                        cacheDao.getByVideoPageUrl(videoPageUrl)
-                            ?.takeIf { !it.isBad }
-                            ?: buildDirectCacheEntry(
-                                videoPageUrl = videoPageUrl,
-                                cachedAt = System.currentTimeMillis(),
-                                preferredQuality = preferredQuality(),
-                            )
-                            ?: return@launch
-                    val resolvedAt = System.currentTimeMillis()
-                    val resolvedPlayback =
-                        if (hasFreshStreamUrl(entry)) {
-                            entryPlaybackUrls(entry)
-                        } else {
-                            resolveEntryPlayback(entry, recordPlayback = false)
-                        }
-                    cachePreResolvedEntry(
-                        buildResolvedEntry(
-                            entry = entry,
-                            resolvedPlayback = resolvedPlayback,
-                            resolvedAt = resolvedAt,
-                        ),
-                    )
-                    Timber.tag(TAG).d("Pre-resolved requested YouTube video: %s", entry.title)
-                } catch (exception: Exception) {
-                    clearPreResolvedEntry()
-                    Timber.tag(TAG).w(exception, "Failed to pre-resolve requested YouTube video")
+                    ensureStreamQualitySignatureFresh()
+
+                    try {
+                        val entry =
+                            cacheDao.getByVideoPageUrl(videoPageUrl)
+                                ?.takeIf { !it.isBad }
+                                ?: buildDirectCacheEntry(
+                                    videoPageUrl = videoPageUrl,
+                                    cachedAt = System.currentTimeMillis(),
+                                    preferredQuality = preferredQuality(),
+                                )
+                                ?: return@launch
+                        val resolvedAt = System.currentTimeMillis()
+                        val resolvedPlayback =
+                            if (hasFreshStreamUrl(entry)) {
+                                entryPlaybackUrls(entry)
+                            } else {
+                                resolveEntryPlayback(entry, recordPlayback = false)
+                            }
+                        cachePreResolvedEntry(
+                            buildResolvedEntry(
+                                entry = entry,
+                                resolvedPlayback = resolvedPlayback,
+                                resolvedAt = resolvedAt,
+                            ),
+                        )
+                        Timber.tag(TAG).d("Pre-resolved requested YouTube video: %s", entry.title)
+                    } catch (exception: Exception) {
+                        clearPreResolvedEntry()
+                        Timber.tag(TAG).w(exception, "Failed to pre-resolve requested YouTube video")
+                    }
+                } finally {
+                    if (preResolvingTarget == videoPageUrl) {
+                        preResolvingTarget = null
+                    }
                 }
             }
     }
@@ -559,17 +585,31 @@ class YouTubeSourceRepository(
                 }.getOrNull()
             }
 
-            runCatching {
-                buildDirectCacheEntry(
-                    videoPageUrl = videoPageUrl,
-                    cachedAt = System.currentTimeMillis(),
-                    preferredQuality = preferredQuality(),
-                )
-            }.getOrNull()?.also { directEntry ->
-                cacheDao.insertAll(listOf(directEntry))
-                updateCachedCount(cacheDao.countGoodEntries())
-            }?.let(::entryPlaybackUrls)
+            fetchDirectEntry(videoPageUrl)?.let(::entryPlaybackUrls)
         }
+
+    /**
+     * Shared direct-entry tail for the preload and resolve paths: build via
+     * the extractor, persist, recount. Recording/warming/next-resolve stay
+     * with the callers (resolve records playback, preload must not).
+     */
+    private suspend fun fetchDirectEntry(videoPageUrl: String): YouTubeCacheEntity? {
+        // Fail fast while blocked: a network attempt here only burns the
+        // resolve timeout and extends the gate.
+        if (YouTubeThrottling.isBlocked()) {
+            return null
+        }
+        return runCatching {
+            buildDirectCacheEntry(
+                videoPageUrl = videoPageUrl,
+                cachedAt = System.currentTimeMillis(),
+                preferredQuality = preferredQuality(),
+            )
+        }.getOrNull()?.also { directEntry ->
+            cacheDao.insertAll(listOf(directEntry))
+            updateCachedCount(cacheDao.countGoodEntries())
+        }
+    }
 
     suspend fun preloadProjectivyVideoUrl(videoPageUrl: String): String? =
         withContext(Dispatchers.IO) {
@@ -615,6 +655,7 @@ class YouTubeSourceRepository(
                     preferVideoOnly = projectivyPreferVideoOnly(),
                     allowAdaptiveManifests = true,
                     preferAdaptiveManifests = projectivyPreferAdaptiveManifests(projectivyQuality),
+                    preferManifests = false,
                 )
             }.getOrNull()
                 ?.also { directEntry ->
@@ -651,14 +692,8 @@ class YouTubeSourceRepository(
             }
 
             val directEntry =
-                buildDirectCacheEntry(
-                    videoPageUrl = videoPageUrl,
-                    cachedAt = System.currentTimeMillis(),
-                    preferredQuality = preferredQuality(),
-                ) ?: throw YouTubeSourceException("No videos available")
+                fetchDirectEntry(videoPageUrl) ?: throw YouTubeSourceException("No videos available")
 
-            cacheDao.insertAll(listOf(directEntry))
-            updateCachedCount(cacheDao.countGoodEntries())
             recordPlayback(directEntry)
             maybeWarmSearchCacheNearPlaylistEnd()
             preResolveNext(repositoryScope)
@@ -742,11 +777,6 @@ class YouTubeSourceRepository(
             loadFreshSearchResults(replaceExistingCache)
         }
 
-    suspend fun forceRefresh(): Int =
-        withContext(Dispatchers.IO) {
-            refreshSearchResults(replaceExistingCache = true).size
-        }
-
     private suspend fun loadFreshSearchResults(
         replaceExistingCache: Boolean = false,
     ): List<YouTubeCacheEntity> {
@@ -782,7 +812,7 @@ class YouTubeSourceRepository(
                 topUpCacheToTargetAfterRefresh(entries)
             }
         } catch (exception: Exception) {
-            val fallbackEntries = filteredExistingEntries(cacheDao.getAllGood())
+            val fallbackEntries = categoryManager.filteredExistingEntries(cacheDao.getAllGood())
             if (fallbackEntries.isNotEmpty()) {
                 Timber.tag(TAG).w(exception, "Using filtered cached YouTube entries after refresh failure or timeout")
                 updateCachedCount(fallbackEntries.size)
@@ -804,10 +834,10 @@ class YouTubeSourceRepository(
         }
     }
 
-    private fun buildRefreshPlan(): RefreshPlan {
+    private suspend fun buildRefreshPlan(): RefreshPlan {
         val cachedAt = System.currentTimeMillis()
         val categoryPreferences = categoryPreferences()
-        val existingEntries = filteredExistingEntries(cacheDao.getAllGood())
+        val existingEntries = categoryManager.filteredExistingEntries(cacheDao.getAllGood())
         val isColdStart = existingEntries.size < COLD_CACHE_SKIP_THRESHOLD
         return RefreshPlan(
             query = searchQuery(),
@@ -935,7 +965,7 @@ class YouTubeSourceRepository(
             }
 
         if (entries.isEmpty()) {
-            val fallbackEntries = filteredExistingEntries(refreshPlan.existingEntries)
+            val fallbackEntries = categoryManager.filteredExistingEntries(refreshPlan.existingEntries)
             if (fallbackEntries.isNotEmpty()) {
                 Timber.tag(TAG).w("Reusing filtered cached YouTube entries because refresh produced no results")
                 return fallbackEntries
@@ -944,7 +974,7 @@ class YouTubeSourceRepository(
         }
 
         val quotaBalancedEntries =
-            rebalanceEntriesToCategoryTargets(
+            categoryManager.rebalanceEntriesToCategoryTargets(
                 entries = entries,
                 enabledCategoryKeys = enabledCategoryKeys(),
                 totalSlots = TARGET_CACHE_SIZE,
@@ -964,7 +994,7 @@ class YouTubeSourceRepository(
         }
     }
 
-    private fun persistFreshEntries(
+    private suspend fun persistFreshEntries(
         refreshPlan: RefreshPlan,
         entries: List<YouTubeCacheEntity>,
     ) {
@@ -996,19 +1026,19 @@ class YouTubeSourceRepository(
             return entriesSnapshot
         }
 
-        val targets = allocateCategoryTargets(enabledCategories, TARGET_CACHE_SIZE)
+        val targets = categoryManager.allocateCategoryTargets(enabledCategories, TARGET_CACHE_SIZE)
         var preferredOrder =
-            computeDeficitPriorityList(
+            categoryManager.computeDeficitPriorityList(
                 targets = targets,
-                counts = computeCategoryCounts(entriesSnapshot, targets.keys),
+                counts = categoryManager.computeCategoryCounts(entriesSnapshot, targets.keys),
             ).ifEmpty { targets.keys.toList() }
         var rounds = 0
         var insertedTotal = 0
 
         while (remainingToInsert > 0 && rounds < FULL_REFRESH_TOPUP_ROUNDS) {
-            val counts = computeCategoryCounts(entriesSnapshot, targets.keys)
+            val counts = categoryManager.computeCategoryCounts(entriesSnapshot, targets.keys)
             val categoriesToFill =
-                computeDeficitPriorityList(
+                categoryManager.computeDeficitPriorityList(
                     targets = targets,
                     counts = counts,
                     preferredOrder = preferredOrder,
@@ -1093,7 +1123,7 @@ class YouTubeSourceRepository(
                     val results =
                         withTimeoutOrNull(SEARCH_CALL_TIMEOUT_MS) {
                             runCatching {
-                                NewPipeHelper.searchVideos(
+                                searcher.searchVideos(
                                     query = variant,
                                     category = category,
                                 )
@@ -1157,7 +1187,7 @@ class YouTubeSourceRepository(
         return mergedResults
     }
 
-    private fun filterRecentlyPlayedCandidates(candidates: List<SearchCandidate>): List<SearchCandidate> {
+    private suspend fun filterRecentlyPlayedCandidates(candidates: List<SearchCandidate>): List<SearchCandidate> {
         val recentPlayedIds = playHistory().toSet()
         if (recentPlayedIds.isEmpty() || candidates.size < MIN_HEALTHY_CANDIDATE_POOL_SIZE) {
             return candidates
@@ -1352,7 +1382,20 @@ class YouTubeSourceRepository(
         supervisorScope {
             val entries = mutableListOf<YouTubeCacheEntity>()
 
-            for (chunk in items.chunked(EXTRACTION_BATCH_SIZE)) {
+            for ((chunkIndex, chunk) in items.chunked(EXTRACTION_BATCH_SIZE).withIndex()) {
+                if (YouTubeThrottling.isBlocked()) {
+                    Timber.tag(TAG).w(
+                        "Skipping remaining refresh extractions, bot cooldown has %sms left",
+                        YouTubeThrottling.remainingCooldownMs(),
+                    )
+                    break
+                }
+                // Pacing: bursts of anonymous player requests are what trips
+                // the IP bot gate. One gentle pause between chunks keeps us
+                // under it; playback resolves stay unthrottled.
+                if (chunkIndex > 0) {
+                    delay(EXTRACTION_CHUNK_PAUSE_MS)
+                }
                 val extractedChunk =
                     chunk
                         .map { candidate ->
@@ -1438,11 +1481,13 @@ class YouTubeSourceRepository(
         }
 
     private suspend fun refreshStreamUrl(entry: YouTubeCacheEntity) {
+        if (YouTubeThrottling.isBlocked()) {
+            return
+        }
         val now = System.currentTimeMillis()
         val updatedPlayback =
-            NewPipeHelper.extractPlaybackStreams(
+            streamExtractor.extractPlaybackStreams(
                 entry.videoPageUrl,
-                context,
                 preferredQuality(),
                 preferVideoOnly = shouldPreferVideoOnly(),
             )
@@ -1454,7 +1499,7 @@ class YouTubeSourceRepository(
         )
     }
 
-    private fun shouldRunBackgroundSearchWarm(cachedEntries: List<YouTubeCacheEntity>): Boolean =
+    private suspend fun shouldRunBackgroundSearchWarm(cachedEntries: List<YouTubeCacheEntity>): Boolean =
         isSearchCacheExpired() ||
             isCacheVersionStale() ||
             isCacheSignatureStale() ||
@@ -1500,7 +1545,7 @@ class YouTubeSourceRepository(
         }
     }
 
-    private fun selectNextCandidate(): YouTubeCacheEntity? {
+    private suspend fun selectNextCandidate(): YouTubeCacheEntity? {
         val cachedEntries = cacheDao.getAllGood()
         if (cachedEntries.isEmpty()) {
             return null
@@ -1510,7 +1555,7 @@ class YouTubeSourceRepository(
         return selectEntryForPlayback(cachedEntries)
     }
 
-    private fun buildPlaylistEntries(entries: List<YouTubeCacheEntity>): List<YouTubeCacheEntity> {
+    private suspend fun buildPlaylistEntries(entries: List<YouTubeCacheEntity>): List<YouTubeCacheEntity> {
         val goodEntries = entries.filterNot { it.isBad }
         if (goodEntries.isEmpty()) {
             return emptyList()
@@ -1529,27 +1574,29 @@ class YouTubeSourceRepository(
 
             playbackOrder += nextEntry
             remainingEntries.removeAll { it.videoId == nextEntry.videoId }
-            simulation.record(nextEntry, detectTheme(nextEntry.title))
+            simulation.record(nextEntry, PlaylistOrderer.detectTheme(nextEntry.title))
         }
 
         return playbackOrder
     }
 
+    // Simulation stays DB-free: pure pick plus an in-list random fallback.
     private fun selectSimulatedEntry(
         entries: List<YouTubeCacheEntity>,
-        simulation: PlaylistSimulation,
+        simulation: PlaylistOrderer.PlaylistSimulation,
     ): YouTubeCacheEntity =
-        selectEntryForPlayback(
+        PlaylistOrderer.pickCandidate(
             entries = entries,
             playbackHistory = simulation.history.toList(),
             recentThemes = simulation.themeHistory.toList(),
             lastChannel = simulation.lastChannel,
             firstLaunchActive = simulation.firstLaunchActive,
             firstLaunchSequenceIndex = simulation.firstLaunchIndex,
+            recentPlaybackCutoff = recentPlaybackCutoff(),
             random = simulation.random,
         ) ?: entries.random(simulation.random)
 
-    private fun selectEntryForPlayback(entries: List<YouTubeCacheEntity>): YouTubeCacheEntity? {
+    private suspend fun selectEntryForPlayback(entries: List<YouTubeCacheEntity>): YouTubeCacheEntity? {
         return selectEntryForPlayback(
             entries = entries,
             playbackHistory = playHistory().toList(),
@@ -1561,7 +1608,7 @@ class YouTubeSourceRepository(
         )
     }
 
-    private fun selectEntryForPlayback(
+    private suspend fun selectEntryForPlayback(
         entries: List<YouTubeCacheEntity>,
         playbackHistory: List<String>,
         recentThemes: List<String>,
@@ -1569,170 +1616,44 @@ class YouTubeSourceRepository(
         firstLaunchActive: Boolean,
         firstLaunchSequenceIndex: Int,
         random: Random,
-    ): YouTubeCacheEntity? {
-        val goodEntries = entries.filterNot { it.isBad }
-        if (goodEntries.isEmpty()) {
-            return null
-        }
-
-        val repeatWindowCandidates = applyRepeatWindow(goodEntries)
-        val baseEntries = repeatWindowCandidates.ifEmpty { goodEntries }
-
-        val exclusions = PlaybackExclusions(playbackHistory, recentThemes, lastChannel)
-
-        if (firstLaunchActive && baseEntries.size >= MIN_FIRST_LAUNCH_CANDIDATES) {
-            getFirstLaunchVideo(baseEntries, firstLaunchSequenceIndex, exclusions.strictVideoIds, random)?.let { return it }
-        }
-
-        val finalCandidates = resolvePlaybackCandidates(baseEntries, exclusions)
-        val immediateRepeatSafeCandidates =
-            playbackHistory.lastOrNull()?.let { lastPlayedVideoId ->
-                finalCandidates.filterNot { it.videoId == lastPlayedVideoId }.ifEmpty { finalCandidates }
-            } ?: finalCandidates
-
-        return weightedRandomPick(immediateRepeatSafeCandidates, playbackHistory, random)
-            ?: cacheDao.getUnwatchedEntry(recentPlaybackCutoff())
+    ): YouTubeCacheEntity? =
+        PlaylistOrderer.pickCandidate(
+            entries = entries,
+            playbackHistory = playbackHistory,
+            recentThemes = recentThemes,
+            lastChannel = lastChannel,
+            firstLaunchActive = firstLaunchActive,
+            firstLaunchSequenceIndex = firstLaunchSequenceIndex,
+            recentPlaybackCutoff = recentPlaybackCutoff(),
+            random = random,
+        ) ?: cacheDao.getUnwatchedEntry(recentPlaybackCutoff())
             ?: cacheDao.getLeastRecentlyPlayed()
-    }
 
-    private fun resolvePlaybackCandidates(
-        entries: List<YouTubeCacheEntity>,
-        exclusions: PlaybackExclusions,
-    ): List<YouTubeCacheEntity> {
-        val strictCandidates =
-            applyPlaybackExclusions(
-                entries = entries,
-                excludedVideoIds = exclusions.strictVideoIds,
-                excludedThemes = exclusions.recentThemes,
-                excludedChannel = exclusions.lastChannel,
-            )
-        if (strictCandidates.size >= MIN_STRICT_PLAYBACK_CANDIDATES) {
-            return strictCandidates
-        }
-
-        val themeRelaxedCandidates =
-            applyPlaybackExclusions(
-                entries = entries,
-                excludedVideoIds = exclusions.strictVideoIds,
-                excludedThemes = emptySet(),
-                excludedChannel = exclusions.lastChannel,
-            )
-        if (themeRelaxedCandidates.size >= MIN_STRICT_PLAYBACK_CANDIDATES) {
-            return themeRelaxedCandidates
-        }
-
-        val channelRelaxedCandidates =
-            applyPlaybackExclusions(
-                entries = entries,
-                excludedVideoIds = exclusions.strictVideoIds,
-                excludedThemes = emptySet(),
-                excludedChannel = "",
-            )
-
-        return when {
-            channelRelaxedCandidates.isNotEmpty() -> channelRelaxedCandidates
-            exclusions.relaxedVideoIds.isNotEmpty() -> entries.filterNot { it.videoId in exclusions.relaxedVideoIds }.ifEmpty { entries }
-            else -> entries
-        }
-    }
-
-    private fun applyRepeatWindow(entries: List<YouTubeCacheEntity>): List<YouTubeCacheEntity> {
-        val cutoff = recentPlaybackCutoff()
-        val unwatchedEntries =
-            entries.filter { entry ->
-                entry.lastPlayedAt == 0L || entry.lastPlayedAt < cutoff
-            }
-
-        return when {
-            unwatchedEntries.isNotEmpty() -> unwatchedEntries
-            entries.isNotEmpty() -> entries.sortedBy { entry -> entry.lastPlayedAt }
-            else -> emptyList()
-        }
-    }
-
-    private fun prunePlayHistory(cachedEntries: List<YouTubeCacheEntity>) {
-        if (cachedEntries.isEmpty()) {
-            return
-        }
-    }
+    private suspend fun prunePlayHistory(cachedEntries: List<YouTubeCacheEntity>) =
+        historyTracker.prunePlayHistory(cachedEntries)
 
     private fun isCacheUndersized(entries: List<YouTubeCacheEntity>): Boolean =
         entries.size < TARGET_CACHE_SIZE
 
-    private fun playHistory(): ArrayDeque<String> {
-        val dbHistory = watchHistoryDao.recentHistory(MAX_PLAY_HISTORY)
-        if (dbHistory.isNotEmpty()) {
-            return ArrayDeque(dbHistory.asReversed().map { it.videoId })
-        }
-        return readHistory(KEY_PLAY_HISTORY)
-    }
+    private suspend fun playHistory(): ArrayDeque<String> = historyTracker.playHistory()
 
-    private fun recentRefreshIds(): ArrayDeque<String> = readHistory(KEY_RECENT_REFRESH_IDS)
+    private fun recentRefreshIds(): ArrayDeque<String> = historyTracker.recentRefreshIds()
 
-    private fun themeHistory(): ArrayDeque<String> = readHistory(KEY_THEME_HISTORY)
+    private fun themeHistory(): ArrayDeque<String> = historyTracker.themeHistory()
 
-    private fun recordRefreshHistory(entries: List<YouTubeCacheEntity>) {
-        val history = recentRefreshIds()
-        entries.forEach { entry ->
-            history.remove(entry.videoId)
-            history.addLast(entry.videoId)
-        }
+    private fun recordRefreshHistory(entries: List<YouTubeCacheEntity>) =
+        historyTracker.recordRefreshHistory(entries)
 
-        while (history.size > MAX_RECENT_REFRESH_IDS) {
-            history.removeFirst()
-        }
+    private fun lastPlayedChannel(): String = historyTracker.lastPlayedChannel()
 
-        writeHistory(KEY_RECENT_REFRESH_IDS, history)
-    }
+    private fun isFirstLaunchActive(): Boolean = historyTracker.isFirstLaunchActive()
 
-    private fun lastPlayedChannel(): String =
-        sharedPreferences.getString(KEY_LAST_CHANNEL, "")?.trim().orEmpty()
+    private fun firstLaunchIndex(): Int = historyTracker.firstLaunchIndex()
 
-    private fun isFirstLaunchActive(): Boolean =
-        sharedPreferences.getBoolean(KEY_FIRST_LAUNCH, true)
+    private suspend fun recordPlayback(entry: YouTubeCacheEntity) =
+        historyTracker.recordPlayback(entry)
 
-    private fun firstLaunchIndex(): Int =
-        sharedPreferences.getInt(KEY_FIRST_LAUNCH_INDEX, 0)
-
-    private fun recordPlayback(entry: YouTubeCacheEntity) {
-        val playedAt = System.currentTimeMillis()
-        cacheDao.markAsPlayed(entry.videoId, playedAt)
-        watchHistoryDao.insert(
-            YouTubeWatchHistoryEntity(
-                videoId = entry.videoId,
-                playedAt = playedAt,
-            ),
-        )
-        watchHistoryDao.trimToLimit(MAX_WATCH_HISTORY_ROWS)
-
-        val history = playHistory()
-        history.addLast(entry.videoId)
-        trimHistory(history, MAX_PLAY_HISTORY)
-
-        val themes = themeHistory()
-        val theme = detectTheme(entry.title)
-        themes.addLast(theme)
-        trimHistory(themes, MAX_THEME_HISTORY)
-
-        val firstLaunchStillActive = isFirstLaunchActive()
-        val nextFirstLaunchIndex =
-            if (firstLaunchStillActive) {
-                (firstLaunchIndex() + 1).coerceAtMost(FIRST_LAUNCH_SEQUENCE.size)
-            } else {
-                firstLaunchIndex()
-            }
-
-        sharedPreferences.edit {
-            putString(KEY_PLAY_HISTORY, history.joinToString(HISTORY_SEPARATOR))
-            putString(KEY_THEME_HISTORY, themes.joinToString(HISTORY_SEPARATOR))
-            putString(KEY_LAST_CATEGORY, entry.searchQuery.orEmpty())
-            putString(KEY_LAST_CHANNEL, entry.uploaderName)
-            putInt(KEY_FIRST_LAUNCH_INDEX, nextFirstLaunchIndex)
-            putBoolean(KEY_FIRST_LAUNCH, nextFirstLaunchIndex < FIRST_LAUNCH_SEQUENCE.size)
-        }
-    }
-
-    private fun maybeWarmSearchCacheNearPlaylistEnd() {
+    private suspend fun maybeWarmSearchCacheNearPlaylistEnd() {
         val cachedEntries = cacheDao.getAllGood()
         if (cachedEntries.isEmpty()) {
             return
@@ -1798,7 +1719,7 @@ class YouTubeSourceRepository(
         }
     }
 
-    private fun ensureStreamQualitySignatureFresh() {
+    private suspend fun ensureStreamQualitySignatureFresh() {
         val currentSignature = currentStreamQualitySignature()
         val storedSignature = sharedPreferences.getString(KEY_STREAM_QUALITY_SIGNATURE, "").orEmpty()
         if (storedSignature == currentSignature) {
@@ -1806,6 +1727,7 @@ class YouTubeSourceRepository(
         }
 
         preResolvingJob?.cancel()
+        preResolvingTarget = null
         clearPreResolvedEntry()
         val invalidatedCount = cacheDao.invalidateAllStreamUrls()
         sharedPreferences.edit {
@@ -1857,21 +1779,34 @@ class YouTubeSourceRepository(
     private suspend fun resolveEntryPlaybackOrNull(entry: YouTubeCacheEntity): YouTubePlaybackUrls? =
         runCatching { resolveEntryPlayback(entry) }
             .onFailure { exception ->
-                markEntryAsBad(entry, exception)
+                if (exception is CancellationException) {
+                    throw exception
+                }
+                markEntryAsBadIfPermanent(entry, exception)
             }.getOrNull()
 
     private suspend fun resolveEntryPlayback(
         entry: YouTubeCacheEntity,
         recordPlayback: Boolean,
     ): YouTubePlaybackUrls {
+        // While the bot gate is up, never spend 25s discovering what we
+        // already know: play the cached URL even if expiring. A maybe-stale
+        // stream now beats a guaranteed black screen later.
+        if (YouTubeThrottling.isBlocked() && isUsableStreamUrl(entry.streamUrl)) {
+            Timber.tag(TAG).w("Bot cooldown active, reusing cached stream for %s", entry.videoId)
+            val reused = entryPlaybackUrls(entry)
+            if (recordPlayback) {
+                recordPlayback(entry)
+            }
+            return reused
+        }
         val now = System.currentTimeMillis()
         val resolvedPlayback =
             if (!hasFreshStreamUrl(entry)) {
                 try {
                     val updatedPlayback =
-                        NewPipeHelper.extractPlaybackStreams(
+                        streamExtractor.extractPlaybackStreams(
                             entry.videoPageUrl,
-                            context,
                             playbackResolutionQuality(),
                             preferVideoOnly = playbackPreferVideoOnly(),
                         )
@@ -1897,7 +1832,7 @@ class YouTubeSourceRepository(
                         scheduleBackgroundWarmCache(forceSearchRefresh = false)
                         entryPlaybackUrls(entry)
                     } else {
-                        markEntryAsBad(entry, exception)
+                        markEntryAsBadIfPermanent(entry, exception)
                         throw YouTubeSourceException("No videos available", exception)
                     }
                 }
@@ -1922,21 +1857,39 @@ class YouTubeSourceRepository(
         preferVideoOnly: Boolean = projectivyPreferVideoOnly(),
     ): String? =
         runCatching {
-            NewPipeHelper.extractStreamUrl(
+            streamExtractor.extractStreamUrl(
                 videoPageUrl,
-                context,
                 preferredQuality,
                 preferVideoOnly = preferVideoOnly,
                 allowAdaptiveManifests = true,
                 preferAdaptiveManifests = projectivyPreferAdaptiveManifests(preferredQuality),
+                preferManifests = false,
             )
         }.getOrNull()?.takeIf(::isProjectivyUsableStreamUrl)
 
-    private fun markEntryAsBad(
+    /**
+     * Burns a cache row only for permanent content failures (age/geo blocked,
+     * video gone, rejected shape). Timeouts, network blips and cancellations
+     * must never poison good rows — a tunnel drive-by used to burn entries.
+     */
+    private suspend fun markEntryAsBadIfPermanent(
+        entry: YouTubeCacheEntity,
+        exception: Throwable,
+    ) {
+        if (isPermanentFailure(exception)) {
+            markEntryAsBad(entry, exception)
+        } else {
+            Timber.tag(TAG).w(exception, "Transient YouTube failure for %s, keeping cache entry", entry.videoId)
+        }
+    }
+
+    private fun isPermanentFailure(exception: Throwable): Boolean =
+        !exception.isNetworkError() && shouldSilentlySkip(exception)
+
+    private suspend fun markEntryAsBad(
         entry: YouTubeCacheEntity,
         exception: Throwable? = null,
-    ) {
-        val rowsMarkedBad = cacheDao.markAsBad(entry.videoId)
+    ) {        val rowsMarkedBad = cacheDao.markAsBad(entry.videoId)
         if (rowsMarkedBad > 0) {
             val liveCount = cacheDao.countGoodEntries()
             _cacheCount.value = liveCount
@@ -2119,9 +2072,8 @@ class YouTubeSourceRepository(
             val videoId = extractVideoId(videoPageUrl) ?: return null
             val uploaderName = item.getUploaderName().orEmpty()
             val playbackStreams =
-                NewPipeHelper.extractPlaybackStreams(
+                streamExtractor.extractPlaybackStreams(
                     videoPageUrl,
-                    context,
                     preferredQuality,
                     preferVideoOnly = shouldPreferVideoOnly(),
                 )
@@ -2156,16 +2108,17 @@ class YouTubeSourceRepository(
         preferVideoOnly: Boolean = playbackPreferVideoOnly(),
         allowAdaptiveManifests: Boolean = true,
         preferAdaptiveManifests: Boolean = false,
+        preferManifests: Boolean = true,
     ): YouTubeCacheEntity? {
         val videoId = extractVideoId(videoPageUrl) ?: return null
         val playbackStreams =
-            NewPipeHelper.extractPlaybackStreams(
+            streamExtractor.extractPlaybackStreams(
                 videoPageUrl,
-                context,
                 playbackResolutionQuality(fallbackQuality = preferredQuality),
                 preferVideoOnly = preferVideoOnly,
                 allowAdaptiveManifests = allowAdaptiveManifests,
                 preferAdaptiveManifests = preferAdaptiveManifests,
+                preferManifests = preferManifests,
             )
         return YouTubeCacheEntity(
             videoId = videoId,
@@ -2215,37 +2168,31 @@ class YouTubeSourceRepository(
                 .substringBefore('#')
                 .substringAfterLast('/')
 
-        return trimmedPath.takeIf { it.isNotBlank() }
+        // Keep in sync with NewPipeHelper: a bare endpoint path is not a video ID.
+        return trimmedPath.takeIf { it.isNotBlank() && it.lowercase() !in NON_VIDEO_ID_PATH_SEGMENTS }
     }
 
-    private fun isSearchCacheExpired(): Boolean {
-        val oldestCachedAt = cacheDao.getOldestCachedAt() ?: return true
-        return System.currentTimeMillis() - oldestCachedAt >= SEARCH_CACHE_TTL_MS
+    private suspend fun isSearchCacheExpired(): Boolean {
+        // Newest, not oldest: top-ups keep trickling in fresh rows while the
+        // bulk ages, so MIN condemned the cache the moment a single row went
+        // stale and forced a full refresh on nearly every access. Whole-cache
+        // staleness is when even the freshest row is older than the TTL;
+        // the daily worker still forces a full refresh on schedule.
+        val newestCachedAt = cacheDao.getNewestCachedAt() ?: return true
+        return System.currentTimeMillis() - newestCachedAt >= SEARCH_CACHE_TTL_MS
     }
 
     private fun isCacheVersionStale(): Boolean =
         sharedPreferences.getInt(KEY_CACHE_VERSION, 0) != CURRENT_CACHE_VERSION
 
-    private fun initializeCategorySnapshotIfNeeded() {
-        if (sharedPreferences.contains(KEY_CATEGORY_SNAPSHOT)) {
-            return
-        }
-        persistCategorySnapshot(enabledCategoryKeys().toSet())
-    }
+    private fun initializeCategorySnapshotIfNeeded() =
+        categoryManager.initializeCategorySnapshotIfNeeded()
 
     private fun readCategorySnapshot(): Set<String> =
-        sharedPreferences
-            .getStringSet(KEY_CATEGORY_SNAPSHOT, emptySet())
-            .orEmpty()
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .toSet()
+        categoryManager.readCategorySnapshot()
 
-    private fun persistCategorySnapshot(enabledCategoryKeys: Set<String>) {
-        sharedPreferences.edit {
-            putStringSet(KEY_CATEGORY_SNAPSHOT, enabledCategoryKeys)
-        }
-    }
+    private fun persistCategorySnapshot(enabledCategoryKeys: Set<String>) =
+        categoryManager.persistCategorySnapshot(enabledCategoryKeys)
 
     private suspend fun addEntriesForCategories(
         categoryKeys: List<String>,
@@ -2368,175 +2315,6 @@ class YouTubeSourceRepository(
         val deficitCategories: List<String>,
     )
 
-    private fun buildCategoryBalancePlan(
-        enabledCategoryKeys: List<String>,
-        entries: List<YouTubeCacheEntity>,
-        totalSlots: Int,
-    ): CategoryBalancePlan {
-        val targets = allocateCategoryTargets(enabledCategoryKeys, totalSlots)
-        val counts = computeCategoryCounts(entries, targets.keys)
-        val deficitCategories = computeDeficitPriorityList(targets, counts)
-        return CategoryBalancePlan(targets, deficitCategories)
-    }
-
-    private fun allocateCategoryTargets(
-        enabledCategoryKeys: List<String>,
-        totalSlots: Int,
-    ): Map<String, Int> {
-        if (enabledCategoryKeys.isEmpty()) {
-            return emptyMap()
-        }
-
-        val base = totalSlots / enabledCategoryKeys.size
-        var remainder = totalSlots % enabledCategoryKeys.size
-        val rotation = consumeCategoryQuotaRotation(enabledCategoryKeys.size)
-        val allocations = linkedMapOf<String, Int>()
-        for (offset in enabledCategoryKeys.indices) {
-            val key = enabledCategoryKeys[(rotation + offset) % enabledCategoryKeys.size]
-            val allocation = base + if (remainder > 0) 1 else 0
-            allocations[key] = allocation
-            if (remainder > 0) {
-                remainder -= 1
-            }
-        }
-        return allocations
-    }
-
-    private fun computeCategoryCounts(entries: List<YouTubeCacheEntity>, targetKeys: Set<String>): Map<String, Int> {
-        val counts = targetKeys.associateWith { 0 }.toMutableMap()
-        if (targetKeys.isEmpty()) {
-            return counts
-        }
-        entries.forEach { entry ->
-            resolveCategoryKey(entry, targetKeys)?.let { key ->
-                counts[key] = counts.getValue(key) + 1
-            }
-        }
-        return counts
-    }
-
-    private fun computeDeficitPriorityList(
-        targets: Map<String, Int>,
-        counts: Map<String, Int>,
-        preferredOrder: List<String> = emptyList(),
-    ): List<String> {
-        if (targets.isEmpty()) {
-            return emptyList()
-        }
-        val targetOrder = targets.keys.withIndex().associate { indexed -> indexed.value to indexed.index }
-        val preferredIndex = preferredOrder.withIndex().associate { indexed -> indexed.value to indexed.index }
-        val deficits =
-            targets.mapNotNull { (key, target) ->
-                val deficit = (target - (counts[key] ?: 0)).coerceAtLeast(0)
-                if (deficit > 0) {
-                    key to deficit
-                } else {
-                    null
-                }
-            }
-        if (deficits.isEmpty()) {
-            return emptyList()
-        }
-
-        return deficits
-            .sortedWith(
-                compareByDescending<Pair<String, Int>> { it.second }
-                    .thenBy { (key, _) -> preferredIndex[key] ?: Int.MAX_VALUE }
-                    .thenBy { (key, _) -> targetOrder[key] ?: Int.MAX_VALUE },
-            ).map { it.first }
-    }
-
-    private fun consumeCategoryQuotaRotation(categoryCount: Int): Int {
-        if (categoryCount <= 0) {
-            return 0
-        }
-        val storedCursor = sharedPreferences.getInt(KEY_CATEGORY_QUOTA_CURSOR, 0)
-        val normalizedCursor = ((storedCursor % categoryCount) + categoryCount) % categoryCount
-        sharedPreferences.edit {
-            putInt(KEY_CATEGORY_QUOTA_CURSOR, (normalizedCursor + 1) % categoryCount)
-        }
-        return normalizedCursor
-    }
-
-    private fun rebalanceOverQuotaCategories(
-        entries: List<YouTubeCacheEntity>,
-        targets: Map<String, Int>,
-    ): RebalanceOutcome {
-        if (targets.isEmpty()) {
-            return RebalanceOutcome(emptyList(), emptyList())
-        }
-
-        val targetKeys = targets.keys.toSet()
-        val buckets = targetKeys.associateWith { mutableListOf<YouTubeCacheEntity>() }
-        entries.forEach { entry ->
-            resolveCategoryKey(entry, targetKeys)?.let { key ->
-                buckets[key]?.add(entry)
-            }
-        }
-
-        val playbackCutoff = recentPlaybackCutoff()
-        val comparator =
-            compareBy<YouTubeCacheEntity> { entry ->
-                if (entry.lastPlayedAt >= playbackCutoff) 1 else 0
-            }.thenBy { entry -> entry.searchCachedAt }
-                .thenBy { entry -> cachedEntryScore(entry) }
-
-        val countsAfterEviction = mutableMapOf<String, Int>()
-        val evictedEntries = mutableListOf<YouTubeCacheEntity>()
-
-        buckets.forEach { (category, bucket) ->
-            val currentCount = bucket.size
-            val targetCount = targets.getValue(category)
-            val surplus = (currentCount - targetCount).coerceAtLeast(0)
-            if (surplus > 0) {
-                val candidates = bucket.sortedWith(comparator).take(surplus)
-                evictedEntries += candidates
-            }
-            countsAfterEviction[category] = (currentCount - surplus).coerceAtLeast(0)
-        }
-
-        val deficitCategories = computeDeficitPriorityList(targets, countsAfterEviction)
-        return RebalanceOutcome(evictedEntries.map { it.videoId }.distinct(), deficitCategories)
-    }
-
-    private fun resolveCategoryKey(entry: YouTubeCacheEntity, allowedKeys: Set<String>): String? {
-        if (allowedKeys.isEmpty()) {
-            return null
-        }
-        val explicitKey = entry.categoryKey.takeIf { it.isNotBlank() }
-        val queryMappedKey = QueryFormulaEngine.categoryForQuery(entry.searchQuery.orEmpty())?.key
-        val metadataInferredKey =
-            inferCategoryKeyFromMetadata(
-                title = entry.title,
-                uploader = entry.uploaderName,
-                allowedKeys = allowedKeys,
-            )
-        return (explicitKey ?: queryMappedKey ?: metadataInferredKey)?.takeIf { it in allowedKeys }
-    }
-
-    private fun inferCategoryKeyFromMetadata(
-        title: String,
-        uploader: String,
-        allowedKeys: Set<String>,
-    ): String? {
-        if (allowedKeys.isEmpty()) {
-            return null
-        }
-        return QueryFormulaEngine.ContentCategory.entries
-            .asSequence()
-            .filter { category -> category.key in allowedKeys }
-            .map { category ->
-                category to QueryFormulaEngine.categoryMatchScore(
-                    title = title,
-                    uploader = uploader,
-                    category = category,
-                )
-            }.maxByOrNull { (_, score) -> score }
-            ?.takeIf { (_, score) -> score > 0 }
-            ?.first
-            ?.key
-    }
-
     private fun resolveCandidateCategoryKey(
         candidate: SearchCandidate,
         title: String,
@@ -2544,110 +2322,11 @@ class YouTubeSourceRepository(
     ): String {
         candidate.category?.key?.takeIf { it.isNotBlank() }?.let { return it }
         QueryFormulaEngine.categoryForQuery(candidate.searchQuery)?.key?.let { return it }
-        return inferCategoryKeyFromMetadata(
+        return categoryManager.inferCategoryKeyFromMetadata(
             title = title,
             uploader = uploaderName,
-            allowedKeys = ALL_CATEGORY_KEYS,
+            allowedKeys = YouTubeCategoryManager.ALL_CATEGORY_KEYS,
         ).orEmpty()
-    }
-
-    private fun cachedEntryScore(entry: YouTubeCacheEntity): Int {
-        val title = entry.title
-        val normalizedTitle = title.lowercase()
-        val qualitySignalScore = QueryFormulaEngine.qualitySignals.count { normalizedTitle.contains(it) }
-        val durationScore =
-            when {
-                entry.durationSeconds > LONG_FORM_DURATION_SECONDS -> LONG_FORM_BONUS + VERY_LONG_FORM_BONUS
-                entry.durationSeconds > MEDIUM_FORM_DURATION_SECONDS -> LONG_FORM_BONUS
-                else -> 0
-            }
-        val category =
-            QueryFormulaEngine.ContentCategory.entries.firstOrNull { category -> category.key == entry.categoryKey }
-                ?: QueryFormulaEngine.categoryForQuery(entry.searchQuery.orEmpty())
-        val categoryScore = QueryFormulaEngine.categoryMatchScore(entry.title, entry.uploaderName, category)
-        val penaltyScore =
-            (if (isVlogLikeTitle(title)) VLOG_TITLE_PENALTY else 0) +
-                (if (isDigitHeavyChannelName(entry.uploaderName)) DIGIT_HEAVY_CHANNEL_PENALTY else 0)
-        return qualitySignalScore + durationScore + categoryScore - penaltyScore
-    }
-
-    private fun rebalanceEntriesToCategoryTargets(
-        entries: List<YouTubeCacheEntity>,
-        enabledCategoryKeys: List<String>,
-        totalSlots: Int,
-    ): List<YouTubeCacheEntity> {
-        if (entries.isEmpty() || enabledCategoryKeys.isEmpty()) {
-            return entries.take(totalSlots)
-        }
-
-        val targets = allocateCategoryTargets(enabledCategoryKeys, totalSlots)
-        if (targets.isEmpty()) {
-            return entries.take(totalSlots)
-        }
-
-        val targetKeys = targets.keys.toSet()
-        val buckets = targets.keys.associateWith { mutableListOf<YouTubeCacheEntity>() }.toMutableMap()
-        val uncategorized = mutableListOf<YouTubeCacheEntity>()
-        entries.forEach { entry ->
-            val key = resolveCategoryKey(entry, targetKeys)
-            if (key == null) {
-                uncategorized += entry
-            } else {
-                buckets.getValue(key) += entry
-            }
-        }
-
-        val selected = mutableListOf<YouTubeCacheEntity>()
-        val seenIds = mutableSetOf<String>()
-        targets.forEach { (key, quota) ->
-            if (quota <= 0) return@forEach
-            val bucket = buckets.getValue(key)
-            bucket.asSequence()
-                .filter { entry -> seenIds.add(entry.videoId) }
-                .take(quota)
-                .forEach(selected::add)
-        }
-
-        if (selected.size >= totalSlots) {
-            return selected.take(totalSlots)
-        }
-
-        val overflowBuckets =
-            targets.keys.associateWith { key ->
-                ArrayDeque(
-                    buckets.getValue(key).filter { entry -> entry.videoId !in seenIds },
-                )
-            }
-        val uncategorizedOverflow = ArrayDeque(uncategorized.filter { entry -> entry.videoId !in seenIds })
-
-        while (selected.size < totalSlots) {
-            var addedAny = false
-            targets.keys.forEach { key ->
-                if (selected.size >= totalSlots) {
-                    return@forEach
-                }
-                val bucket = overflowBuckets.getValue(key)
-                while (bucket.isNotEmpty()) {
-                    val candidate = bucket.removeFirst()
-                    if (seenIds.add(candidate.videoId)) {
-                        selected += candidate
-                        addedAny = true
-                        break
-                    }
-                }
-            }
-            if (!addedAny) {
-                break
-            }
-        }
-
-        while (selected.size < totalSlots && uncategorizedOverflow.isNotEmpty()) {
-            val candidate = uncategorizedOverflow.removeFirst()
-            if (seenIds.add(candidate.videoId)) {
-                selected += candidate
-            }
-        }
-        return selected.take(totalSlots)
     }
 
     private fun categoryPreferencesForKeys(categoryKeys: Set<String>): QueryFormulaEngine.CategoryPreferences =
@@ -2663,97 +2342,28 @@ class YouTubeSourceRepository(
         )
 
     private fun categoryPreferences(): QueryFormulaEngine.CategoryPreferences =
-        QueryFormulaEngine.CategoryPreferences(
-            categoryNature = sharedPreferences.getBoolean(KEY_CATEGORY_NATURE, DEFAULT_CATEGORY_NATURE),
-            categoryAnimals = sharedPreferences.getBoolean(KEY_CATEGORY_ANIMALS, DEFAULT_CATEGORY_ANIMALS),
-            categoryDrone = sharedPreferences.getBoolean(KEY_CATEGORY_DRONE, DEFAULT_CATEGORY_DRONE),
-            categoryCities = sharedPreferences.getBoolean(KEY_CATEGORY_CITIES, DEFAULT_CATEGORY_CITIES),
-            categorySpace = sharedPreferences.getBoolean(KEY_CATEGORY_SPACE, DEFAULT_CATEGORY_SPACE),
-            categoryOcean = sharedPreferences.getBoolean(KEY_CATEGORY_OCEAN, DEFAULT_CATEGORY_OCEAN),
-            categoryWeather = sharedPreferences.getBoolean(KEY_CATEGORY_WEATHER, DEFAULT_CATEGORY_WEATHER),
-            categoryWinter = sharedPreferences.getBoolean(KEY_CATEGORY_WINTER, DEFAULT_CATEGORY_WINTER),
-        )
+        categoryManager.categoryPreferences()
 
     private fun categorySignature(): String =
-        QueryFormulaEngine.categorySignature(categoryPreferences())
+        categoryManager.categorySignature()
 
     private fun enabledCategoryKeys(): List<String> =
-        QueryFormulaEngine.ContentCategory.entries.filter { category ->
-            categoryPreferences().isEnabled(category)
-        }.map { category -> category.key }
+        categoryManager.enabledCategoryKeys()
 
-    private fun currentFilteredCount(): Int =
-        filteredExistingEntries(cacheDao.getAllGood()).size
+    private suspend fun currentFilteredCount(): Int =
+        categoryManager.filteredExistingEntries(cacheDao.getAllGood()).size
 
-    private fun applyCurrentCategoryFilterInternal(): Int {
-        val enabledKeys = enabledCategoryKeys().toSet()
-        if (enabledKeys.isEmpty()) {
-            val removed = cacheDao.countGoodEntries()
-            if (removed > 0) {
-                cacheDao.clearAllGood()
-            }
-            return removed
-        }
-        val removableIds = removableCategoryVideoIds(cacheDao.getAllGood(), enabledKeys)
-        if (removableIds.isEmpty()) {
-            return 0
-        }
-        return cacheDao.deleteByVideoIds(removableIds)
-    }
-
-    private fun removableCategoryVideoIds(
-        entries: List<YouTubeCacheEntity>,
-        enabledKeys: Set<String>,
-    ): List<String> =
-        entries.mapNotNull { entry ->
-            val resolvedCategoryKey =
-                resolveCategoryKey(
-                    entry = entry,
-                    allowedKeys = ALL_CATEGORY_KEYS,
-                )
-            if (resolvedCategoryKey != null && resolvedCategoryKey !in enabledKeys) {
-                entry.videoId
-            } else {
-                null
-            }
-        }
-
-    private fun filteredExistingEntries(entries: List<YouTubeCacheEntity>): List<YouTubeCacheEntity> {
-        if (entries.isEmpty()) {
-            return emptyList()
-        }
-
-        val enabledCategories = enabledCategoryKeys().toSet()
-        if (enabledCategories.isEmpty()) {
-            return emptyList()
-        }
-        return entries.filter { entry ->
-            val resolvedCategoryKey =
-                resolveCategoryKey(
-                    entry = entry,
-                    allowedKeys = ALL_CATEGORY_KEYS,
-                )
-            val categoryAllowed = resolvedCategoryKey == null || resolvedCategoryKey in enabledCategories
-            categoryAllowed
-        }
-    }
+    private suspend fun applyCurrentCategoryFilterInternal(): Int =
+        categoryManager.applyCurrentCategoryFilterInternal()
 
     private fun searchQuery(): String =
-        sharedPreferences
-            .getString(KEY_QUERY, DEFAULT_QUERY)
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: DEFAULT_QUERY
+        YouTubeSettings.read(sharedPreferences).query
 
     private fun preferredQuality(): String =
-        sharedPreferences
-            .getString(KEY_QUALITY, DEFAULT_QUALITY)
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
-            ?: DEFAULT_QUALITY
+        YouTubeSettings.read(sharedPreferences).quality
 
     private fun shouldShuffle(): Boolean =
-        sharedPreferences.getBoolean(KEY_SHUFFLE, DEFAULT_SHUFFLE)
+        YouTubeSettings.read(sharedPreferences).shuffle
 
     private fun shouldPreferVideoOnly(): Boolean =
         true
@@ -2785,17 +2395,18 @@ class YouTubeSourceRepository(
     }
 
     private fun markCategoryStateFresh(count: Int) {
-        val signature = categorySignature()
+        val appSignature = cacheSignature()
+        val categorySig = categorySignature()
         sharedPreferences.edit {
             putString(KEY_COUNT, count.toString())
-            putString(KEY_CACHE_SIGNATURE, signature)
+            putString(KEY_CACHE_SIGNATURE, appSignature)
             putString(KEY_STREAM_QUALITY_SIGNATURE, currentStreamQualitySignature())
-            putStringSet(KEY_CATEGORY_SNAPSHOT, enabledCategoryKeys().toSet())
+            putStringSet(YouTubeCategoryManager.KEY_CATEGORY_SNAPSHOT, enabledCategoryKeys().toSet())
             putInt(KEY_CACHE_VERSION, CURRENT_CACHE_VERSION)
-            putLong("yt_last_search_at", System.currentTimeMillis())
+            putLong(KEY_LAST_SEARCH_AT, System.currentTimeMillis())
         }
         _cacheCount.value = count
-        Timber.tag(TAG).d("Marked YouTube cache fresh: count=%s, signature=\"%s\"", count, signature)
+        Timber.tag(TAG).d("Marked YouTube cache fresh: count=%s, signature=\"%s\" categories=\"%s\"", count, appSignature, categorySig)
     }
 
     private fun markSearchCacheFresh(count: Int) {
@@ -2857,89 +2468,6 @@ class YouTubeSourceRepository(
             )
         val themeBuckets = bucketItemsByTheme(filteredItems, titleSelector)
         return selectItemsWithThemeCaps(themeBuckets, limit)
-    }
-
-    private fun detectTheme(title: String): String {
-        val lower = title.lowercase()
-        return LOCATION_THEMES.entries
-            .firstOrNull { (_, keywords) ->
-                keywords.any { keyword -> lower.contains(keyword) }
-            }?.key ?: "other"
-    }
-
-    private fun applyPlaybackExclusions(
-        entries: List<YouTubeCacheEntity>,
-        excludedVideoIds: Set<String>,
-        excludedThemes: Set<String>,
-        excludedChannel: String,
-    ): List<YouTubeCacheEntity> =
-        entries.filter { entry ->
-            entry.videoId !in excludedVideoIds &&
-                (excludedThemes.isEmpty() || detectTheme(entry.title) !in excludedThemes) &&
-                (excludedChannel.isBlank() || !entry.uploaderName.equals(excludedChannel, ignoreCase = true))
-        }
-
-    private fun weightedRandomPick(
-        entries: List<YouTubeCacheEntity>,
-        playbackHistory: List<String>,
-        random: Random,
-    ): YouTubeCacheEntity? {
-        if (entries.isEmpty()) {
-            return null
-        }
-
-        val candidates =
-            entries.map { entry ->
-                val playCount = playbackHistory.count { it == entry.videoId }
-                val weight =
-                    when {
-                        playCount == 0 -> UNPLAYED_WEIGHT
-                        playCount == 1 -> SINGLE_PLAY_WEIGHT
-                        else -> REPEAT_WEIGHT
-                    }
-                entry to weight
-            }
-
-        val totalWeight = candidates.sumOf { (_, weight) -> weight }.coerceAtLeast(1)
-        var remainingWeight = random.nextInt(totalWeight)
-        candidates.forEach { (entry, weight) ->
-            remainingWeight -= weight
-            if (remainingWeight < 0) {
-                return entry
-            }
-        }
-
-        return candidates.lastOrNull()?.first
-    }
-
-    private fun getFirstLaunchVideo(
-        entries: List<YouTubeCacheEntity>,
-        sequenceIndex: Int,
-        excludedVideoIds: Set<String>,
-        random: Random,
-    ): YouTubeCacheEntity? {
-        if (entries.isEmpty()) {
-            return null
-        }
-
-        val sequence = FIRST_LAUNCH_SEQUENCE.drop(sequenceIndex.coerceAtLeast(0))
-        sequence.forEach { targetTheme ->
-            val candidates =
-                entries.filter { entry ->
-                    entry.videoId !in excludedVideoIds &&
-                        detectTheme(entry.title) == targetTheme
-                }
-            if (candidates.isNotEmpty()) {
-                return candidates.random(random)
-            }
-        }
-
-        val unseenCandidates = entries.filterNot { it.videoId in excludedVideoIds }
-        return if (unseenCandidates.isNotEmpty()) {
-            unseenCandidates.random(random)
-        } else {
-            entries.random(random)
-        }
     }
 
     private fun rankCandidatesWithStyleBalance(candidates: List<SearchCandidate>): List<SearchCandidate> {
@@ -3014,8 +2542,8 @@ class YouTubeSourceRepository(
             }
         val durationScore =
             when {
-                item.getDuration() > LONG_FORM_DURATION_SECONDS -> LONG_FORM_BONUS + VERY_LONG_FORM_BONUS
-                item.getDuration() > MEDIUM_FORM_DURATION_SECONDS -> LONG_FORM_BONUS
+                item.getDuration() > YouTubeCategoryManager.LONG_FORM_DURATION_SECONDS -> YouTubeCategoryManager.LONG_FORM_BONUS + YouTubeCategoryManager.VERY_LONG_FORM_BONUS
+                item.getDuration() > YouTubeCategoryManager.MEDIUM_FORM_DURATION_SECONDS -> YouTubeCategoryManager.LONG_FORM_BONUS
                 else -> 0
             }
         val categoryScore =
@@ -3025,39 +2553,18 @@ class YouTubeSourceRepository(
                 category = candidate.category,
             ) +
                 when (queryCategory(candidate)) {
-                    QueryFormulaEngine.QueryCategory.AERIAL -> AERIAL_CATEGORY_BONUS
+                    QueryFormulaEngine.QueryCategory.AERIAL -> YouTubeCategoryManager.AERIAL_CATEGORY_BONUS
                     QueryFormulaEngine.QueryCategory.NATURE -> 0
                 }
         val penaltyScore =
-            (if (isVlogLikeTitle(title)) VLOG_TITLE_PENALTY else 0) +
-                (if (isDigitHeavyChannelName(uploaderName)) DIGIT_HEAVY_CHANNEL_PENALTY else 0)
+            (if (categoryManager.isVlogLikeTitle(title)) YouTubeCategoryManager.VLOG_TITLE_PENALTY else 0) +
+                (if (categoryManager.isDigitHeavyChannelName(uploaderName)) YouTubeCategoryManager.DIGIT_HEAVY_CHANNEL_PENALTY else 0)
 
         return qualitySignalScore + durationScore + categoryScore - penaltyScore
     }
 
     private fun queryCategory(candidate: SearchCandidate): QueryFormulaEngine.QueryCategory =
         candidate.category?.queryCategory ?: QueryFormulaEngine.categoryOf(candidate.searchQuery)
-
-    private fun isVlogLikeTitle(title: String): Boolean {
-        val normalized = title.lowercase()
-        return normalized.contains("vlog") ||
-            normalized.contains("travel") ||
-            normalized.contains("trip") ||
-            normalized.contains("itinerary") ||
-            normalized.contains("things to do") ||
-            normalized.contains("hotel") ||
-            normalized.contains("resort") ||
-            normalized.contains("travel guide") ||
-            normalized.contains("tour") ||
-            normalized.contains("review") ||
-            normalized.contains("how to")
-    }
-
-    private fun isDigitHeavyChannelName(channelName: String): Boolean {
-        val digits = channelName.count(Char::isDigit)
-        val letters = channelName.count(Char::isLetter)
-        return digits >= 3 && digits >= letters
-    }
 
     private fun <T> filterItemsByChannelAndQueryCaps(
         items: List<T>,
@@ -3093,7 +2600,7 @@ class YouTubeSourceRepository(
     ): LinkedHashMap<String, ArrayDeque<T>> {
         val themeBuckets = linkedMapOf<String, ArrayDeque<T>>()
         items.forEach { item ->
-            val theme = detectTheme(titleSelector(item))
+            val theme = PlaylistOrderer.detectTheme(titleSelector(item))
             themeBuckets.getOrPut(theme) { ArrayDeque() }.addLast(item)
         }
         return themeBuckets
@@ -3172,39 +2679,11 @@ class YouTubeSourceRepository(
         return selected.take(EXTRACTION_TARGET_SIZE)
     }
 
-    private fun readHistory(key: String): ArrayDeque<String> {
-        val rawHistory = sharedPreferences.getString(key, "").orEmpty()
-        val parsedHistory =
-            rawHistory
-                .split(HISTORY_SEPARATOR)
-                .map(String::trim)
-                .filter(String::isNotBlank)
-        return ArrayDeque(parsedHistory)
-    }
-
-    private fun writeHistory(
-        key: String,
-        values: ArrayDeque<String>,
-    ) {
-        sharedPreferences.edit {
-            putString(key, values.joinToString(HISTORY_SEPARATOR))
-        }
-    }
-
-    private fun trimHistory(
-        values: ArrayDeque<String>,
-        maxSize: Int,
-    ) {
-        while (values.size > maxSize) {
-            values.removeFirst()
-        }
-    }
-
     private fun recentPlaybackCutoff(): Long =
-        System.currentTimeMillis() - RECENT_PLAYBACK_WINDOW_MS
+        System.currentTimeMillis() - YouTubeHistoryTracker.RECENT_PLAYBACK_WINDOW_MS
 
-    private fun createPlaylistSimulation(): PlaylistSimulation =
-        PlaylistSimulation(
+    private suspend fun createPlaylistSimulation(): PlaylistOrderer.PlaylistSimulation =
+        PlaylistOrderer.PlaylistSimulation(
             history = playHistory(),
             themeHistory = themeHistory(),
             lastChannel = lastPlayedChannel(),
@@ -3212,23 +2691,6 @@ class YouTubeSourceRepository(
             firstLaunchIndex = firstLaunchIndex(),
             random = Random(System.nanoTime()),
         )
-
-    private fun PlaylistSimulation.record(
-        entry: YouTubeCacheEntity,
-        theme: String,
-    ) {
-        history.addLast(entry.videoId)
-        trimHistory(history, MAX_PLAY_HISTORY)
-        themeHistory.addLast(theme)
-        trimHistory(themeHistory, MAX_THEME_HISTORY)
-        lastChannel = entry.uploaderName
-        if (firstLaunchActive) {
-            firstLaunchIndex += 1
-            if (firstLaunchIndex >= FIRST_LAUNCH_SEQUENCE.size) {
-                firstLaunchActive = false
-            }
-        }
-    }
 
     private data class RefreshPlan(
         val query: String,
@@ -3247,33 +2709,6 @@ class YouTubeSourceRepository(
         val category: QueryFormulaEngine.ContentCategory?,
     )
 
-    private data class PlaybackExclusions(
-        val strictVideoIds: Set<String>,
-        val relaxedVideoIds: Set<String>,
-        val recentThemes: Set<String>,
-        val lastChannel: String,
-    ) {
-        constructor(
-            playbackHistory: List<String>,
-            recentThemes: List<String>,
-            lastChannel: String,
-        ) : this(
-            strictVideoIds = playbackHistory.takeLast(LAST_VIDEO_EXCLUSION_COUNT).toSet(),
-            relaxedVideoIds = playbackHistory.takeLast(RELAXED_LAST_VIDEO_EXCLUSION_COUNT).toSet(),
-            recentThemes = recentThemes.takeLast(LAST_THEME_EXCLUSION_COUNT).toSet(),
-            lastChannel = lastChannel.trim(),
-        )
-    }
-
-    private data class PlaylistSimulation(
-        val history: ArrayDeque<String>,
-        val themeHistory: ArrayDeque<String>,
-        var lastChannel: String,
-        var firstLaunchActive: Boolean,
-        var firstLaunchIndex: Int,
-        val random: Random,
-    )
-
     companion object {
         private const val TAG = "YouTubeSource"
         const val KEY_QUERY = "yt_query"
@@ -3285,15 +2720,7 @@ class YouTubeSourceRepository(
         const val KEY_CACHE_VERSION = "yt_cache_version"
         const val KEY_CACHE_SIGNATURE = "yt_cache_signature"
         const val KEY_STREAM_QUALITY_SIGNATURE = "yt_stream_quality_signature"
-        const val KEY_PLAY_HISTORY = "yt_play_history"
-        const val KEY_LAST_CATEGORY = "yt_last_category"
-        const val KEY_THEME_HISTORY = "yt_theme_history"
-        const val KEY_LAST_CHANNEL = "yt_last_channel"
-        const val KEY_FIRST_LAUNCH = "yt_first_launch"
-        const val KEY_FIRST_LAUNCH_INDEX = "yt_first_launch_index"
-        const val KEY_RECENT_REFRESH_IDS = "yt_recent_refresh_ids"
-        const val KEY_CATEGORY_SNAPSHOT = "yt_category_snapshot"
-        private const val KEY_CATEGORY_QUOTA_CURSOR = "yt_category_quota_cursor"
+        const val KEY_LAST_SEARCH_AT = "yt_last_search_at"
         const val KEY_CATEGORY_NATURE = "yt_category_nature"
         const val KEY_CATEGORY_ANIMALS = "yt_category_animals"
         const val KEY_CATEGORY_DRONE = "yt_category_drone"
@@ -3309,21 +2736,21 @@ class YouTubeSourceRepository(
         const val DEFAULT_MIX_WEIGHT = "1"
         const val DEFAULT_SHUFFLE = true
         private const val DEFAULT_MUTE_VIDEOS = true
-        private const val DEFAULT_CATEGORY_NATURE = true
-        private const val DEFAULT_CATEGORY_ANIMALS = true
-        private const val DEFAULT_CATEGORY_DRONE = true
-        private const val DEFAULT_CATEGORY_CITIES = true
-        private const val DEFAULT_CATEGORY_SPACE = true
-        private const val DEFAULT_CATEGORY_OCEAN = true
-        private const val DEFAULT_CATEGORY_WEATHER = true
-        private const val DEFAULT_CATEGORY_WINTER = true
-        private val ALL_CATEGORY_KEYS = QueryFormulaEngine.ContentCategory.entries.map { it.key }.toSet()
+        const val DEFAULT_CATEGORY_NATURE = true
+        const val DEFAULT_CATEGORY_ANIMALS = true
+        const val DEFAULT_CATEGORY_DRONE = true
+        const val DEFAULT_CATEGORY_CITIES = true
+        const val DEFAULT_CATEGORY_SPACE = true
+        const val DEFAULT_CATEGORY_OCEAN = true
+        const val DEFAULT_CATEGORY_WEATHER = true
+        const val DEFAULT_CATEGORY_WINTER = true
 
         private const val TARGET_CACHE_SIZE = 200
-        private const val EXTRACTION_TARGET_SIZE = 300
+        private const val EXTRACTION_TARGET_SIZE = 200
         private const val MIN_HEALTHY_CACHE_SIZE = 200
         private const val TARGET_CANDIDATE_POOL_SIZE = 600
         private const val EXTRACTION_BATCH_SIZE = 4
+        private const val EXTRACTION_CHUNK_PAUSE_MS = 1_000L
         private const val CATEGORY_DELTA_QUERY_COUNT_PER_CATEGORY = 12
         private const val CATEGORY_DELTA_QUERY_TO_VIDEO_RATIO = 4
         private const val MAX_CATEGORY_DELTA_QUERY_COUNT = 120
@@ -3340,9 +2767,6 @@ class YouTubeSourceRepository(
         private const val QUERY_POOL_SIZE = 25
         private const val FALLBACK_QUERY_POOL_SIZE = 12
         private const val SUPPLEMENTAL_QUERY_POOL_SIZE = 16
-        private const val MAX_PLAY_HISTORY = 320
-        private const val MAX_WATCH_HISTORY_ROWS = 5_000
-        private const val MAX_RECENT_REFRESH_IDS = 960
         private const val MIN_HEALTHY_CANDIDATE_POOL_SIZE = 250
         private const val BACKGROUND_PREWARM_REMAINING_ITEMS = 60
         private const val FORCE_REFRESH_REMAINING_ITEMS = 50
@@ -3356,36 +2780,29 @@ class YouTubeSourceRepository(
         // YouTube stream URLs typically expire around the 6 hour mark.
         private const val STREAM_URL_TTL_MS = 5L * 60L * 60L * 1000L + 30L * 60L * 1000L
         private const val STREAM_REEXTRACT_BUFFER_MS = 30L * 60L * 1000L
-        private const val RECENT_PLAYBACK_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L
         private const val MAX_PLAYBACK_RESOLVE_ATTEMPTS = 5
         private const val BAD_ENTRY_REFRESH_THRESHOLD = 10
         private const val CURRENT_CACHE_VERSION = 29
         internal const val STREAM_SELECTION_STRATEGY_VERSION = 4
         private const val MIN_ACCEPTABLE_CACHED_STREAM_HEIGHT = 720
         private const val PROJECTIVY_DEFAULT_QUALITY = "2160p"
-        private const val HISTORY_SEPARATOR = "|"
         private const val DEFAULT_CATEGORY_KEY = "__uncategorized__"
         private const val MIN_MAIN_SEARCH_UNIQUE_VIDEOS = 180
         private const val MAX_VIDEOS_PER_CHANNEL = 7
         private const val MAX_VIDEOS_PER_QUERY_BUCKET = 10
         private const val INITIAL_THEME_ROUND_ROBIN_CAP = 40
-        private const val MIN_FIRST_LAUNCH_CANDIDATES = 12
-        private const val LAST_VIDEO_EXCLUSION_COUNT = 50
-        private const val RELAXED_LAST_VIDEO_EXCLUSION_COUNT = 30
-        private const val LAST_THEME_EXCLUSION_COUNT = 3
-        private const val MIN_STRICT_PLAYBACK_CANDIDATES = 10
-        private const val MAX_THEME_HISTORY = 12
-        private const val UNPLAYED_WEIGHT = 3
-        private const val SINGLE_PLAY_WEIGHT = 2
-        private const val REPEAT_WEIGHT = 1
-        private const val MEDIUM_FORM_DURATION_SECONDS = 3_600L
-        private const val LONG_FORM_DURATION_SECONDS = 7_200L
-        private const val LONG_FORM_BONUS = 2
-        private const val VERY_LONG_FORM_BONUS = 3
-        private const val AERIAL_CATEGORY_BONUS = 3
-        private const val VLOG_TITLE_PENALTY = 6
-        private const val DIGIT_HEAVY_CHANNEL_PENALTY = 2
         private val QUERY_VIDEO_ID_REGEX = Regex("[?&]v=([^&#]+)")
+        private val NON_VIDEO_ID_PATH_SEGMENTS =
+            setOf(
+                "watch",
+                "results",
+                "playlist",
+                "channel",
+                "feed",
+                "hashtag",
+                "shorts",
+                "live",
+            )
         private val HEIGHT_HINT_REGEX = Regex("(\\d{3,4})p")
         private val QUALITY_LABEL_HEIGHT_HINTS =
             mapOf(
@@ -3480,27 +2897,5 @@ class YouTubeSourceRepository(
 
         private const val LONG_TAIL_QUERY_COUNT = 16
 
-        private val FIRST_LAUNCH_SEQUENCE =
-            listOf(
-                "space",
-                "ocean",
-                "forest",
-                "mountain",
-                "other",
-            )
-
-        private val LOCATION_THEMES =
-            mapOf(
-                "japan" to listOf("japan", "tokyo", "kyoto", "fuji", "sakura", "japanese", "hokkaido", "osaka"),
-                "iceland" to listOf("iceland", "icelandic", "reykjavik"),
-                "norway" to listOf("norway", "norwegian", "fjord", "lofoten", "svalbard"),
-                "ocean" to listOf("ocean", "sea", "beach", "coastal", "waves", "reef", "underwater", "coral"),
-                "forest" to listOf("forest", "rainforest", "woodland", "jungle", "bamboo", "trees"),
-                "mountain" to listOf("mountain", "alps", "himalaya", "peak", "summit", "glacier", "snow"),
-                "space" to listOf("space", "earth from", "iss", "nasa", "galaxy", "nebula", "cosmos"),
-                "desert" to listOf("desert", "sahara", "dunes", "arid", "canyon", "sandstone"),
-                "city" to listOf("city", "skyline", "urban", "downtown", "rooftop", "aerial city"),
-                "weather" to listOf("storm", "lightning", "aurora", "northern lights", "rain", "fog", "mist", "clouds"),
-            )
     }
 }

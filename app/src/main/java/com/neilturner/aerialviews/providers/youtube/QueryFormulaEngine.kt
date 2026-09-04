@@ -656,9 +656,13 @@ object QueryFormulaEngine {
             return null
         }
 
+        // Exact match against raw and sanitized configured queries: the pool
+        // is sanitized after selection (timelapse->real footage, fpv->cinematic
+        // aerial, ...), so a sanitized variant must still map to its category.
         categoryConfigs.entries.firstOrNull { (_, config) ->
             config.queries.any { configuredQuery ->
-                normalizedQuery == configuredQuery.lowercase()
+                normalizedQuery == configuredQuery.lowercase() ||
+                    normalizedQuery == sanitizeQueryForAmbientPlayback(configuredQuery).lowercase()
             }
         }?.key?.let { return it }
 
@@ -666,7 +670,9 @@ object QueryFormulaEngine {
         categoryConfigs.entries.firstOrNull { (_, config) ->
             config.queries.any { configuredQuery ->
                 val normalizedConfigured = configuredQuery.lowercase()
-                normalizedQuery.startsWith("$normalizedConfigured ")
+                val sanitizedConfigured = sanitizeQueryForAmbientPlayback(configuredQuery).lowercase()
+                normalizedQuery.startsWith("$normalizedConfigured ") ||
+                    (sanitizedConfigured != normalizedConfigured && normalizedQuery.startsWith("$sanitizedConfigured "))
             }
         }?.key?.let { return it }
 
@@ -827,10 +833,6 @@ object QueryFormulaEngine {
     ): Random =
         when (category) {
             ContentCategory.DRONE -> Random(refreshSeed() xor entropySeed xor category.ordinal.toLong())
-            ContentCategory.CITIES,
-            ContentCategory.SPACE,
-            -> Random(weeklySeed() xor entropySeed xor category.ordinal.toLong())
-
             else -> Random(dailySeed() xor entropySeed xor category.ordinal.toLong())
         }
 

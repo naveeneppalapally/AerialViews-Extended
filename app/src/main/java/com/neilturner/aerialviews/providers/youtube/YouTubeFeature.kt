@@ -20,6 +20,7 @@ import com.neilturner.aerialviews.models.prefs.Comm2VideoPrefs
 import com.neilturner.aerialviews.models.prefs.CustomFeedPrefs
 import com.neilturner.aerialviews.models.prefs.ImmichMediaPrefs
 import com.neilturner.aerialviews.models.prefs.LocalMediaPrefs
+import com.neilturner.aerialviews.models.prefs.NCMemoriesMediaPrefs
 import com.neilturner.aerialviews.models.prefs.SambaMediaPrefs
 import com.neilturner.aerialviews.models.prefs.SambaMediaPrefs2
 import com.neilturner.aerialviews.models.prefs.WebDavMediaPrefs
@@ -127,9 +128,6 @@ object YouTubeFeature {
                 .build()
 
         val workManager = WorkManager.getInstance(context.applicationContext)
-        workManager.cancelUniqueWork(DAILY_REFRESH_WORK_NAME)
-        workManager.cancelUniqueWork(STREAM_REFRESH_WORK_NAME)
-        workManager.cancelUniqueWork(STARTUP_REFRESH_WORK_NAME)
 
         workManager
             .enqueueUniqueWork(
@@ -161,6 +159,7 @@ object YouTubeFeature {
             !WebDavMediaPrefs.enabled &&
             !WebDavMediaPrefs2.enabled &&
             !ImmichMediaPrefs.enabled &&
+            !NCMemoriesMediaPrefs.enabled &&
             !CustomFeedPrefs.enabled
 
     private fun scheduleAutomaticRefresh(context: Context) {
@@ -273,8 +272,10 @@ object YouTubeFeature {
         return when {
             displayHeight >= UHD_HEIGHT -> UHD_QUALITY
             displayHeight >= QHD_HEIGHT -> QHD_QUALITY
-            displayHeight >= FULL_HD_HEIGHT -> FULL_HD_QUALITY
-            else -> HD_QUALITY
+            // 720p-and-below screens still default to 1080p: native 720p
+            // YouTube renditions are low-bitrate and look soft; 1080p
+            // downscaled is visibly better and always available.
+            else -> FULL_HD_QUALITY
         }
     }
 

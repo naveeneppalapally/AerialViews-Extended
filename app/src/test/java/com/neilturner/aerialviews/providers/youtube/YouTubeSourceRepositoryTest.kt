@@ -16,6 +16,8 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import org.schabi.newpipe.extractor.stream.StreamType
 
 @DisplayName("YouTube Source Repository Tests")
 internal class YouTubeSourceRepositoryTest {
@@ -43,8 +45,8 @@ internal class YouTubeSourceRepositoryTest {
                     YouTubeSourceRepository.KEY_CACHE_VERSION to 29,
                     YouTubeSourceRepository.KEY_CACHE_SIGNATURE to "1|v29",
                     YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE to streamSignature("best"),
-                    YouTubeSourceRepository.KEY_FIRST_LAUNCH to false,
-                    YouTubeSourceRepository.KEY_FIRST_LAUNCH_INDEX to 0,
+                    YouTubeHistoryTracker.KEY_FIRST_LAUNCH to false,
+                    YouTubeHistoryTracker.KEY_FIRST_LAUNCH_INDEX to 0,
                 ),
             )
 
@@ -91,8 +93,8 @@ internal class YouTubeSourceRepositoryTest {
                     YouTubeSourceRepository.KEY_CACHE_SIGNATURE to "1|v29",
                     YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE to streamSignature("1080p"),
                     YouTubeSourceRepository.KEY_QUALITY to "2160p",
-                    YouTubeSourceRepository.KEY_FIRST_LAUNCH to false,
-                    YouTubeSourceRepository.KEY_FIRST_LAUNCH_INDEX to 0,
+                    YouTubeHistoryTracker.KEY_FIRST_LAUNCH to false,
+                    YouTubeHistoryTracker.KEY_FIRST_LAUNCH_INDEX to 0,
                 ),
             )
 
@@ -137,8 +139,8 @@ internal class YouTubeSourceRepositoryTest {
                     YouTubeSourceRepository.KEY_CACHE_SIGNATURE to "1|v29",
                     YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE to "2160p|videoOnly=true",
                     YouTubeSourceRepository.KEY_QUALITY to "2160p",
-                    YouTubeSourceRepository.KEY_FIRST_LAUNCH to false,
-                    YouTubeSourceRepository.KEY_FIRST_LAUNCH_INDEX to 0,
+                    YouTubeHistoryTracker.KEY_FIRST_LAUNCH to false,
+                    YouTubeHistoryTracker.KEY_FIRST_LAUNCH_INDEX to 0,
                 ),
             )
 
@@ -171,9 +173,44 @@ internal class YouTubeSourceRepositoryTest {
     }
 
     @Test
+    @DisplayName("Should build the library offline via injected searcher and extractor")
+    fun testRefreshPipelineRunsOfflineWithFakes() =
+        runTest {
+            val cacheDao = FakeYouTubeCacheDao(mutableListOf())
+            val watchHistoryDao = FakeYouTubeWatchHistoryDao()
+            val sharedPreferences =
+                InMemorySharedPreferences(
+                    mutableMapOf(
+                        YouTubeSourceRepository.KEY_CACHE_VERSION to 29,
+                        YouTubeSourceRepository.KEY_CACHE_SIGNATURE to "1|v29",
+                        YouTubeSourceRepository.KEY_STREAM_QUALITY_SIGNATURE to streamSignature("best"),
+                        YouTubeSourceRepository.KEY_QUALITY to "best",
+                        YouTubeHistoryTracker.KEY_FIRST_LAUNCH to false,
+                        YouTubeHistoryTracker.KEY_FIRST_LAUNCH_INDEX to 0,
+                    ),
+                )
+
+            val context = mockPackageContext()
+            val repository =
+                YouTubeSourceRepository(
+                    context = context,
+                    cacheDao = cacheDao,
+                    watchHistoryDao = watchHistoryDao,
+                    sharedPreferences = sharedPreferences,
+                    searcher = FakeVideoSearcher(),
+                    extractor = FakeStreamExtractor(),
+                )
+
+            val entries = repository.refreshSearchResults(replaceExistingCache = true)
+
+            assertTrue(entries.isNotEmpty(), "Expected fakes to produce cache entries without network")
+            assertTrue(entries.all { it.streamUrl.startsWith("https://cdn.example.com/") })
+            assertEquals(entries.size, cacheDao.countGoodEntries())
+        }
+
+    @Test
     @DisplayName("Should preserve Projectivy YouTube UHD quality targets")
-    fun testProjectivyPlaybackResolutionQualityFor() {
-        assertEquals("2160p", YouTubeSourceRepository.projectivyPlaybackResolutionQualityFor("best"))
+    fun testProjectivyPlaybackResolutionQualityFor() {        assertEquals("2160p", YouTubeSourceRepository.projectivyPlaybackResolutionQualityFor("best"))
         assertEquals("2160p", YouTubeSourceRepository.projectivyPlaybackResolutionQualityFor("2160p"))
         assertEquals("1440p", YouTubeSourceRepository.projectivyPlaybackResolutionQualityFor("1440p"))
         assertEquals("1080p", YouTubeSourceRepository.projectivyPlaybackResolutionQualityFor("1080p"))
@@ -202,216 +239,51 @@ internal class YouTubeSourceRepositoryTest {
             )
         }.toMutableList()
 
-    private class FakeYouTubeCacheDao(
-        private val entries: MutableList<YouTubeCacheEntity>,
-    ) : YouTubeCacheDao {
-        var invalidatedStreamUrlCount: Int = 0
+    private fun mockPackageContext(): Context {
+        val packageManager = mockk<PackageManager>()
+        val packageInfo = mockk<PackageInfo>()
+        every { packageInfo.longVersionCode } returns 1L
+        every { packageManager.getPackageInfo(any<String>(), any<Int>()) } returns packageInfo
 
-        override fun getAll(): List<YouTubeCacheEntity> = entries.toList()
+        val context = mockk<Context>()
+        every { context.packageManager } returns packageManager
+        every { context.packageName } returns "com.naveen.aerialviewsplus"
+        return context
+    }
 
-        override fun getAllGood(): List<YouTubeCacheEntity> = entries.filterNot { it.isBad }
+    private class FakeVideoSearcher : VideoSearcher {
+        private var counter = 0
 
-        override fun countGoodEntries(): Int = entries.count { !it.isBad }
-
-        override fun getValidEntries(now: Long): List<YouTubeCacheEntity> =
-            entries.filter { !it.isBad && it.streamUrlExpiresAt > now }
-
-        override fun insertAll(entries: List<YouTubeCacheEntity>) {
-            this.entries.removeAll { existing -> entries.any { it.videoId == existing.videoId } }
-            this.entries.addAll(entries)
-        }
-
-        override fun clearAll() {
-            entries.clear()
-        }
-
-        override fun clearAllGood() {
-            entries.removeAll { !it.isBad }
-        }
-
-        override fun updateStreamUrl(videoId: String, newUrl: String, newAudioUrl: String, newExpiresAt: Long) {
-            updateEntry(videoId) { entry ->
-                entry.copy(
-                    streamUrl = newUrl,
-                    audioStreamUrl = newAudioUrl,
-                    streamUrlExpiresAt = newExpiresAt,
-                    isBad = false,
-                )
-            }
-        }
-
-        override fun invalidateAllStreamUrls(): Int {
-            val matchingEntries = entries.filterNot { it.isBad }
-            invalidatedStreamUrlCount = matchingEntries.size
-            entries.replaceAll { entry ->
-                if (entry.isBad) {
-                    entry
-                } else {
-                    entry.copy(streamUrl = "", audioStreamUrl = "", streamUrlExpiresAt = 0L)
+        override suspend fun searchVideos(
+            query: String,
+            category: QueryFormulaEngine.ContentCategory?,
+        ): List<StreamInfoItem> =
+            (1..30).map {
+                counter += 1
+                StreamInfoItem(
+                    0,
+                    "https://www.youtube.com/watch?v=fakevideo$counter",
+                    "Ambient forest real footage $counter",
+                    StreamType.VIDEO_STREAM,
+                ).apply {
+                    uploaderName = "Fake Nature Channel $counter"
+                    setDuration(600L)
                 }
             }
-            return invalidatedStreamUrlCount
-        }
+    }
 
-        override fun getOldestCachedAt(): Long? = entries.minOfOrNull { it.searchCachedAt }
-
-        override fun getByVideoPageUrl(videoPageUrl: String): YouTubeCacheEntity? =
-            entries.firstOrNull { it.videoPageUrl == videoPageUrl }
-
-        override fun markAsBad(videoId: String): Int {
-            val before = entries.firstOrNull { it.videoId == videoId } ?: return 0
-            if (before.isBad) {
-                return 0
-            }
-            updateEntry(videoId) { it.copy(isBad = true) }
-            return 1
-        }
-
-        override fun markAsPlayed(videoId: String, timestamp: Long) {
-            updateEntry(videoId) { it.copy(lastPlayedAt = timestamp) }
-        }
-
-        override fun resetPlayHistory() {
-            entries.replaceAll { it.copy(lastPlayedAt = 0L) }
-        }
-
-        override fun deleteByNotInCategories(allowedCategoryKeys: List<String>): Int {
-            val before = entries.size
-            entries.removeAll { !it.isBad && it.categoryKey.isNotBlank() && it.categoryKey !in allowedCategoryKeys }
-            return before - entries.size
-        }
-
-        override fun deleteByVideoIds(videoIds: List<String>): Int {
-            val before = entries.size
-            entries.removeAll { it.videoId in videoIds }
-            return before - entries.size
-        }
-
-        override fun getUnwatchedEntry(cutoff: Long): YouTubeCacheEntity? =
-            entries.firstOrNull { !it.isBad && (it.lastPlayedAt == 0L || it.lastPlayedAt < cutoff) }
-
-        override fun getLeastRecentlyPlayed(): YouTubeCacheEntity? =
-            entries.filterNot { it.isBad }.minByOrNull { it.lastPlayedAt }
-
-        private fun updateEntry(
-            videoId: String,
-            transform: (YouTubeCacheEntity) -> YouTubeCacheEntity,
-        ) {
-            val index = entries.indexOfFirst { it.videoId == videoId }
-            if (index >= 0) {
-                entries[index] = transform(entries[index])
-            }
+    private class FakeStreamExtractor : StreamExtractor {
+        override suspend fun extractPlaybackStreams(
+            videoPageUrl: String,
+            preferredQuality: String,
+            preferVideoOnly: Boolean,
+            allowAdaptiveManifests: Boolean,
+            preferAdaptiveManifests: Boolean,
+            preferManifests: Boolean,
+        ): YouTubePlaybackUrls {
+            val videoId = videoPageUrl.substringAfter("v=").substringBefore("&").ifBlank { "unknown" }
+            return YouTubePlaybackUrls(videoUrl = "https://cdn.example.com/$videoId.mp4")
         }
     }
 
-    private class FakeYouTubeWatchHistoryDao : YouTubeWatchHistoryDao {
-        private val history = mutableListOf<YouTubeWatchHistoryEntity>()
-        private var nextHistoryId = 1L
-
-        override fun insert(entry: YouTubeWatchHistoryEntity) {
-            history += entry.copy(historyId = nextHistoryId++)
-        }
-
-        override fun recentHistory(limit: Int): List<YouTubeWatchHistoryEntity> =
-            history
-                .sortedWith(compareByDescending<YouTubeWatchHistoryEntity> { it.playedAt }.thenByDescending { it.historyId })
-                .take(limit)
-
-        override fun trimToLimit(limit: Int) {
-            val retained = recentHistory(limit).map { it.historyId }.toSet()
-            history.removeAll { it.historyId !in retained }
-        }
-
-        fun lastPlayedVideoId(): String = history.lastOrNull()?.videoId ?: error("Playback was not recorded")
-    }
-
-    private class InMemorySharedPreferences(
-        initialValues: MutableMap<String, Any?> = mutableMapOf(),
-    ) : SharedPreferences {
-        private val values = initialValues.toMutableMap()
-
-        override fun getAll(): MutableMap<String, *> = values.toMutableMap()
-
-        override fun getString(key: String?, defValue: String?): String? =
-            values[key] as? String ?: defValue
-
-        @Suppress("UNCHECKED_CAST")
-        override fun getStringSet(key: String?, defValues: MutableSet<String>?): MutableSet<String>? =
-            when (val value = values[key]) {
-                is Set<*> -> value.filterIsInstance<String>().toMutableSet()
-                else -> defValues
-            }
-
-        override fun getInt(key: String?, defValue: Int): Int = values[key] as? Int ?: defValue
-
-        override fun getLong(key: String?, defValue: Long): Long = values[key] as? Long ?: defValue
-
-        override fun getFloat(key: String?, defValue: Float): Float = values[key] as? Float ?: defValue
-
-        override fun getBoolean(key: String?, defValue: Boolean): Boolean = values[key] as? Boolean ?: defValue
-
-        override fun contains(key: String?): Boolean = key != null && values.containsKey(key)
-
-        override fun edit(): SharedPreferences.Editor = Editor(values)
-
-        override fun registerOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener?) {
-        }
-
-        override fun unregisterOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener?) {
-        }
-
-        private class Editor(
-            private val values: MutableMap<String, Any?>,
-        ) : SharedPreferences.Editor {
-            private val pending = mutableMapOf<String, Any?>()
-            private val removals = mutableSetOf<String>()
-            private var clearRequested = false
-
-            override fun putString(key: String?, value: String?): SharedPreferences.Editor = applyChange(key, value)
-
-            override fun putStringSet(key: String?, values: MutableSet<String>?): SharedPreferences.Editor =
-                applyChange(key, values?.toSet())
-
-            override fun putInt(key: String?, value: Int): SharedPreferences.Editor = applyChange(key, value)
-
-            override fun putLong(key: String?, value: Long): SharedPreferences.Editor = applyChange(key, value)
-
-            override fun putFloat(key: String?, value: Float): SharedPreferences.Editor = applyChange(key, value)
-
-            override fun putBoolean(key: String?, value: Boolean): SharedPreferences.Editor = applyChange(key, value)
-
-            override fun remove(key: String?): SharedPreferences.Editor {
-                key?.let { removals += it }
-                return this
-            }
-
-            override fun clear(): SharedPreferences.Editor {
-                clearRequested = true
-                return this
-            }
-
-            override fun commit(): Boolean {
-                apply()
-                return true
-            }
-
-            override fun apply() {
-                if (clearRequested) {
-                    values.clear()
-                }
-                removals.forEach(values::remove)
-                values.putAll(pending)
-            }
-
-            private fun applyChange(
-                key: String?,
-                value: Any?,
-            ): SharedPreferences.Editor {
-                if (key != null) {
-                    pending[key] = value
-                }
-                return this
-            }
-        }
-    }
 }

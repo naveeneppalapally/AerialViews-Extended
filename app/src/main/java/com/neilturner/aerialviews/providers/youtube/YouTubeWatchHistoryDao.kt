@@ -8,13 +8,13 @@ import androidx.room.Query
 @Dao
 interface YouTubeWatchHistoryDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    fun insert(entry: YouTubeWatchHistoryEntity)
+    suspend fun insert(entry: YouTubeWatchHistoryEntity)
 
     @Query(
         "SELECT * FROM youtube_watch_history " +
             "ORDER BY playedAt DESC, historyId DESC LIMIT :limit",
     )
-    fun recentHistory(limit: Int): List<YouTubeWatchHistoryEntity>
+    suspend fun recentHistory(limit: Int): List<YouTubeWatchHistoryEntity>
 
     @Query(
         "DELETE FROM youtube_watch_history " +
@@ -22,5 +22,8 @@ interface YouTubeWatchHistoryDao {
             "SELECT historyId FROM youtube_watch_history ORDER BY playedAt DESC, historyId DESC LIMIT :limit" +
             ")",
     )
-    fun trimToLimit(limit: Int)
+    suspend fun trimToLimit(limit: Int)
+
+    @Query("DELETE FROM youtube_watch_history WHERE playedAt < :cutoff")
+    suspend fun deleteOlderThan(cutoff: Long)
 }
